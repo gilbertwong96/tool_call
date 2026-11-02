@@ -25,5 +25,8 @@ tool_call-*.tar
 # Temporary file written by mix tool_call.export before the atomic rename.
 *.tmp.*
 
+# Local agent session state.
+/.pi/
+
 # Local design/plan artifacts
 /docs/superpowers/
