@@ -75,6 +75,10 @@ The string form carries only the pattern. Integer bounds (`pos_integer()`,
 `1..100`) are still enforced at dispatch but cannot be expressed on a string, so
 the schema is looser than the runtime for bounded integers.
 
+The dispatcher also accepts the number form (a JSON integer) for a
+`:string_integer` parameter. That is a convenience for direct callers; the schema
+still asks the model for a string.
+
 ## The coercion pass
 
 Schemas and Elixir disagree at the boundary, so `ToolCall.Coerce` runs before

@@ -32,9 +32,13 @@ defmodule ToolCall.CoerceTest do
       assert {:error, {:expected_integer, 1.5}} = Coerce.coerce(integer(), 1.5)
     end
 
-    test "rejects numeric strings unless the wire format says otherwise" do
+    test "rejects numeric strings without a string wire format" do
       assert {:error, _} = Coerce.coerce(integer(), "42")
       assert {:ok, 42} = Coerce.coerce(integer(), "42", :string_integer)
+    end
+
+    test "accepts the number form as a convenience" do
+      assert {:ok, 42} = Coerce.coerce(integer(), 42, :string_integer)
     end
 
     test "carries arbitrary precision when sent as a string" do
