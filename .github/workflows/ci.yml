@@ -45,4 +45,7 @@ jobs:
             ${{ runner.os }}-otp-${{ matrix.otp }}-elixir-${{ matrix.elixir }}-
 
       - run: mix deps.get
+      - run: MIX_ENV=dev mix deps.get
       - run: mix ci
+      - run: mix test --cover
+      - run: MIX_ENV=dev mix docs
