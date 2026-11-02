@@ -172,8 +172,8 @@ defmodule ToolCall do
   end
 
   defp ensure_tool_module!(module) do
-    unless is_atom(module) and Code.ensure_loaded?(module) and
-             function_exported?(module, :__tools__, 0) do
+    if not (is_atom(module) and Code.ensure_loaded?(module) and
+              function_exported?(module, :__tools__, 0)) do
       raise ArgumentError, "#{inspect(module)} does not use ToolCall"
     end
   end

@@ -180,7 +180,7 @@ defmodule ToolCall.Builder do
         {type_ast, truncated?} = LocalTypes.expand(type_ast, context.definitions)
         type_ast = expand_aliases(type_ast, context.env)
 
-        unless named? do
+        if not named? do
           warn(
             context.module,
             location,
