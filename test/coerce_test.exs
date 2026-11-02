@@ -1,0 +1,379 @@
+defmodule ToolCall.CoerceTest do
+  use ExUnit.Case, async: true
+
+  alias ToolCall.Coerce
+  alias ToolCall.IR.{Field, Param, Type}
+
+  defp integer(opts \\ []) do
+    struct(%Type{
+      kind: :integer,
+      minimum: Keyword.get(opts, :min),
+      maximum: Keyword.get(opts, :max)
+    })
+  end
+
+  defp float, do: %Type{kind: :float}
+  defp number, do: %Type{kind: :number}
+
+  describe "integers" do
+    test "accepts integers within bounds" do
+      assert {:ok, 5} = Coerce.coerce(integer(min: 1), 5)
+    end
+
+    test "rejects integers outside bounds" do
+      assert {:error, {:below_minimum, 0, 1}} = Coerce.coerce(integer(min: 1), 0)
+    end
+
+    test "truncates integral floats, because JSON Schema calls 1.0 an integer" do
+      assert {:ok, 1} = Coerce.coerce(integer(), 1.0)
+    end
+
+    test "rejects fractional floats" do
+      assert {:error, {:expected_integer, 1.5}} = Coerce.coerce(integer(), 1.5)
+    end
+
+    test "rejects numeric strings unless the wire format says otherwise" do
+      assert {:error, _} = Coerce.coerce(integer(), "42")
+      assert {:ok, 42} = Coerce.coerce(integer(), "42", :string_integer)
+    end
+
+    test "carries arbitrary precision when sent as a string" do
+      big = Integer.pow(2, 70)
+      assert {:ok, ^big} = Coerce.coerce(integer(), Integer.to_string(big), :string_integer)
+      assert {:ok, ^big} = Coerce.coerce(integer(), big)
+    end
+  end
+
+  describe "floats" do
+    test "widens integers" do
+      assert {:ok, 2.0} = Coerce.coerce(float(), 2)
+      assert is_float(elem(Coerce.coerce(float(), 2), 1))
+    end
+
+    test "leaves floats alone" do
+      assert {:ok, 2.5} = Coerce.coerce(float(), 2.5)
+    end
+
+    test "rejects an integer too large to widen" do
+      huge = Integer.pow(10, 400)
+      assert {:error, {:expected_float, ^huge}} = Coerce.coerce(float(), huge)
+    end
+  end
+
+  describe "numbers" do
+    test "accepts both" do
+      assert {:ok, 2} = Coerce.coerce(number(), 2)
+      assert {:ok, 2.5} = Coerce.coerce(number(), 2.5)
+    end
+  end
+
+  describe "nullable" do
+    test "accepts nil only when the type allows it" do
+      assert {:ok, nil} = Coerce.coerce(%{integer() | nullable: true}, nil)
+      assert {:error, _} = Coerce.coerce(integer(), nil)
+    end
+  end
+
+  describe "enums" do
+    test "maps JSON strings back to atoms" do
+      type = %Type{kind: :enum, values: [:red, :green]}
+      assert {:ok, :red} = Coerce.coerce(type, "red")
+      assert {:error, _} = Coerce.coerce(type, "blue")
+    end
+
+    test "accepts the atom form directly" do
+      type = %Type{kind: :enum, values: [:red]}
+      assert {:ok, :red} = Coerce.coerce(type, :red)
+    end
+
+    test "keeps non-atom enums as-is" do
+      type = %Type{kind: :enum, values: [1, 2]}
+      assert {:ok, 1} = Coerce.coerce(type, 1)
+    end
+
+    test "accepts an integral float, like integer()" do
+      type = %Type{kind: :enum, values: [1, 2]}
+      assert {:ok, 1} = Coerce.coerce(type, 1.0)
+      assert {:error, _} = Coerce.coerce(type, 1.5)
+    end
+
+    test "boolean enums keep the singleton" do
+      type = %Type{kind: :enum, values: [true]}
+      assert {:ok, true} = Coerce.coerce(type, true)
+      assert {:error, {:invalid_enum, false, [true]}} = Coerce.coerce(type, false)
+    end
+  end
+
+  describe "objects" do
+    test "treats an explicit null for an optional field as absent" do
+      type = %Type{
+        kind: :object,
+        fields: [
+          %Field{name: "a", key: :a, type: %Type{kind: :string}, required: false},
+          %Field{name: "b", key: :b, type: %Type{kind: :integer}}
+        ]
+      }
+
+      assert {:ok, %{b: 1}} = Coerce.coerce(type, %{"a" => nil, "b" => 1})
+      assert {:error, _} = Coerce.coerce(type, %{"a" => nil, "b" => nil})
+    end
+
+    test "coerces known fields" do
+      type = %Type{
+        kind: :object,
+        fields: [%Field{name: "n", key: :n, type: integer(), required: true}]
+      }
+
+      assert {:ok, %{n: 3}} = Coerce.coerce(type, %{"n" => 3.0})
+    end
+
+    test "rejects unknown keys when additionalProperties is false" do
+      type = %Type{kind: :object, fields: []}
+      assert {:error, {:unknown_keys, ["x"]}} = Coerce.coerce(type, %{"x" => 1})
+    end
+
+    test "coerces extra values when the map is open" do
+      type = %Type{kind: :object, fields: [], additional: integer()}
+      assert {:ok, %{"a" => 1, "b" => 2}} = Coerce.coerce(type, %{"a" => 1.0, "b" => 2})
+    end
+
+    test "restores atom keys in nested objects" do
+      type = %Type{
+        kind: :object,
+        fields: [
+          %Field{
+            name: "point",
+            key: :point,
+            type: %Type{
+              kind: :object,
+              fields: [
+                %Field{name: "x", key: :x, type: integer()},
+                %Field{name: "y", key: :y, type: integer()}
+              ]
+            }
+          }
+        ]
+      }
+
+      assert {:ok, %{point: %{x: 1, y: 2}}} =
+               Coerce.coerce(type, %{"point" => %{"x" => 1.0, "y" => 2}})
+    end
+
+    test "turns a keyword object into a keyword list" do
+      type = %Type{kind: :object, fields: [], additional: %Type{kind: :string}, source: :keyword}
+      assert {:ok, [a: "x"]} = Coerce.coerce(type, %{"a" => "x"})
+    end
+
+    test "rejects keyword keys that are not existing atoms" do
+      type = %Type{kind: :object, fields: [], additional: %Type{kind: :string}, source: :keyword}
+
+      assert {:error, {:unknown_atom, "definitely_not_an_existing_atom"}} =
+               Coerce.coerce(type, %{"definitely_not_an_existing_atom" => "x"})
+    end
+
+    test "reports which keyword value failed" do
+      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      assert {:error, {"a", {:expected_integer, "x"}}} = Coerce.coerce(type, %{"a" => "x"})
+    end
+
+    test "rejects a key JSON could not produce" do
+      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      assert {:error, {:invalid_key, 1}} = Coerce.coerce(type, %{1 => 1})
+    end
+  end
+
+  describe "scalars" do
+    test "strings" do
+      assert {:ok, "a"} = Coerce.coerce(%Type{kind: :string}, "a")
+      assert {:error, {:expected_string, 1}} = Coerce.coerce(%Type{kind: :string}, 1)
+    end
+
+    test "parses calendar types from ISO 8601" do
+      assert {:ok, ~D[2024-01-31]} =
+               Coerce.coerce(%Type{kind: :string, source: {Date, :t}}, "2024-01-31")
+
+      assert {:error, {:invalid_date, "31/01/2024"}} =
+               Coerce.coerce(%Type{kind: :string, source: {Date, :t}}, "31/01/2024")
+
+      assert {:ok, ~T[10:30:00]} =
+               Coerce.coerce(%Type{kind: :string, source: {Time, :t}}, "10:30:00")
+
+      assert {:ok, ~N[2024-01-31 10:30:00]} =
+               Coerce.coerce(
+                 %Type{kind: :string, source: {NaiveDateTime, :t}},
+                 "2024-01-31T10:30:00"
+               )
+
+      assert {:ok, %DateTime{hour: 10}} =
+               Coerce.coerce(%Type{kind: :string, source: {DateTime, :t}}, "2024-01-31T10:30:00Z")
+
+      assert {:error, {:invalid_datetime, "nope"}} =
+               Coerce.coerce(%Type{kind: :string, source: {DateTime, :t}}, "nope")
+    end
+
+    test "charlists come back as charlists" do
+      assert {:ok, ~c"abc"} = Coerce.coerce(%Type{kind: :string, source: :charlist}, "abc")
+    end
+
+    test "enforces the rendered pattern" do
+      assert {:ok, "a"} = Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "a")
+
+      assert {:error, {:pattern_mismatch, "^.$", "ab"}} =
+               Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "ab")
+    end
+
+    test "booleans" do
+      assert {:ok, true} = Coerce.coerce(%Type{kind: :boolean}, true)
+      assert {:error, {:expected_boolean, "true"}} = Coerce.coerce(%Type{kind: :boolean}, "true")
+    end
+
+    test "atoms map strings back to existing atoms only" do
+      assert {:ok, :ok} = Coerce.coerce(%Type{kind: :atom}, "ok")
+      assert {:ok, :ok} = Coerce.coerce(%Type{kind: :atom}, :ok)
+
+      assert {:error, {:unknown_atom, "not_an_existing_atom"}} =
+               Coerce.coerce(%Type{kind: :atom}, "not_an_existing_atom")
+
+      assert {:error, {:expected_atom, 1}} = Coerce.coerce(%Type{kind: :atom}, 1)
+
+      # The wire type is a string; null and booleans are only valid when the
+      # spec makes them part of the domain.
+      assert {:error, {:expected_atom, nil}} = Coerce.coerce(%Type{kind: :atom}, nil)
+      assert {:error, {:expected_atom, true}} = Coerce.coerce(%Type{kind: :atom}, true)
+      assert {:ok, nil} = Coerce.coerce(%Type{kind: :atom, nullable: true}, nil)
+    end
+
+    test "null" do
+      assert {:ok, nil} = Coerce.coerce(%Type{kind: :null}, nil)
+      assert {:error, {:expected_null, 1}} = Coerce.coerce(%Type{kind: :null}, 1)
+    end
+
+    test "any passes the value through untouched" do
+      assert {:ok, %{a: 1}} = Coerce.coerce(%Type{kind: :any}, %{a: 1})
+    end
+
+    test "unsupported domains are refused" do
+      assert {:error, :unsupported_type} = Coerce.coerce(%Type{kind: :unsupported}, self())
+    end
+  end
+
+  describe "arrays" do
+    test "coerce every item" do
+      type = %Type{kind: :array, items: %Type{kind: :integer}}
+      assert {:ok, [1, 2]} = Coerce.coerce(type, [1.0, 2])
+      assert {:error, {1, {:expected_integer, 2.5}}} = Coerce.coerce(type, [1, 2.5])
+    end
+
+    test "enforce minItems" do
+      type = %Type{kind: :array, items: %Type{kind: :integer}, minimum: 2}
+      assert {:error, {:too_few_items, 1, 2}} = Coerce.coerce(type, [1])
+    end
+
+    test "reject a non-list" do
+      assert {:error, {:expected_array, "x"}} = Coerce.coerce(%Type{kind: :array}, "x")
+    end
+  end
+
+  describe "tuples" do
+    test "check the size and coerce each position" do
+      type = %Type{kind: :tuple, items: [%Type{kind: :integer}, %Type{kind: :string}]}
+
+      assert {:ok, [1, "a"]} = Coerce.coerce(type, [1.0, "a"])
+      assert {:error, {:wrong_tuple_size, 1, 2}} = Coerce.coerce(type, [1])
+      assert {:error, {:expected_array, %{}}} = Coerce.coerce(type, %{})
+      assert {:error, {0, {:expected_integer, "a"}}} = Coerce.coerce(type, ["a", "b"])
+    end
+  end
+
+  describe "union variants" do
+    test "take the first match and report when none does" do
+      type = %Type{kind: :union, variants: [%Type{kind: :integer}, %Type{kind: :string}]}
+
+      assert {:ok, 1} = Coerce.coerce(type, 1)
+      assert {:ok, "a"} = Coerce.coerce(type, "a")
+      assert {:error, {:no_variant_matched, :x}} = Coerce.coerce(type, :x)
+    end
+  end
+
+  describe "objects without a schema" do
+    test "reject a non-map" do
+      assert {:error, {:expected_object, []}} = Coerce.coerce(%Type{kind: :object}, [])
+    end
+
+    test "pass extra values through when additionalProperties is unconstrained" do
+      type = %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
+      assert {:ok, %{"a" => %{b: 1}}} = Coerce.coerce(type, %{"a" => %{b: 1}})
+    end
+
+    test "reject a non-integer key value when additionalProperties is typed" do
+      type = %Type{kind: :object, fields: [], additional: integer()}
+      assert {:error, {"a", {:expected_integer, "x"}}} = Coerce.coerce(type, %{"a" => "x"})
+    end
+
+    test "report a missing required field" do
+      type = %Type{kind: :object, fields: [%Field{name: "n", type: integer(), required: true}]}
+      assert {:error, {:missing, "n"}} = Coerce.coerce(type, %{})
+    end
+
+    test "allow a missing optional field" do
+      type = %Type{kind: :object, fields: [%Field{name: "n", type: integer(), required: false}]}
+      assert {:ok, %{}} = Coerce.coerce(type, %{})
+    end
+
+    test "carry the field name into nested errors" do
+      type = %Type{kind: :object, fields: [%Field{name: "n", type: integer(), required: true}]}
+      assert {:error, {"n", {:expected_integer, "x"}}} = Coerce.coerce(type, %{"n" => "x"})
+    end
+  end
+
+  describe "containers" do
+    test "coerce a list of tuples element-wise" do
+      type = %Type{
+        kind: :array,
+        items: %Type{kind: :tuple, items: [%Type{kind: :string}, %Type{kind: :integer}]}
+      }
+
+      assert {:ok, [["a", 1], ["b", 2]]} = Coerce.coerce(type, [["a", 1.0], ["b", 2]])
+    end
+
+    test "report the array index and the tuple position" do
+      type = %Type{
+        kind: :array,
+        items: %Type{kind: :tuple, items: [%Type{kind: :string}, %Type{kind: :integer}]}
+      }
+
+      assert {:error, {0, {1, {:expected_integer, "x"}}}} =
+               Coerce.coerce(type, [["a", "x"]])
+    end
+  end
+
+  describe "wire strings" do
+    test "reject values that are not decimal integers" do
+      assert {:error, {:expected_integer_string, "1.5"}} =
+               Coerce.coerce(integer(), "1.5", :string_integer)
+
+      assert {:error, {:expected_integer_string, nil}} =
+               Coerce.coerce(integer(), nil, :string_integer)
+    end
+
+    test "enforce bounds after parsing" do
+      assert {:error, {:below_minimum, 0, 1}} =
+               Coerce.coerce(integer(min: 1), "0", :string_integer)
+    end
+
+    test "accept nil when the domain is nullable" do
+      assert {:ok, nil} = Coerce.coerce(%{integer() | nullable: true}, nil, :string_integer)
+    end
+
+    test "still accept a JSON integer" do
+      assert {:ok, 5} = Coerce.coerce(integer(), 5, :string_integer)
+    end
+  end
+
+  describe "param/2" do
+    test "prefixes errors with the parameter name" do
+      param = %Param{name: "user_id", type: integer(min: 1), wire: :number}
+      assert {:error, {"user_id", {:below_minimum, 0, 1}}} = Coerce.param(param, 0)
+    end
+  end
+end
