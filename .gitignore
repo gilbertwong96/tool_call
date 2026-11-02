@@ -22,6 +22,8 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 tool_call-*.tar
 
+# Temporary file written by mix tool_call.export before the atomic rename.
+*.tmp.*
 
 # Local design/plan artifacts
 /docs/superpowers/

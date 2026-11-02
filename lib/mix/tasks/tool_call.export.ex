@@ -209,10 +209,10 @@ defmodule Mix.Tasks.ToolCall.Export do
   defp write(json, path) do
     File.mkdir_p!(Path.dirname(path))
     tmp = "#{path}.tmp.#{System.unique_integer([:positive])}"
-    File.write!(tmp, json)
 
     try do
-      File.rename!(tmp, path)
+      File.write!(tmp, json)
+      replace(tmp, path)
     rescue
       exception ->
         File.rm(tmp)
@@ -220,5 +220,17 @@ defmodule Mix.Tasks.ToolCall.Export do
     end
 
     Mix.shell().info("Wrote #{Path.relative_to_cwd(path)}")
+  end
+
+  defp replace(tmp, path) do
+    File.rename!(tmp, path)
+  rescue
+    exception in File.RenameError ->
+      if exception.reason == :eexist do
+        File.rm!(path)
+        File.rename!(tmp, path)
+      else
+        reraise exception, __STACKTRACE__
+      end
   end
 end

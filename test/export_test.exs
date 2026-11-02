@@ -79,6 +79,16 @@ defmodule ToolCall.ExportTest do
     assert Path.wildcard("#{path}.tmp.*") == []
   end
 
+  @tag :tmp_dir
+  test "cleans up the temp file when the target cannot be replaced", %{tmp_dir: dir} do
+    module = weather()
+    path = Path.join([dir, "tools.json"])
+    File.mkdir_p!(path)
+
+    assert_raise File.RenameError, fn -> export([inspect(module), "--out", path]) end
+    assert Path.wildcard("#{path}.tmp.*") == []
+  end
+
   test "prints indented JSON by default" do
     module = weather()
     json = export([inspect(module)])
