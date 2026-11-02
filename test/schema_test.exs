@@ -177,15 +177,18 @@ defmodule ToolCall.SchemaTest do
     end
   end
 
-  test "a runtime tool may omit params" do
+  test "a runtime tool may omit or nil its params" do
     tool = %Tool{name: "go", description: "Go."}
 
-    assert ToolCall.emit(tool, :openai)["function"]["parameters"] == %{
-             "type" => "object",
-             "properties" => %{},
-             "required" => [],
-             "additionalProperties" => false
-           }
+    expected = %{
+      "type" => "object",
+      "properties" => %{},
+      "required" => [],
+      "additionalProperties" => false
+    }
+
+    assert ToolCall.emit(tool, :openai)["function"]["parameters"] == expected
+    assert ToolCall.emit(%{tool | params: nil}, :openai)["function"]["parameters"] == expected
   end
 
   test "treats a nil strict option as false" do

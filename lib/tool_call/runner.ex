@@ -46,7 +46,7 @@ defmodule ToolCall.Runner do
   defp fetch(tools, name) do
     case Enum.find(tools, &(&1.name == name)) do
       nil -> {:error, {:unknown_tool, name, Enum.map(tools, & &1.name)}}
-      tool -> {:ok, tool}
+      tool -> {:ok, %{tool | params: tool.params || []}}
     end
   end
 

@@ -128,6 +128,18 @@ defmodule ToolCall.RunnerTest do
     assert {:error, _reason} = ToolCall.run(module, :split, %{"x" => 0})
   end
 
+  test "treats nil params on a runtime tool as an empty list" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        def ping, do: :pong
+      end
+      """)
+
+    tool = %ToolCall.IR.Tool{name: "ping", params: nil, module: module, fun: :ping}
+    assert {:ok, :pong} = ToolCall.Runner.run(module, [tool], "ping", %{})
+  end
+
   test "rejects non-string keys instead of reporting a known name as unknown" do
     module = pair_tool()
 

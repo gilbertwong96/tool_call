@@ -11,7 +11,8 @@ defmodule ToolCall.Emit.Schema do
   @doc "Renders the `parameters`/`input_schema` object for a tool."
   @spec params(Tool.t(), keyword()) :: map()
   def params(%Tool{} = tool, opts \\ []) do
-    params = if strict?(opts), do: Enum.map(tool.params, &force_required/1), else: tool.params
+    params = tool.params || []
+    params = if strict?(opts), do: Enum.map(params, &force_required/1), else: params
 
     %{
       "type" => "object",
