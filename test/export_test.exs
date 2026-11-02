@@ -216,6 +216,79 @@ defmodule ToolCall.ExportTest do
     end
   end
 
+  @tag :tmp_dir
+  test "discovers tools in an application it loads", %{tmp_dir: dir} do
+    module = tool_module("demo")
+    app = :tool_call_demo
+    ebin = Path.join([dir, "ebin"])
+    File.mkdir_p!(ebin)
+
+    spec =
+      {:application, app,
+       [
+         description: ~c"demo",
+         vsn: ~c"0.1.0",
+         modules: [module],
+         registered: [],
+         applications: [:kernel, :stdlib]
+       ]}
+
+    File.write!(Path.join(ebin, "tool_call_demo.app"), :io_lib.format("~p.~n", [spec]))
+    Code.prepend_path(ebin)
+
+    try do
+      json = export(["--app", "tool_call_demo"])
+      assert [%{"function" => %{"name" => "demo"}}] = JSON.decode!(json)
+    after
+      Application.unload(app)
+      Code.delete_path(ebin)
+    end
+  end
+
+  test "requires an application when there is no project" do
+    project = Mix.Project.get()
+    Mix.Project.pop()
+
+    try do
+      assert_raise Mix.Error, ~r/no application to discover/, fn ->
+        Mix.Tasks.ToolCall.Export.run([])
+      end
+    after
+      Mix.Project.push(project)
+    end
+  end
+
+  @tag :tmp_dir
+  test "retries when the platform refuses to replace an existing target", %{tmp_dir: dir} do
+    tmp = Path.join(dir, "tmp")
+    path = Path.join(dir, "target")
+    File.write!(tmp, "new")
+    File.write!(path, "old")
+    parent = self()
+
+    rename = fn source, destination ->
+      case Process.get(:tc_rename_attempt) do
+        nil ->
+          Process.put(:tc_rename_attempt, 1)
+          send(parent, {:attempt, source, destination})
+
+          raise File.RenameError,
+            reason: :eexist,
+            source: source,
+            destination: destination,
+            action: "rename"
+
+        _attempt ->
+          File.rename!(source, destination)
+      end
+    end
+
+    assert :ok = Mix.Tasks.ToolCall.Export.replace(tmp, path, rename)
+    assert_received {:attempt, ^tmp, ^path}
+    assert File.read!(path) == "new"
+    refute File.exists?(tmp)
+  end
+
   test "rejects an app it cannot load" do
     assert_raise Mix.Error, ~r/cannot load :nope/, fn -> export(["--app", "nope"]) end
   end

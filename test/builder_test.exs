@@ -369,6 +369,14 @@ defmodule ToolCall.BuilderTest do
               ) :: :ok
         def go(s \\\\ ~s"hi", c \\\\ ~c"ab", w \\\\ ~w(a b), at \\\\ ~D[2024-01-01]), do: {s, c, w, at}
 
+        @doc "Upper sigils."
+        @spec upper(s :: String.t(), c :: charlist(), w :: list(String.t())) :: :ok
+        def upper(s \\\\ ~S"HI", c \\\\ ~C"CD", w \\\\ ~W(C D)), do: {s, c, w}
+
+        @doc "Interpolated sigil."
+        @spec interp(s :: String.t()) :: String.t()
+        def interp(s \\\\ ~s"a\#{1}"), do: s
+
         @doc "List charlist."
         @spec chars(xs :: charlist()) :: charlist()
         def chars(xs \\\\ [97, 98]), do: xs
@@ -379,6 +387,11 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "c")["default"] == "ab"
     assert param_schema(module, "go", "w")["default"] == ["a", "b"]
     refute Map.has_key?(param_schema(module, "go", "at"), "default")
+
+    assert param_schema(module, "upper", "s")["default"] == "HI"
+    assert param_schema(module, "upper", "c")["default"] == "CD"
+    assert param_schema(module, "upper", "w")["default"] == ["C", "D"]
+    refute Map.has_key?(param_schema(module, "interp", "s"), "default")
     assert param_schema(module, "chars", "xs")["default"] == "ab"
   end
 
@@ -389,8 +402,31 @@ defmodule ToolCall.BuilderTest do
         use ToolCall
 
         @doc "Atom defaults."
-        @spec go(a :: atom(), l :: list(atom()), m :: %{flag: atom()}, b :: boolean()) :: :ok
-        def go(a \\\\ true, l \\\\ [true, :ok], m \\\\ %{flag: false}, b \\\\ true), do: {a, l, m, b}
+        @spec go(
+                a :: atom(),
+                l :: list(atom()),
+                m :: %{flag: atom()},
+                b :: boolean(),
+                ln :: list(atom() | nil),
+                lu :: list(integer() | atom() | nil),
+                t :: {atom(), atom()},
+                ch :: charlist(),
+                bad :: charlist(),
+                num :: charlist()
+              ) :: :ok
+        def go(
+              a \\\\ true,
+              l \\\\ [true, :ok],
+              m \\\\ %{flag: false},
+              b \\\\ true,
+              ln \\\\ [nil, true],
+              lu \\\\ [nil, true],
+              t \\\\ [true, false],
+              ch \\\\ "ab",
+              bad \\\\ [:a],
+              num \\\\ 1
+            ),
+            do: {a, l, m, b, ln, lu, t, ch, bad, num}
       end
       """)
 
@@ -398,6 +434,12 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "l")["default"] == ["true", "ok"]
     assert param_schema(module, "go", "m")["default"] == %{flag: "false"}
     assert param_schema(module, "go", "b")["default"] == true
+    assert param_schema(module, "go", "ln")["default"] == [nil, "true"]
+    assert param_schema(module, "go", "lu")["default"] == [nil, "true"]
+    assert param_schema(module, "go", "t")["default"] == ["true", "false"]
+    assert param_schema(module, "go", "ch")["default"] == "ab"
+    refute Map.has_key?(param_schema(module, "go", "bad"), "default")
+    refute Map.has_key?(param_schema(module, "go", "num"), "default")
   end
 
   test "keeps negative literal defaults" do
@@ -498,6 +540,37 @@ defmodule ToolCall.BuilderTest do
            }
   end
 
+  test "exposes the pure spec and warning-location helpers" do
+    assert ToolCall.Builder.spec_signature({:not_a_spec, [], []}) == nil
+    assert ToolCall.Builder.spec_signature({:"::", [], [{:go, [], []}, :ok]}) == {:go, 0}
+
+    assert ToolCall.Builder.constraint_bindings([{:x, {:integer, [], []}}, :bad]) == %{
+             x: {:integer, [], []}
+           }
+
+    assert ToolCall.Builder.warn_location({nil, nil}) == []
+    assert ToolCall.Builder.warn_location({"file.ex", nil}) == [file: "file.ex"]
+    assert ToolCall.Builder.warn_location({"file.ex", 3}) == [file: "file.ex", line: 3]
+  end
+
+  test "expands __MODULE__ in a type" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type t :: integer()
+
+        @doc "Module type."
+        @spec go(x :: __MODULE__.t()) :: :ok
+        def go(_x), do: :ok
+      end
+      """)
+
+    # `__MODULE__.t()` is a remote reference, not a local alias, so it degrades.
+    assert param_schema(module, "go", "x") == %{}
+  end
+
   test "warns and skips a function without a @spec" do
     {module, warnings} =
       compile_with_warnings!("""
@@ -511,6 +584,64 @@ defmodule ToolCall.BuilderTest do
 
     assert warnings =~ "go/1 has no @spec; skipped"
     assert ToolCall.tools(module) == []
+  end
+
+  test "names an unnamed spec argument from a defaulted or pattern head" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Defaulted head."
+        @spec a(String.t()) :: String.t()
+        def a(x \\\\ "x"), do: x
+
+        @doc "Pattern head."
+        @spec b(String.t()) :: map()
+        def b(%{} = map), do: map
+      end
+      """)
+
+    assert param_schema(module, "a", "x") == %{"type" => "string", "default" => "x"}
+    assert param_schema(module, "b", "arg1") == %{"type" => "string"}
+    assert warnings =~ "has no name"
+  end
+
+  test "drops a default with a non-literal element or value" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "List."
+        @spec l(xs :: list(integer())) :: list(integer())
+        def l(xs \\\\ [1, DateTime.utc_now()]), do: xs
+
+        @doc "Map."
+        @spec m(m :: map()) :: map()
+        def m(m \\\\ %{a: DateTime.utc_now()}), do: m
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "l", "xs"), "default")
+    refute Map.has_key?(param_schema(module, "m", "m"), "default")
+  end
+
+  test "ignores private functions" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Public."
+        @spec go(x :: integer()) :: integer()
+        def go(x), do: helper(x)
+
+        defp helper(x), do: x
+      end
+      """)
+
+    assert ToolCall.tool_names(module) == ["go"]
   end
 
   test "points at a reduced-arity spec instead of claiming there is none" do

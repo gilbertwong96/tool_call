@@ -28,6 +28,10 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :integer, nullable: true} = ir({:|, [], [{:integer, [], []}, nil]})
   end
 
+  test "a union of only nulls stays nullable" do
+    assert %Type{kind: :union, variants: [], nullable: true} = ir({:|, [], [nil, nil]})
+  end
+
   test "a union of boolean literals stays an enum" do
     assert %Type{kind: :enum, values: [true, false]} = ir({:|, [], [true, false]})
   end
@@ -47,6 +51,19 @@ defmodule ToolCall.TypespecTest do
 
     assert integer.kind == :integer
     assert enum.values == [:a, :b]
+  end
+
+  test "a range with a non-literal bound degrades to any" do
+    assert %Type{kind: :any} = ir({:.., [], [1.0, 2]})
+  end
+
+  test "nonempty_list/0 has an unconstrained item type" do
+    assert %Type{kind: :array, items: %Type{kind: :any}, minimum: 1} =
+             ir({:nonempty_list, [], []})
+  end
+
+  test "a union of scalar kinds keeps the first" do
+    assert %Type{kind: :atom} = ir({:|, [], [{:atom, [], []}, {:module, [], []}]})
   end
 
   test "integer ranges become bounds" do

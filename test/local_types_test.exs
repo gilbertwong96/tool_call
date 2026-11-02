@@ -1,7 +1,31 @@
+defmodule ToolCall.LocalTypesProxy do
+  defmacro __before_compile__(env) do
+    {ast, false} = ToolCall.LocalTypes.expand({:t, [], []}, env.module)
+
+    quote do
+      def __expanded_type__, do: unquote(Macro.escape(ast))
+    end
+  end
+end
+
+defmodule ToolCall.LocalTypesFixture do
+  @type t :: integer()
+  @before_compile ToolCall.LocalTypesProxy
+end
+
 defmodule ToolCall.LocalTypesTest do
   use ExUnit.Case, async: true
 
   import ToolCall.TestModule
+
+  test "expand/2 accepts a module while it is still open" do
+    assert {:integer, _meta, []} = ToolCall.LocalTypesFixture.__expanded_type__()
+  end
+
+  test "var_name/1 leaves a non-variable parameter alone" do
+    assert ToolCall.LocalTypes.var_name({:t, [], nil}) == :t
+    assert ToolCall.LocalTypes.var_name(:literal) == :literal
+  end
 
   test "resolves a @type alias declared in the same module" do
     module =

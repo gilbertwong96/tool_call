@@ -54,6 +54,10 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, 2.5} = Coerce.coerce(float(), 2.5)
     end
 
+    test "rejects a non-number" do
+      assert {:error, {:expected_float, "x"}} = Coerce.coerce(float(), "x")
+    end
+
     test "rejects an integer too large to widen" do
       huge = Integer.pow(10, 400)
       assert {:error, {:expected_float, ^huge}} = Coerce.coerce(float(), huge)
@@ -64,6 +68,10 @@ defmodule ToolCall.CoerceTest do
     test "accepts both" do
       assert {:ok, 2} = Coerce.coerce(number(), 2)
       assert {:ok, 2.5} = Coerce.coerce(number(), 2.5)
+    end
+
+    test "rejects a non-number" do
+      assert {:error, {:expected_number, "x"}} = Coerce.coerce(number(), "x")
     end
   end
 
@@ -127,6 +135,15 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, %{n: 3}} = Coerce.coerce(type, %{"n" => 3.0})
     end
 
+    test "falls back to the field name when the key is nil" do
+      type = %Type{
+        kind: :object,
+        fields: [%Field{name: "n", key: nil, type: integer(), required: true}]
+      }
+
+      assert {:ok, %{"n" => 1}} = Coerce.coerce(type, %{"n" => 1})
+    end
+
     test "rejects unknown keys when additionalProperties is false" do
       type = %Type{kind: :object, fields: []}
       assert {:error, {:unknown_keys, ["x"]}} = Coerce.coerce(type, %{"x" => 1})
@@ -162,6 +179,11 @@ defmodule ToolCall.CoerceTest do
     test "turns a keyword object into a keyword list" do
       type = %Type{kind: :object, fields: [], additional: %Type{kind: :string}, source: :keyword}
       assert {:ok, [a: "x"]} = Coerce.coerce(type, %{"a" => "x"})
+    end
+
+    test "accepts atom keys, which the value domain uses" do
+      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      assert {:ok, [a: 1]} = Coerce.coerce(type, %{a: 1})
     end
 
     test "rejects keyword keys that are not existing atoms" do
@@ -209,6 +231,12 @@ defmodule ToolCall.CoerceTest do
 
       assert {:error, {:invalid_datetime, "nope"}} =
                Coerce.coerce(%Type{kind: :string, source: {DateTime, :t}}, "nope")
+
+      assert {:error, {:invalid_time, "25:00:00"}} =
+               Coerce.coerce(%Type{kind: :string, source: {Time, :t}}, "25:00:00")
+
+      assert {:error, {:invalid_naive_datetime, "nope"}} =
+               Coerce.coerce(%Type{kind: :string, source: {NaiveDateTime, :t}}, "nope")
     end
 
     test "charlists come back as charlists" do
@@ -258,6 +286,11 @@ defmodule ToolCall.CoerceTest do
   end
 
   describe "arrays" do
+    test "accepts an empty list" do
+      type = %Type{kind: :array, items: %Type{kind: :integer}}
+      assert {:ok, []} = Coerce.coerce(type, [])
+    end
+
     test "coerce every item" do
       type = %Type{kind: :array, items: %Type{kind: :integer}}
       assert {:ok, [1, 2]} = Coerce.coerce(type, [1.0, 2])

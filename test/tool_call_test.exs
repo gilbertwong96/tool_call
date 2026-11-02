@@ -55,6 +55,11 @@ defmodule ToolCallTest do
       assert Enum.any?(tool.params, &(&1.type.source != nil))
     end
 
+    test "renders a list of runtime tools on demand" do
+      tools = ToolCall.tools(Weather)
+      assert ToolCall.emit(tools, :openai) == ToolCall.emit(Weather, :openai)
+    end
+
     test "drops @doc false functions" do
       refute Enum.any?(ToolCall.tools(Weather), &(&1.name == "hidden"))
     end

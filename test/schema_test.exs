@@ -17,6 +17,12 @@ defmodule ToolCall.SchemaTest do
              }
     end
 
+    test "a nullable unconstrained type gets a null branch" do
+      assert Schema.type(%Type{kind: :any, nullable: true}) == %{
+               "anyOf" => [%{}, %{"type" => "null"}]
+             }
+    end
+
     test "renders unconstrained shapes as an empty schema" do
       assert Schema.type(%Type{kind: :any}) == %{}
       assert Schema.type(%Type{kind: :unsupported}) == %{}
@@ -174,6 +180,33 @@ defmodule ToolCall.SchemaTest do
                "pattern" => "^-?\\d+$",
                "default" => "42"
              }
+    end
+  end
+
+  test "a default tuple of the wrong size is kept as is" do
+    param = %Param{
+      name: "t",
+      type: %Type{kind: :tuple, items: [%Type{kind: :atom}, %Type{kind: :atom}]},
+      default: [true],
+      required: true
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["t"]["default"] == [true]
+  end
+
+  test "emitters default their options" do
+    tool = %Tool{name: "go", description: "Go.", params: []}
+
+    assert ToolCall.Emit.OpenAI.emit(tool)["type"] == "function"
+    assert ToolCall.Emit.Anthropic.emit(tool)["name"] == "go"
+  end
+
+  test "raises for an unsupported target on a runtime tool" do
+    tool = %Tool{name: "go", description: "Go.", params: []}
+
+    assert_raise ArgumentError, ~r/unsupported target/, fn ->
+      ToolCall.emit(tool, :gemini)
     end
   end
 

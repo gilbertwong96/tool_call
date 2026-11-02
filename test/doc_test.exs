@@ -120,6 +120,10 @@ defmodule ToolCall.DocTest do
     assert %{description: "One line."} = Doc.parse("One line.")
   end
 
+  test "an empty document has no description" do
+    assert %{description: nil, params: %{}} = Doc.parse("")
+  end
+
   test "handles missing and hidden docs" do
     assert %{description: nil, params: %{}} = Doc.parse(nil)
     assert %{description: nil, params: %{}} = Doc.parse(false)
