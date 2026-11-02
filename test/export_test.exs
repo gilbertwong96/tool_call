@@ -1,8 +1,6 @@
 defmodule ToolCall.ExportTest do
   use ExUnit.Case, async: false
 
-  @moduletag :export
-
   import ExUnit.CaptureIO
   import ToolCall.TestModule
 

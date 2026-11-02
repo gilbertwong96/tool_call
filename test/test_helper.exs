@@ -1,7 +1,4 @@
-# The export task formats with json:format/1, which arrived in OTP 27.1.
-export? = Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1)
-
-ExUnit.start(exclude: if(export?, do: [], else: [:export]))
+ExUnit.start()
 
 defmodule ToolCall.TestModule do
   @moduledoc false
