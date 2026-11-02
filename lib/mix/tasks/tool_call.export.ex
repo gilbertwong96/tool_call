@@ -34,9 +34,9 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `--app`, `-a` - application to discover tool modules in
     * `--strict` - emit the strict JSON Schema subset; ignored by `anthropic`
 
-  Formatting uses `json:format/1`, so the task needs Erlang/OTP 27.1 or later;
-  the rest of the library does not. The formatter belongs to OTP, so a file is
-  reproducible per OTP version and may reflow after an upgrade.
+  Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
+  27.1+. The formatter belongs to OTP, so a file is reproducible per OTP version
+  and may reflow after an upgrade.
   """
 
   @requirements ["compile"]
@@ -183,7 +183,7 @@ defmodule Mix.Tasks.ToolCall.Export do
   end
 
   # TODO: use JSON.format/1 once Elixir's JSON ships a pretty printer, which
-  # would drop the OTP 27.1 requirement.
+  # would remove the json:format/1 dependency.
   defp encode(term), do: encode(term, json_format?())
 
   @doc false

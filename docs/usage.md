@@ -160,9 +160,9 @@ module arguments every module in the app that exports `__tools__/0` is included.
 The output indents two spaces, sorts object keys and modules, and keeps
 declaration order inside a module, so a committed file stays stable across runs.
 
-Formatting uses `json:format/1`, so this task needs Erlang/OTP 27.1+; the rest of
-the library still runs on older OTP. The formatter is OTP's: the same OTP version
-reproduces the file, while an upgrade can reflow it without changing the JSON.
+Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
+27.1+. The formatter is OTP's: the same OTP version reproduces the file, while an
+upgrade can reflow it without changing the JSON.
 Tool names outside `^[a-zA-Z0-9_-]{1,64}$` are refused.
 
 The task uses Elixir's built-in `JSON`, so the library itself still never depends

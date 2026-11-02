@@ -35,9 +35,9 @@ Two artefacts come out of that single declaration:
 - Being a JSON Schema library. It emits a conservative subset; see below.
 - Being a JSON encoder. `emit/3` and `describe/2` return terms and your provider
   client encodes the request body. `mix tool_call.export` formats with OTP's
-  `json:format/1` (27.1+), which sorts keys and keeps a file stable on a given
-  OTP version; the formatter is OTP's, so an upgrade may reflow the bytes. The
-  plan is to move to Elixir's `JSON` once it can pretty-print.
+  `json:format/1` (27.1+, the project floor), which sorts keys and keeps a file
+  stable on a given OTP version; the formatter is OTP's, so an upgrade may reflow
+  the bytes. The plan is to move to Elixir's `JSON` once it can pretty-print.
 
 ## Constraints that shaped the design
 

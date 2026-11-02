@@ -197,7 +197,7 @@ end
 ```
 
 `0.1.0` is not on Hex yet; until then use a `path:` (or `git:`) dependency.
-Elixir `~> 1.18` (built-in `JSON`), no runtime dependencies.
+Elixir `~> 1.18` (built-in `JSON`) and Erlang/OTP 27.1+; no runtime dependencies.
 
 ## Export
 
@@ -219,10 +219,10 @@ module names to avoid it. The output is indented JSON with sorted keys, sorted b
 module and with declaration order preserved inside a module, so a committed file
 stays stable.
 
-Formatting uses `json:format/1`, so the task needs Erlang/OTP 27.1 or later. The
-rest of the library does not. The formatter is OTP's, so a committed file is
-reproducible with the same OTP version; an OTP upgrade can reflow it (the JSON
-stays equivalent). The task refuses tool names outside
+Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
+27.1. The formatter is OTP's, so a committed file is reproducible with the same
+OTP version; an OTP upgrade can reflow it (the JSON stays equivalent). The task
+refuses tool names outside
 `^[a-zA-Z0-9_-]{1,64}$` instead of writing a file the provider will reject.
 
 If your client owns the request format, `ToolCall.describe/2` returns the same
