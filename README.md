@@ -98,7 +98,7 @@ schema = ToolCall.emit(hd(ToolCall.tools(MyApp.Tools.Weather)), :anthropic)
 - **`@doc` first paragraph is the description.** Bullets inside a `## Parameters`
   heading become per-parameter descriptions: `* city - city name` (backticks
   around the name are optional). Indented continuation lines are appended;
-  nested bullets are not parameters.
+  nested bullets (and their continuations) are not parameters.
 - **`@doc false` opts a function out** of the tool list.
 - **`@type` declarations in the same module are resolved**, including `@typep`
   and `@opaque`, with parameters (`@type pair(a) :: {a, a}`). Recursive

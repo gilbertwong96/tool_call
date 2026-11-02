@@ -35,6 +35,7 @@ defmodule ToolCall.DocTest do
     ## Parameters
       * `a` - x
         * `b` - y
+          more about b
     """
 
     assert %{params: %{"a" => "x"}} = Doc.parse(doc)

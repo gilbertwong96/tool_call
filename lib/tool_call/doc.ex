@@ -45,27 +45,37 @@ defmodule ToolCall.Doc do
     |> Enum.drop_while(&(not Regex.match?(@param_heading, &1)))
     |> Enum.drop(1)
     |> Enum.take_while(&(not Regex.match?(@any_heading, &1)))
-    |> collect_params(nil, [])
+    |> collect_params()
     |> Map.new()
   end
 
   # Only bullets at the indentation of the first bullet are parameters; a
   # nested bullet is prose, not a second argument the function does not have.
-  defp collect_params([], _base, acc), do: Enum.reverse(acc)
+  # Its continuation must not be appended to the previous parameter either.
+  defp collect_params(lines) do
+    {acc, _base, _last} = Enum.reduce(lines, {[], nil, :none}, &collect_param/2)
+    Enum.reverse(acc)
+  end
 
-  defp collect_params([line | rest], base, acc) do
+  defp collect_param(line, {acc, base, last}) do
     case Regex.run(@bullet, line) do
       [_, name, description] ->
         case {base, indent(line)} do
-          {nil, indent} -> collect_params(rest, indent, [{name, String.trim(description)} | acc])
-          {base, base} -> collect_params(rest, base, [{name, String.trim(description)} | acc])
-          _other -> collect_params(rest, base, acc)
+          {nil, indent} -> {[{name, String.trim(description)} | acc], indent, :accepted}
+          {base, base} -> {[{name, String.trim(description)} | acc], base, :accepted}
+          _other -> {acc, base, :ignored}
         end
 
       _ ->
-        collect_params(rest, base, append_continuation(line, acc))
+        cond do
+          bullet_like?(line) -> {acc, base, :ignored}
+          last == :accepted -> {append_continuation(line, acc), base, last}
+          true -> {acc, base, last}
+        end
     end
   end
+
+  defp bullet_like?(line), do: String.match?(String.trim(line), ~r/^[*+-](\s|$)/)
 
   defp indent(line), do: byte_size(line) - byte_size(String.trim_leading(line))
 

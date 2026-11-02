@@ -30,7 +30,7 @@ Everything else is derived. What the library reads:
 | `@spec f(city :: String.t())` | parameter name `city` and its type. Without `city ::` the name falls back to the head variable (or `argN`) and a warning is printed; a bare type variable in a `when` constraint counts as unnamed |
 | `def f(city, days \\ 3)` | `days` is optional, `3` is emitted as `default` |
 | first `@doc` paragraph | tool `description` |
-| `* name - text` under `## Parameters` | per-parameter `description` (indented continuation lines are joined; nested bullets and other shapes are ignored) |
+| `* name - text` under `## Parameters` | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored) |
 | `@doc false` | the function is not a tool |
 | no `@spec` | the function is skipped with a warning |
 | `@type` in the same module | inlined; `Other.t()` from another module stays `{}` |
