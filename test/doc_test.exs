@@ -41,6 +41,20 @@ defmodule ToolCall.DocTest do
     assert %{params: %{"a" => "x"}} = Doc.parse(doc)
   end
 
+  test "a blank line ends the previous bullet's continuation" do
+    doc = """
+    Search.
+
+    ## Parameters
+      * `a` - x
+
+        later paragraph
+      * `b` - y
+    """
+
+    assert %{params: %{"a" => "x", "b" => "y"}} = Doc.parse(doc)
+  end
+
   test "ignores non-indented prose between bullets" do
     doc = """
     Search.

@@ -57,21 +57,32 @@ defmodule ToolCall.Doc do
     Enum.reverse(acc)
   end
 
-  defp collect_param(line, {acc, base, last}) do
+  defp collect_param(line, state) do
     case Regex.run(@bullet, line) do
-      [_, name, description] ->
-        case {base, indent(line)} do
-          {nil, indent} -> {[{name, String.trim(description)} | acc], indent, :accepted}
-          {base, base} -> {[{name, String.trim(description)} | acc], base, :accepted}
-          _other -> {acc, base, :ignored}
-        end
+      [_, name, description] -> collect_bullet(line, name, description, state)
+      _ -> collect_text(line, state)
+    end
+  end
 
-      _ ->
-        cond do
-          bullet_like?(line) -> {acc, base, :ignored}
-          last == :accepted -> {append_continuation(line, acc), base, last}
-          true -> {acc, base, last}
-        end
+  defp collect_bullet(line, name, description, {acc, base, _last}) do
+    indent = indent(line)
+    entry = {name, String.trim(description)}
+
+    cond do
+      base == nil -> {[entry | acc], indent, :accepted}
+      indent == base -> {[entry | acc], base, :accepted}
+      true -> {acc, base, :ignored}
+    end
+  end
+
+  defp collect_text(line, {acc, base, last}) do
+    text = continuation(line)
+
+    cond do
+      bullet_like?(line) -> {acc, base, :ignored}
+      last == :accepted and text != nil -> {append_continuation(acc, text), base, last}
+      last == :accepted -> {acc, base, :none}
+      true -> {acc, base, last}
     end
   end
 
@@ -79,11 +90,8 @@ defmodule ToolCall.Doc do
 
   defp indent(line), do: byte_size(line) - byte_size(String.trim_leading(line))
 
-  defp append_continuation(line, [{name, description} | rest]) do
-    case continuation(line) do
-      nil -> [{name, description} | rest]
-      text -> [{name, description <> " " <> text} | rest]
-    end
+  defp append_continuation([{name, description} | rest], text) do
+    [{name, description <> " " <> text} | rest]
   end
 
   defp continuation(line) do
