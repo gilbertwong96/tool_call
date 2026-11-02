@@ -86,8 +86,6 @@ defmodule ToolCall.Doc do
     end
   end
 
-  defp append_continuation(_line, []), do: []
-
   defp continuation(line) do
     text = String.trim(line)
 
