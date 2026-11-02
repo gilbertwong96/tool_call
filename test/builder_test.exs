@@ -409,6 +409,7 @@ defmodule ToolCall.BuilderTest do
                 b :: boolean(),
                 ln :: list(atom() | nil),
                 lu :: list(integer() | atom() | nil),
+                m2 :: %{flag: atom()},
                 t :: {atom(), atom()},
                 ch :: charlist(),
                 bad :: charlist(),
@@ -421,12 +422,13 @@ defmodule ToolCall.BuilderTest do
               b \\\\ true,
               ln \\\\ [nil, true],
               lu \\\\ [nil, true],
+              m2 \\\\ %{"flag" => false},
               t \\\\ [true, false],
               ch \\\\ "ab",
               bad \\\\ [:a],
               num \\\\ 1
             ),
-            do: {a, l, m, b, ln, lu, t, ch, bad, num}
+            do: {a, l, m, b, ln, lu, m2, t, ch, bad, num}
       end
       """)
 
@@ -436,6 +438,7 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "b")["default"] == true
     assert param_schema(module, "go", "ln")["default"] == [nil, "true"]
     assert param_schema(module, "go", "lu")["default"] == [nil, "true"]
+    assert param_schema(module, "go", "m2")["default"] == %{"flag" => "false"}
     assert param_schema(module, "go", "t")["default"] == ["true", "false"]
     assert param_schema(module, "go", "ch")["default"] == "ab"
     refute Map.has_key?(param_schema(module, "go", "bad"), "default")

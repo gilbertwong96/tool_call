@@ -41,6 +41,19 @@ defmodule ToolCall.DocTest do
     assert %{params: %{"a" => "x"}} = Doc.parse(doc)
   end
 
+  test "ignores non-indented prose between bullets" do
+    doc = """
+    Search.
+
+    ## Parameters
+      * `a` - x
+    not a continuation
+      * `b` - y
+    """
+
+    assert %{params: %{"a" => "x", "b" => "y"}} = Doc.parse(doc)
+  end
+
   test "joins indented continuation lines into the bullet" do
     doc = """
     Search.

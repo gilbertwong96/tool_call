@@ -55,6 +55,10 @@ defmodule ToolCallTest do
       assert Enum.any?(tool.params, &(&1.type.source != nil))
     end
 
+    test "treats strict: nil as non-strict" do
+      assert ToolCall.emit(Weather, :openai, strict: nil) == ToolCall.emit(Weather, :openai)
+    end
+
     test "renders a list of runtime tools on demand" do
       tools = ToolCall.tools(Weather)
       assert ToolCall.emit(tools, :openai) == ToolCall.emit(Weather, :openai)

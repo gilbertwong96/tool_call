@@ -258,6 +258,20 @@ defmodule ToolCall.ExportTest do
     end
   end
 
+  test "re-raises a rename error that is not eexist" do
+    rename = fn source, destination ->
+      raise File.RenameError,
+        reason: :eacces,
+        source: source,
+        destination: destination,
+        action: "rename"
+    end
+
+    assert_raise File.RenameError, fn ->
+      Mix.Tasks.ToolCall.Export.replace("tmp", "target", rename)
+    end
+  end
+
   @tag :tmp_dir
   test "retries when the platform refuses to replace an existing target", %{tmp_dir: dir} do
     tmp = Path.join(dir, "tmp")
