@@ -11,9 +11,7 @@ defmodule ToolCall.Typespec do
 
   @unrepresentable [:fun, :pid, :port, :reference, :mfa, :no_return, :none]
 
-  # Decimal has no JSON type; a decimal string keeps the precision a JSON number
-  # would lose. The same pattern is enforced by the dispatcher.
-  @decimal_pattern ~S"^-?\d+(\.\d+)?([eE][+-]?\d+)?$"
+  alias ToolCall.Patterns
 
   @doc """
   Maps a quoted type to an `ToolCall.IR.Type`.
@@ -102,7 +100,7 @@ defmodule ToolCall.Typespec do
   defp local(:bitstring, []), do: %Type{kind: :string, source: :bitstring}
   defp local(:string, []), do: %Type{kind: :string, source: :string}
   defp local(:charlist, []), do: %Type{kind: :string, source: :charlist}
-  defp local(:char, []), do: %Type{kind: :string, pattern: "^.$", source: :char}
+  defp local(:char, []), do: %Type{kind: :string, pattern: Patterns.char(), source: :char}
 
   defp local(:list, []), do: %Type{kind: :array, items: %Type{kind: :any}}
   defp local(:list, [type]), do: %Type{kind: :array, items: to_type(type)}
@@ -149,7 +147,7 @@ defmodule ToolCall.Typespec do
   end
 
   defp remote(Decimal, _fun, _args) do
-    %Type{kind: :string, source: {Decimal, :t}, pattern: @decimal_pattern}
+    %Type{kind: :string, source: {Decimal, :t}, pattern: Patterns.decimal()}
   end
 
   defp remote(module, function, args) do

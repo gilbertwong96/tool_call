@@ -14,6 +14,7 @@ defmodule ToolCall.Coerce do
   """
 
   alias ToolCall.IR.{Field, Param, Type}
+  alias ToolCall.Patterns
 
   # DBL_MAX; an integer above it cannot be widened without raising ArithmeticError.
   @max_float 1.797_693_134_862_315_7e308
@@ -351,21 +352,9 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  # `char()` and `Decimal.t()` carry a constant pattern; compile it once per
-  # node instead of on every dispatch.
-  defp pattern_regex(pattern) do
-    key = {__MODULE__, :pattern, pattern}
-
-    case :persistent_term.get(key, nil) do
-      nil ->
-        regex = Regex.compile!(pattern)
-        :persistent_term.put(key, regex)
-        regex
-
-      regex ->
-        regex
-    end
-  end
+  # `char()` and `Decimal.t()` are precompiled in `Patterns`; a hand-built
+  # pattern is compiled on demand instead of being cached globally.
+  defp pattern_regex(pattern), do: Patterns.regex(pattern) || Regex.compile!(pattern)
 
   defp coerce_fields_for_extra(additional, extra) do
     Enum.reduce_while(extra, {:ok, %{}}, fn {key, raw}, {:ok, acc} ->

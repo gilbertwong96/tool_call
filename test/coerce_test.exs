@@ -243,6 +243,13 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, ~c"abc"} = Coerce.coerce(%Type{kind: :string, source: :charlist}, "abc")
     end
 
+    test "compiles a custom pattern without caching it" do
+      type = %Type{kind: :string, pattern: "^x$"}
+
+      assert {:ok, "x"} = Coerce.coerce(type, "x")
+      assert {:error, {:pattern_mismatch, "^x$", "y"}} = Coerce.coerce(type, "y")
+    end
+
     test "enforces the rendered pattern" do
       assert {:ok, "a"} = Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "a")
 
