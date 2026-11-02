@@ -118,6 +118,8 @@ defmodule ToolCall.LocalTypes do
     end)
   end
 
-  defp var_name({name, _, context}) when is_atom(name) and is_atom(context), do: name
-  defp var_name(other), do: other
+  @doc false
+  @spec var_name(term()) :: term()
+  def var_name({name, _, context}) when is_atom(name) and is_atom(context), do: name
+  def var_name(other), do: other
 end

@@ -149,7 +149,9 @@ defmodule ToolCall.Builder do
 
   defp match_spec?(spec, name, arity), do: spec_signature(spec) == {name, arity}
 
-  defp spec_signature(spec) do
+  @doc false
+  @spec spec_signature(term()) :: {atom(), non_neg_integer()} | nil
+  def spec_signature(spec) do
     case unwrap_spec(spec) do
       {{:"::", _, [{fun, _, args}, _return]}, _constraints} when is_atom(fun) and is_list(args) ->
         {fun, length(args)}
@@ -547,7 +549,9 @@ defmodule ToolCall.Builder do
 
   # `@spec id(x) :: x when x: integer()` constrains a type variable, but a tool
   # schema has no variables: bind them to the type the spec gives.
-  defp constraint_bindings(constraints) do
+  @doc false
+  @spec constraint_bindings(list()) :: map()
+  def constraint_bindings(constraints) do
     bindings =
       Enum.reduce(constraints, %{}, fn
         {name, type_ast}, acc when is_atom(name) ->
@@ -596,14 +600,13 @@ defmodule ToolCall.Builder do
   defp expand_alias({:__MODULE__, _, _} = node, env), do: Macro.expand(node, env)
   defp expand_alias(node, _env), do: node
 
-  defp warn(module, {file, line}, message) do
-    location =
-      case {file, line} do
-        {nil, nil} -> []
-        {file, nil} -> [file: file]
-        {file, line} -> [file: file, line: line]
-      end
-
-    IO.warn("#{inspect(module)}: #{message}", location)
+  defp warn(module, location, message) do
+    IO.warn("#{inspect(module)}: #{message}", warn_location(location))
   end
+
+  @doc false
+  @spec warn_location({String.t() | nil, pos_integer() | nil}) :: keyword()
+  def warn_location({nil, nil}), do: []
+  def warn_location({file, nil}), do: [file: file]
+  def warn_location({file, line}), do: [file: file, line: line]
 end

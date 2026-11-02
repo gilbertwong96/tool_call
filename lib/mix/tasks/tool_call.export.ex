@@ -184,8 +184,12 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   # TODO: use JSON.format/1 once Elixir's JSON ships a pretty printer, which
   # would drop the OTP 27.1 requirement.
-  defp encode(term) do
-    unless Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1) do
+  defp encode(term), do: encode(term, json_format?())
+
+  @doc false
+  @spec encode(term(), boolean()) :: binary()
+  def encode(term, available?) do
+    unless available? do
       Mix.raise("mix tool_call.export requires Erlang/OTP 27.1+ (json:format/1)")
     end
 
@@ -193,6 +197,12 @@ defmodule Mix.Tasks.ToolCall.Export do
     |> otp_json()
     |> :json.format()
     |> IO.iodata_to_binary()
+  end
+
+  @doc false
+  @spec json_format?() :: boolean()
+  def json_format? do
+    Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1)
   end
 
   # OTP's json turns every atom into a string, including the Elixir atom nil;
@@ -222,13 +232,17 @@ defmodule Mix.Tasks.ToolCall.Export do
     Mix.shell().info("Wrote #{Path.relative_to_cwd(path)}")
   end
 
-  defp replace(tmp, path) do
-    File.rename!(tmp, path)
+  defp replace(tmp, path), do: replace(tmp, path, &File.rename!/2)
+
+  @doc false
+  @spec replace(Path.t(), Path.t(), (Path.t(), Path.t() -> :ok)) :: :ok
+  def replace(tmp, path, rename) do
+    rename.(tmp, path)
   rescue
     exception in File.RenameError ->
       if exception.reason == :eexist do
         File.rm!(path)
-        File.rename!(tmp, path)
+        rename.(tmp, path)
       else
         reraise exception, __STACKTRACE__
       end
