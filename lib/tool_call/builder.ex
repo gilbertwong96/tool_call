@@ -335,7 +335,7 @@ defmodule ToolCall.Builder do
         %{
           param
           | wire: Map.get(override, :wire, param.wire),
-            description: Map.get(override, :description, param.description)
+            description: Map.get(override, :description) || param.description
         }
     end
   end

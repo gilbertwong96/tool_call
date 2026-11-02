@@ -1,3 +1,17 @@
+defmodule ToolCall.BuilderNilDescription do
+  use ToolCall
+
+  @doc """
+  Go.
+
+  ## Parameters
+    * `x` - documented
+  """
+  @tool_param %{fun: :go, name: "x", description: nil}
+  @spec go(x :: integer()) :: integer()
+  def go(x), do: x
+end
+
 defmodule ToolCall.BuilderTest do
   use ExUnit.Case, async: true
 
@@ -580,6 +594,11 @@ defmodule ToolCall.BuilderTest do
              "type" => "string",
              "enum" => [Atom.to_string(module)]
            }
+  end
+
+  test "a nil @tool_param description keeps the doc description" do
+    assert param_schema(ToolCall.BuilderNilDescription, "go", "x")["description"] ==
+             "documented"
   end
 
   test "warns and skips a function without a @spec" do

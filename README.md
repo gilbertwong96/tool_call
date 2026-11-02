@@ -115,6 +115,8 @@ schema = ToolCall.emit(hd(ToolCall.tools(MyApp.Tools.Weather)), :anthropic)
   is ignored with a compile-time warning. A misspelled function or argument name
   warns too. Unknown keys and a non-string `:description` are ignored with a
   warning; duplicate entries for the same argument warn because only one is used.
+  A `:description` of `nil` leaves the doc description in place; an empty string
+  clears it.
 
 ## Errors
 
