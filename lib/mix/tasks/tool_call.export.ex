@@ -184,25 +184,11 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   # TODO: use JSON.format/1 once Elixir's JSON ships a pretty printer, which
   # would remove the json:format/1 dependency.
-  defp encode(term), do: encode(term, json_format?())
-
-  @doc false
-  @spec encode(term(), boolean()) :: binary()
-  def encode(term, available?) do
-    unless available? do
-      Mix.raise("mix tool_call.export requires Erlang/OTP 27.1+ (json:format/1)")
-    end
-
+  defp encode(term) do
     term
     |> otp_json()
     |> :json.format()
     |> IO.iodata_to_binary()
-  end
-
-  @doc false
-  @spec json_format?() :: boolean()
-  def json_format? do
-    Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1)
   end
 
   # OTP's json turns every atom into a string, including the Elixir atom nil;

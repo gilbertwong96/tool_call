@@ -33,6 +33,10 @@ defmodule ToolCall do
   compile-time warning.
   """
 
+  if not (Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1)) do
+    raise "ToolCall requires Erlang/OTP 27.1+ (json:format/1 is unavailable)"
+  end
+
   alias ToolCall.IR.Tool
 
   @doc false
