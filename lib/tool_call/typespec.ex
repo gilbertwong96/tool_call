@@ -8,150 +8,183 @@ defmodule ToolCall.Typespec do
   """
 
   alias ToolCall.IR.{Field, Type}
+  alias ToolCall.Patterns
+  alias ToolCall.Providers.Stdlib
 
   @unrepresentable [:fun, :pid, :port, :reference, :mfa, :no_return, :none]
 
-  alias ToolCall.Patterns
+  @builtin_providers [Stdlib]
+
+  @doc false
+  @spec builtin_providers() :: [module()]
+  def builtin_providers, do: @builtin_providers
 
   @doc """
-  Maps a quoted type to an `ToolCall.IR.Type`.
+  Maps a quoted type to a `ToolCall.IR.Type`.
 
   Aliases must already be expanded (`Macro.expand/2`), otherwise remote types
   such as `String.t()` arrive as `{:__aliases__, ...}` and degrade to `:any`.
+
+  Built-in providers resolve `String`, `Keyword`, `Path` and the calendar types
+  and are used by default. `use ToolCall, types: [...]` appends providers after
+  them.
   """
-  @spec to_type(term()) :: Type.t()
-  def to_type(ast)
+  @spec to_type(term(), [module()]) :: Type.t()
+  def to_type(ast, providers \\ @builtin_providers)
 
   # --- literals -------------------------------------------------------------
 
-  def to_type(nil), do: %Type{kind: :null, source: nil}
-  def to_type(true), do: %Type{kind: :enum, values: [true], source: true}
-  def to_type(false), do: %Type{kind: :enum, values: [false], source: false}
+  def to_type(nil, _providers), do: %Type{kind: :null, source: nil}
+  def to_type(true, _providers), do: %Type{kind: :enum, values: [true], source: true}
+  def to_type(false, _providers), do: %Type{kind: :enum, values: [false], source: false}
 
-  def to_type(atom) when is_atom(atom) and atom not in [nil, true, false] do
+  def to_type(atom, _providers) when is_atom(atom) and atom not in [nil, true, false] do
     %Type{kind: :enum, values: [atom], source: atom}
   end
 
-  def to_type(int) when is_integer(int) do
+  def to_type(int, _providers) when is_integer(int) do
     %Type{kind: :integer, minimum: int, maximum: int, source: int}
   end
 
-  def to_type(float) when is_float(float) do
+  def to_type(float, _providers) when is_float(float) do
     %Type{kind: :float, source: float}
   end
 
-  def to_type({:-, _, [number]}) when is_number(number), do: to_type(-number)
+  def to_type({:-, _, [number]}, providers) when is_number(number),
+    do: to_type(-number, providers)
 
   # --- compound forms -------------------------------------------------------
 
-  def to_type({:|, _, [left, right]}) do
+  def to_type({:|, _, [left, right]}, providers) do
     [left, right]
-    |> Enum.flat_map(&flatten_union/1)
+    |> Enum.flat_map(&flatten_union(&1, providers))
     |> build_union()
   end
 
-  def to_type({:.., _, [low, high]}) do
+  def to_type({:.., _, [low, high]}, providers) do
     case {int_literal(low), int_literal(high)} do
       {{:ok, low}, {:ok, high}} -> %Type{kind: :integer, minimum: low, maximum: high}
-      _ -> local(:.., [low, high])
+      _ -> local(:.., [low, high], providers)
     end
   end
 
-  def to_type({:%{}, _, pairs}), do: build_object(pairs)
+  def to_type({:%{}, _, pairs}, providers), do: build_object(pairs, providers)
 
-  def to_type({:{}, _, elements}) do
-    %Type{kind: :tuple, items: Enum.map(elements, &to_type/1)}
+  def to_type({:{}, _, elements}, providers) do
+    %Type{kind: :tuple, items: Enum.map(elements, &to_type(&1, providers))}
   end
 
-  def to_type({left, right}), do: %Type{kind: :tuple, items: [to_type(left), to_type(right)]}
+  def to_type({left, right}, providers) do
+    %Type{kind: :tuple, items: [to_type(left, providers), to_type(right, providers)]}
+  end
 
   # `[t]` is a one-element list in the AST; `[]` is an empty list literal.
-  def to_type([{:->, _, _}]), do: %Type{kind: :unsupported, source: :fun}
-  def to_type([type]), do: %Type{kind: :array, items: to_type(type)}
-  def to_type([]), do: %Type{kind: :array, items: %Type{kind: :any}}
+  def to_type([{:->, _, _}], _providers), do: %Type{kind: :unsupported, source: :fun}
+  def to_type([type], providers), do: %Type{kind: :array, items: to_type(type, providers)}
+  def to_type([], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
 
   # Remote types, e.g. String.t() or Date.t()
-  def to_type({{:., _, [module, function]}, _, args}) when is_atom(module) do
-    remote(module, function, args)
+  def to_type({{:., _, [module, function]}, _, args}, providers) when is_atom(module) do
+    remote(module, function, args, providers)
   end
 
   # Local type calls, e.g. integer() or keyword(String.t())
-  def to_type({name, _, args}) when is_atom(name) and is_list(args) do
-    local(name, args)
+  def to_type({name, _, args}, providers) when is_atom(name) and is_list(args) do
+    local(name, args, providers)
   end
 
-  def to_type(other), do: %Type{kind: :any, source: other}
+  def to_type(other, _providers), do: %Type{kind: :any, source: other}
 
   # --- local types ----------------------------------------------------------
 
-  defp local(:integer, []), do: %Type{kind: :integer}
-  defp local(:non_neg_integer, []), do: %Type{kind: :integer, minimum: 0}
-  defp local(:pos_integer, []), do: %Type{kind: :integer, minimum: 1}
-  defp local(:neg_integer, []), do: %Type{kind: :integer, maximum: -1}
-  defp local(:byte, []), do: %Type{kind: :integer, minimum: 0, maximum: 255}
-  defp local(:float, []), do: %Type{kind: :float}
-  defp local(:number, []), do: %Type{kind: :number}
+  defp local(:integer, [], _providers), do: %Type{kind: :integer}
+  defp local(:non_neg_integer, [], _providers), do: %Type{kind: :integer, minimum: 0}
+  defp local(:pos_integer, [], _providers), do: %Type{kind: :integer, minimum: 1}
+  defp local(:neg_integer, [], _providers), do: %Type{kind: :integer, maximum: -1}
+  defp local(:byte, [], _providers), do: %Type{kind: :integer, minimum: 0, maximum: 255}
+  defp local(:float, [], _providers), do: %Type{kind: :float}
+  defp local(:number, [], _providers), do: %Type{kind: :number}
 
-  defp local(:atom, []), do: %Type{kind: :atom}
-  defp local(:module, []), do: %Type{kind: :atom}
-  defp local(:boolean, []), do: %Type{kind: :boolean}
+  defp local(:atom, [], _providers), do: %Type{kind: :atom}
+  defp local(:module, [], _providers), do: %Type{kind: :atom}
+  defp local(:boolean, [], _providers), do: %Type{kind: :boolean}
 
-  defp local(:binary, []), do: %Type{kind: :string, source: :binary}
-  defp local(:bitstring, []), do: %Type{kind: :string, source: :bitstring}
-  defp local(:string, []), do: %Type{kind: :string, source: :string}
-  defp local(:charlist, []), do: %Type{kind: :string, source: :charlist}
-  defp local(:char, []), do: %Type{kind: :string, pattern: Patterns.char(), source: :char}
+  defp local(:binary, [], _providers), do: %Type{kind: :string, source: :binary}
+  defp local(:bitstring, [], _providers), do: %Type{kind: :string, source: :bitstring}
+  defp local(:string, [], _providers), do: %Type{kind: :string, source: :string}
+  defp local(:charlist, [], _providers), do: %Type{kind: :string, source: :charlist}
 
-  defp local(:list, []), do: %Type{kind: :array, items: %Type{kind: :any}}
-  defp local(:list, [type]), do: %Type{kind: :array, items: to_type(type)}
+  defp local(:char, [], _providers),
+    do: %Type{kind: :string, pattern: Patterns.char(), source: :char}
 
-  defp local(:nonempty_list, []), do: %Type{kind: :array, items: %Type{kind: :any}, minimum: 1}
-  defp local(:nonempty_list, [type]), do: %Type{kind: :array, items: to_type(type), minimum: 1}
+  defp local(:list, [], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
+  defp local(:list, [type], providers), do: %Type{kind: :array, items: to_type(type, providers)}
 
-  defp local(:keyword, args) do
+  defp local(:nonempty_list, [], _providers) do
+    %Type{kind: :array, items: %Type{kind: :any}, minimum: 1}
+  end
+
+  defp local(:nonempty_list, [type], providers) do
+    %Type{kind: :array, items: to_type(type, providers), minimum: 1}
+  end
+
+  defp local(:keyword, args, providers) do
     case args do
-      [] ->
-        %Type{kind: :object, fields: [], additional: %Type{kind: :any}, source: :keyword}
-
-      [type] ->
-        %Type{kind: :object, fields: [], additional: to_type(type), source: :keyword}
-
-      other ->
-        %Type{kind: :any, source: {:keyword, other}}
+      [] -> Stdlib.keyword_type(%Type{kind: :any})
+      [type] -> ToolCall.Providers.Stdlib.keyword_type(to_type(type, providers))
+      other -> %Type{kind: :any, source: {:keyword, other}}
     end
   end
 
-  defp local(:map, []), do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
-  defp local(:tuple, []), do: %Type{kind: :array, items: %Type{kind: :any}}
+  defp local(:map, [], _providers),
+    do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
 
-  defp local(:as_boolean, [type]), do: to_type(type)
-  defp local(:as_boolean, []), do: %Type{kind: :boolean}
+  defp local(:tuple, [], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
 
-  defp local(name, []) when name in [:term, :any], do: %Type{kind: :any, source: name}
-  defp local(name, []) when name in @unrepresentable, do: %Type{kind: :unsupported, source: name}
+  defp local(:as_boolean, [type], providers), do: to_type(type, providers)
+  defp local(:as_boolean, [], _providers), do: %Type{kind: :boolean}
 
-  defp local(:struct, []), do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
+  defp local(name, [], _providers) when name in [:term, :any], do: %Type{kind: :any, source: name}
 
-  defp local(name, args) do
+  defp local(name, [], _providers) when name in @unrepresentable,
+    do: %Type{kind: :unsupported, source: name}
+
+  defp local(:struct, [], _providers),
+    do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
+
+  defp local(name, args, _providers) do
     %Type{kind: :any, source: {name, args}}
   end
 
   # --- remote types ---------------------------------------------------------
 
-  defp remote(String, _fun, _args), do: %Type{kind: :string, source: {String, :t}}
-  defp remote(Keyword, _fun, args), do: local(:keyword, args)
-  defp remote(Path, _fun, _args), do: %Type{kind: :string, source: {Path, :t}}
+  defp remote(module, function, args, providers) do
+    resolved_args = Enum.map(args, &to_type(&1, providers))
 
-  defp remote(module, _fun, _args) when module in [Date, Time, DateTime, NaiveDateTime] do
-    %Type{kind: :string, source: {module, :t}}
+    Enum.find_value(
+      providers,
+      %Type{kind: :any, source: {module, function, args}},
+      &resolve_provider(&1, module, function, resolved_args)
+    )
   end
 
-  defp remote(Decimal, _fun, _args) do
-    %Type{kind: :string, source: {Decimal, :t}, pattern: Patterns.decimal()}
-  end
+  defp resolve_provider(provider, module, function, args) do
+    case provider.resolve(module, function, args) do
+      {:ok, %Type{} = type} ->
+        if function_exported?(provider, :coerce, 1) do
+          %{type | transform: {provider, :coerce}}
+        else
+          type
+        end
 
-  defp remote(module, function, args) do
-    %Type{kind: :any, source: {module, function, args}}
+      :error ->
+        nil
+
+      other ->
+        raise ArgumentError,
+              "type provider #{inspect(provider)} returned #{inspect(other)} for " <>
+                "#{inspect(module)}.#{function}/#{length(args)}"
+    end
   end
 
   @doc """
@@ -212,26 +245,6 @@ defmodule ToolCall.Typespec do
   def tuple?(_type), do: false
 
   @doc """
-  True when the declared type is handed to the function as its wire value.
-
-  `Decimal.t()` is the only case: it travels as a decimal string, and building a
-  `%Decimal{}` would need the `decimal` package, which this library does not
-  depend on.
-  """
-  @spec wire_only?(Type.t() | nil) :: boolean()
-  def wire_only?(%Type{kind: :string, source: {Decimal, :t}}), do: true
-  def wire_only?(%Type{kind: :array, items: items}), do: wire_only?(items)
-  def wire_only?(%Type{kind: :tuple, items: items}), do: Enum.any?(items || [], &wire_only?/1)
-
-  def wire_only?(%Type{kind: :union, variants: variants}),
-    do: Enum.any?(variants || [], &wire_only?/1)
-
-  def wire_only?(%Type{kind: :object} = type),
-    do: Enum.any?(type.fields || [], &wire_only?(&1.type)) or wire_only?(type.additional)
-
-  def wire_only?(_type), do: false
-
-  @doc """
   True when the tree has no JSON type the model can constrain against.
 
   This is broader than `unrepresentable?/1`: `:any` and open objects do have a
@@ -258,8 +271,11 @@ defmodule ToolCall.Typespec do
   defp int_literal({:-, _, [int]}) when is_integer(int), do: {:ok, -int}
   defp int_literal(_other), do: :error
 
-  defp flatten_union({:|, _, [left, right]}), do: flatten_union(left) ++ flatten_union(right)
-  defp flatten_union(other), do: [to_type(other)]
+  defp flatten_union({:|, _, [left, right]}, providers) do
+    flatten_union(left, providers) ++ flatten_union(right, providers)
+  end
+
+  defp flatten_union(other, providers), do: [to_type(other, providers)]
 
   defp build_union(variants) do
     {nulls, rest} = Enum.split_with(variants, &(&1.kind == :null))
@@ -361,26 +377,31 @@ defmodule ToolCall.Typespec do
   defp singleton_value(%Type{kind: :enum, values: [value]}), do: value
   defp singleton_value(%Type{kind: :integer, minimum: value}), do: value
 
-  defp build_object(pairs) do
+  defp build_object(pairs, providers) do
     {fields, additional} =
       Enum.reduce(pairs, {[], nil}, fn
         {{:required, _, [key]}, type}, {fields, additional} when is_atom(key) ->
-          {[field(key, type, true) | fields], additional}
+          {[field(key, type, true, providers) | fields], additional}
 
         {{:optional, _, [key]}, type}, {fields, additional} when is_atom(key) ->
-          {[field(key, type, false) | fields], additional}
+          {[field(key, type, false, providers) | fields], additional}
 
         {key, type}, {fields, additional} when is_atom(key) ->
-          {[field(key, type, true) | fields], additional}
+          {[field(key, type, true, providers) | fields], additional}
 
         {_key_type, type}, {fields, _additional} ->
-          {fields, to_type(type)}
+          {fields, to_type(type, providers)}
       end)
 
     %Type{kind: :object, fields: Enum.reverse(fields), additional: additional}
   end
 
-  defp field(key, type, required?) do
-    %Field{name: Atom.to_string(key), key: key, type: to_type(type), required: required?}
+  defp field(key, type, required?, providers) do
+    %Field{
+      name: Atom.to_string(key),
+      key: key,
+      type: to_type(type, providers),
+      required: required?
+    }
   end
 end

@@ -12,6 +12,10 @@ defmodule ToolCall.CoerceTest do
     })
   end
 
+  defp keyword(additional), do: ToolCall.Providers.Stdlib.keyword_type(additional)
+
+  defp calendar(module), do: ToolCall.Typespec.to_type({{:., [], [module, :t]}, [], []})
+
   defp float, do: %Type{kind: :float}
   defp number, do: %Type{kind: :number}
 
@@ -181,29 +185,29 @@ defmodule ToolCall.CoerceTest do
     end
 
     test "turns a keyword object into a keyword list" do
-      type = %Type{kind: :object, fields: [], additional: %Type{kind: :string}, source: :keyword}
+      type = keyword(%Type{kind: :string})
       assert {:ok, [a: "x"]} = Coerce.coerce(type, %{"a" => "x"})
     end
 
     test "accepts atom keys, which the value domain uses" do
-      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      type = keyword(integer())
       assert {:ok, [a: 1]} = Coerce.coerce(type, %{a: 1})
     end
 
     test "rejects keyword keys that are not existing atoms" do
-      type = %Type{kind: :object, fields: [], additional: %Type{kind: :string}, source: :keyword}
+      type = keyword(%Type{kind: :string})
 
       assert {:error, {:unknown_atom, "definitely_not_an_existing_atom"}} =
                Coerce.coerce(type, %{"definitely_not_an_existing_atom" => "x"})
     end
 
     test "reports which keyword value failed" do
-      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      type = keyword(integer())
       assert {:error, {"a", {:expected_integer, "x"}}} = Coerce.coerce(type, %{"a" => "x"})
     end
 
     test "rejects a key JSON could not produce" do
-      type = %Type{kind: :object, fields: [], additional: integer(), source: :keyword}
+      type = keyword(integer())
       assert {:error, {:invalid_key, 1}} = Coerce.coerce(type, %{1 => 1})
     end
   end
@@ -216,31 +220,31 @@ defmodule ToolCall.CoerceTest do
 
     test "parses calendar types from ISO 8601" do
       assert {:ok, ~D[2024-01-31]} =
-               Coerce.coerce(%Type{kind: :string, source: {Date, :t}}, "2024-01-31")
+               Coerce.coerce(calendar(Date), "2024-01-31")
 
       assert {:error, {:invalid_date, "31/01/2024"}} =
-               Coerce.coerce(%Type{kind: :string, source: {Date, :t}}, "31/01/2024")
+               Coerce.coerce(calendar(Date), "31/01/2024")
 
       assert {:ok, ~T[10:30:00]} =
-               Coerce.coerce(%Type{kind: :string, source: {Time, :t}}, "10:30:00")
+               Coerce.coerce(calendar(Time), "10:30:00")
 
       assert {:ok, ~N[2024-01-31 10:30:00]} =
                Coerce.coerce(
-                 %Type{kind: :string, source: {NaiveDateTime, :t}},
+                 calendar(NaiveDateTime),
                  "2024-01-31T10:30:00"
                )
 
       assert {:ok, %DateTime{hour: 10}} =
-               Coerce.coerce(%Type{kind: :string, source: {DateTime, :t}}, "2024-01-31T10:30:00Z")
+               Coerce.coerce(calendar(DateTime), "2024-01-31T10:30:00Z")
 
       assert {:error, {:invalid_datetime, "nope"}} =
-               Coerce.coerce(%Type{kind: :string, source: {DateTime, :t}}, "nope")
+               Coerce.coerce(calendar(DateTime), "nope")
 
       assert {:error, {:invalid_time, "25:00:00"}} =
-               Coerce.coerce(%Type{kind: :string, source: {Time, :t}}, "25:00:00")
+               Coerce.coerce(calendar(Time), "25:00:00")
 
       assert {:error, {:invalid_naive_datetime, "nope"}} =
-               Coerce.coerce(%Type{kind: :string, source: {NaiveDateTime, :t}}, "nope")
+               Coerce.coerce(calendar(NaiveDateTime), "nope")
     end
 
     test "charlists come back as charlists" do

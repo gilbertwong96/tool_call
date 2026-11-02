@@ -127,28 +127,6 @@ defmodule ToolCall.BuilderTest do
     refute warnings =~ "has no JSON type"
   end
 
-  test "warns that Decimal travels as a string, and constrains it to one" do
-    {module, warnings} =
-      compile_with_warnings!("""
-      defmodule FIXTURE do
-        use ToolCall
-
-        @spec go(amount :: Decimal.t()) :: atom()
-        def go(_amount), do: :ok
-      end
-      """)
-
-    assert warnings =~ "Decimal"
-
-    assert param_schema(module, "go", "amount") == %{
-             "type" => "string",
-             "pattern" => ~S"^-?\d+(\.\d+)?([eE][+-]?\d+)?$"
-           }
-
-    assert {:ok, :ok} = ToolCall.run(module, :go, %{"amount" => "1.50"})
-    assert {:error, _reason} = ToolCall.run(module, :go, %{"amount" => "1,50"})
-  end
-
   test "warns that strict mode cannot express tuple positions" do
     {_module, warnings} =
       compile_with_warnings!("""
@@ -318,7 +296,7 @@ defmodule ToolCall.BuilderTest do
   end
 
   test "rejects use options it does not implement" do
-    assert_raise ArgumentError, ~r/accepts no options/, fn ->
+    assert_raise ArgumentError, ~r/accepts only :types/, fn ->
       compile!("""
       defmodule FIXTURE do
         use ToolCall, emit: [:openai]

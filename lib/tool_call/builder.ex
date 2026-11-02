@@ -14,8 +14,8 @@ defmodule ToolCall.Builder do
   @override_keys [:fun, :name, :wire, :description]
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
-  @spec build(module(), list(), list(), list(), Macro.Env.t()) :: [Tool.t()]
-  def build(module, defs, specs, overrides, env) do
+  @spec build(module(), list(), list(), list(), Macro.Env.t(), [module()]) :: [Tool.t()]
+  def build(module, defs, specs, overrides, env, providers) do
     overrides = normalize_overrides(module, overrides)
 
     context = %{
@@ -23,6 +23,7 @@ defmodule ToolCall.Builder do
       specs: specs,
       overrides: overrides,
       env: env,
+      providers: providers,
       definitions: LocalTypes.definitions(module)
     }
 
@@ -192,7 +193,7 @@ defmodule ToolCall.Builder do
         end
 
         default = Enum.at(defaults, index - 1)
-        type = Typespec.to_type(type_ast)
+        type = Typespec.to_type(type_ast, context.providers)
 
         if truncated? do
           warn(
@@ -300,15 +301,6 @@ defmodule ToolCall.Builder do
           "parameter \"#{param_name}\" of #{name}/#{arity} has no JSON " <>
             "type; emit(..., strict: true) cannot express it. Narrow the type to give the " <>
             "model a schema it can follow."
-        )
-
-      Typespec.wire_only?(type) ->
-        warn(
-          module,
-          location,
-          "parameter \"#{param_name}\" of #{name}/#{arity} is Decimal.t(); it " <>
-            "travels as a decimal string and is not converted. Declare String.t() for the raw " <>
-            "string, or convert with Decimal.new/1 in the function."
         )
 
       Typespec.tuple?(type) ->

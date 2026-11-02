@@ -145,16 +145,24 @@ build warns. Depth 18 now compiles in 28 ms.
 | `keyword(t)`, `Keyword.t()` | `:object` | `additionalProperties: <t>`; the function receives a keyword list |
 | `Date.t()`, `DateTime.t()`, `Time.t()` | `:string` | `+ "format": "date" / "time" / "date-time"`; parsed from ISO 8601 at dispatch |
 | `NaiveDateTime.t()` | `:string` | no `format`: RFC 3339 `date-time` needs an offset; parsed at dispatch |
-| `Decimal.t()` | `:string` | `+ "pattern": "^-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?$"`; handed over as a string |
 | `Path.t()` | `:string` | `{"type":"string"}`; already a binary |
 | `fun()`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning |
-| `term()`, `any()`, unknown remote types | `:any` | `{}` |
+| `term()`, `any()` | `:any` | `{}` |
+| unknown remote type without a provider | `:any` | `{}` |
+
+**Remote types are provider-driven.** `String`, `Keyword`, `Path` and the
+calendar types come from the built-in stdlib provider.
+`use ToolCall, types: [...]` appends providers for other remote types; a
+provider receives the argument types already resolved to IR and returns an IR
+node, or `:error` to fall back to `:any`. An optional `coerce/1` runs after the
+built-in wire coercion. A remote type without a matching provider degrades to
+`{}` and warns.
 
 Not handled: type variables (generics), recursive types (no `$ref`/`$defs`, so a
 recursive reference becomes `{}`), bitstrings with explicit sizes, struct
-expansion (remote types such as `URI.t()` stay `{}`; the compiler's inline map
-form is only reachable once remote expansion exists, and it carries
-`__struct__`).
+expansion (without a provider, remote types such as `URI.t()` stay `{}`; the
+compiler's inline map form is only reachable once remote expansion exists, and it
+carries `__struct__`).
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained
@@ -195,13 +203,8 @@ calls.
 the wire value: `%{a: integer()}` is handed over with atom keys, `keyword(t)` as a
 keyword list, `charlist()` as a charlist, `Date.t()` and friends as structs
 parsed from ISO 8601, and an integral float as an integer.
-Two things stay wire-shaped because JSON has no better form: keys the spec does
-not declare (open maps, `%{k() => v}`) keep their string form, and `Decimal.t()`
-arrives as a decimal string. JSON has no decimal type — only `string` and
-`number` — and a JSON number is binary floating point, so a decimal string is the
-only lossless form. Building a `%Decimal{}` would need the `decimal` package,
-which this library does not depend on; the wire is constrained by a decimal
-`pattern` and the build warns that the hand-off is a string. `keyword/1` keys are
+One thing stays wire-shaped because JSON has no better form: keys the spec does
+not declare (open maps, `%{k() => v}`) keep their string form. `keyword/1` keys are
 resolved with `String.to_existing_atom/1`, the same rule as `atom()`: a key that
 is not already in the atom table yields `{:unknown_atom, key}` instead of a new
 atom per request.
@@ -300,7 +303,7 @@ never lets it propagate.
 
 | Stage | Work |
 |---|---|
-| 0.1 (current) | compile-time derivation, local `@type` resolution, OpenAI (strict included) + Anthropic emitters, coercion, dispatcher |
-| 0.2 | `@typedoc` capture via `@after_compile`, `$ref`/`$defs` for recursive types, struct field extraction with `@enforce_keys`, `Decimal` conversion at dispatch |
+| 0.1 (current) | compile-time derivation, local `@type` resolution, custom type providers, OpenAI (strict included) + Anthropic emitters, coercion, dispatcher |
+| 0.2 | `@typedoc` capture via `@after_compile`, `$ref`/`$defs` for recursive types, struct field extraction with `@enforce_keys` |
 | 0.3 | result encoding (the return type comes back into the IR), Gemini + MCP `emit/3` targets (MCP export exists), streaming `tool_calls` delta aggregation helpers |
 | 0.4 | approval/human-in-the-loop hooks, per-tool timeouts, audit log |

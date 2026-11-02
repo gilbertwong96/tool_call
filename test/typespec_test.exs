@@ -135,6 +135,11 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :object, fields: [], additional: %Type{kind: :integer}} = ir(ast)
   end
 
+  test "a malformed Keyword.t arity degrades to any" do
+    assert %Type{kind: :any} =
+             ir({{:., [], [Keyword, :t]}, [], [{:integer, [], []}, {:binary, [], []}]})
+  end
+
   test "open maps keep the value type as additionalProperties" do
     ast = {:%{}, [], [{{{:., [], [String, :t]}, [], []}, {:integer, [], []}}]}
 
@@ -195,8 +200,8 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :boolean} = ir({:as_boolean, [], []})
   end
 
-  test "calendar, decimal and path types travel as strings" do
-    for module <- [Date, Time, DateTime, NaiveDateTime, Decimal, Path] do
+  test "calendar and path types travel as strings" do
+    for module <- [Date, Time, DateTime, NaiveDateTime, Path] do
       assert %Type{kind: :string, source: {^module, :t}} =
                ir({{:., [], [module, :t]}, [], []})
     end
@@ -253,13 +258,6 @@ defmodule ToolCall.TypespecTest do
              ir(
                {:|, [], [{:%{}, [], [a: {:binary, [], []}]}, {:%{}, [], [b: {:integer, [], []}]}]}
              )
-  end
-
-  test "Decimal is a decimal string, not struct" do
-    assert %Type{kind: :string, source: {Decimal, :t}, pattern: pattern} =
-             ir({{:., [], [Decimal, :t]}, [], []})
-
-    assert pattern == ~S"^-?\d+(\.\d+)?([eE][+-]?\d+)?$"
   end
 
   test "any unknown shape degrades to any" do

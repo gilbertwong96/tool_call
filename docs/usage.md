@@ -33,7 +33,8 @@ Everything else is derived. What the library reads:
 | `* name - text` under `## Parameters` | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored) |
 | `@doc false` | the function is not a tool |
 | no `@spec` | the function is skipped with a warning |
-| `@type` in the same module | inlined; `Other.t()` from another module stays `{}` |
+| `@type` in the same module | inlined; a remote type without a provider stays `{}` |
+| `use ToolCall, types: [MyProvider]` | resolves custom remote types through `ToolCall.TypeProvider` |
 | a duplicate name, e.g. `f(city :: String.t(), city :: integer())` | the second becomes `city_2`, with a warning |
 | `_ :: String.t()` | the head variable name, or `argN` if that is `_` too |
 
@@ -219,11 +220,6 @@ The full error list is in the [README](../README.md#errors).
   `{:invalid_argument, {name, {:invalid_date, value}}}` and the model can retry.
   Declare `String.t()` if you
   want the raw string.
-- **`Decimal.t()` arrives as a decimal string.** JSON has no decimal type, and
-  a JSON number is a binary float, so the schema constrains the value with a
-  decimal `pattern` and the function receives that string. Use
-  `Decimal.new(value)` if you need the struct; no `decimal` dependency is
-  imposed on you.
 - **Wire shapes are restored before dispatch.** `%{a: integer()}` arrives with
   atom keys at every declared level, `keyword(t)` as a keyword list,
   `charlist()` as a charlist, and `1.0` as `1`. Open maps and `%{k() => v}` keep

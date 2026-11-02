@@ -29,17 +29,14 @@ defmodule ToolCall.SchemaTest do
     end
 
     test "calendar strings carry the format the API understands" do
-      assert Schema.type(%Type{kind: :string, source: {Date, :t}}) == %{
+      assert Schema.type(%Type{kind: :string, format: "date"}) == %{
                "type" => "string",
                "format" => "date"
              }
 
-      assert Schema.type(%Type{kind: :string, source: {Time, :t}})["format"] == "time"
-      assert Schema.type(%Type{kind: :string, source: {DateTime, :t}})["format"] == "date-time"
-
-      assert Schema.type(%Type{kind: :string, source: {NaiveDateTime, :t}}) == %{
-               "type" => "string"
-             }
+      assert Schema.type(%Type{kind: :string, format: "time"})["format"] == "time"
+      assert Schema.type(%Type{kind: :string, format: "date-time"})["format"] == "date-time"
+      assert Schema.type(%Type{kind: :string}) == %{"type" => "string"}
     end
 
     test "renders null" do

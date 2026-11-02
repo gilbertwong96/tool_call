@@ -46,7 +46,7 @@ defmodule ToolCall.Emit.Schema do
 
   defp base(%Type{kind: :string} = type, _opts) do
     %{"type" => "string"}
-    |> maybe_put("format", format(type))
+    |> maybe_put("format", type.format)
     |> pattern(type)
   end
 
@@ -73,11 +73,6 @@ defmodule ToolCall.Emit.Schema do
     put_default(schema, param, opts)
     |> put_description(param)
   end
-
-  defp format(%Type{source: {Date, :t}}), do: "date"
-  defp format(%Type{source: {Time, :t}}), do: "time"
-  defp format(%Type{source: {DateTime, :t}}), do: "date-time"
-  defp format(%Type{}), do: nil
 
   defp put_description(schema, %Param{description: nil}), do: schema
 

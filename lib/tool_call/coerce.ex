@@ -33,18 +33,34 @@ defmodule ToolCall.Coerce do
   # Nullability belongs to the value domain, so it wins over the wire format.
   def coerce(%Type{nullable: true}, nil, _wire), do: {:ok, nil}
 
+  def coerce(%Type{} = type, value, wire) do
+    with {:ok, coerced} <- coerce_value(type, value, wire) do
+      transform(type, coerced)
+    end
+  end
+
   # Large integers carried as strings. See docs/number-handling.md.
-  def coerce(%Type{kind: :integer} = type, value, :string_integer) do
+  defp coerce_value(%Type{kind: :integer} = type, value, :string_integer) do
     with {:ok, integer} <- parse_integer(value) do
       check_bounds(type, integer)
     end
   end
 
-  def coerce(%Type{} = type, value, _wire) do
+  defp coerce_value(%Type{} = type, value, _wire) do
     cond do
       type.kind == :any -> {:ok, value}
       type.kind == :unsupported -> {:error, :unsupported_type}
       true -> coerce_kind(type, value)
+    end
+  end
+
+  defp transform(%Type{transform: nil}, value), do: {:ok, value}
+
+  defp transform(%Type{transform: {module, function}}, value) do
+    case apply(module, function, [value]) do
+      {:ok, transformed} -> {:ok, transformed}
+      {:error, reason} -> {:error, reason}
+      other -> {:error, {:invalid_transform, other}}
     end
   end
 
@@ -71,14 +87,6 @@ defmodule ToolCall.Coerce do
 
   defp coerce_kind(%Type{kind: :string, source: :charlist}, value) when is_binary(value),
     do: {:ok, String.to_charlist(value)}
-
-  defp coerce_kind(%Type{kind: :string, source: {module, :t}}, value)
-       when module in [Date, Time, DateTime, NaiveDateTime] and is_binary(value) do
-    case parse_calendar(module, value) do
-      {:ok, parsed} -> {:ok, parsed}
-      {:error, _reason} -> {:error, {calendar_error(module), value}}
-    end
-  end
 
   defp coerce_kind(%Type{kind: :string, pattern: nil}, value) when is_binary(value),
     do: {:ok, value}
@@ -137,11 +145,6 @@ defmodule ToolCall.Coerce do
 
   defp coerce_kind(%Type{kind: :tuple}, value), do: {:error, {:expected_array, value}}
 
-  defp coerce_kind(%Type{kind: :object, source: :keyword, additional: additional}, value)
-       when is_map(value) do
-    coerce_keyword(additional || %Type{kind: :any}, value)
-  end
-
   defp coerce_kind(%Type{kind: :object} = type, value) when is_map(value) do
     fields = type.fields || []
 
@@ -188,22 +191,6 @@ defmodule ToolCall.Coerce do
       atom -> {:ok, atom}
     end
   end
-
-  defp parse_calendar(Date, value), do: Date.from_iso8601(value)
-  defp parse_calendar(Time, value), do: Time.from_iso8601(value)
-  defp parse_calendar(NaiveDateTime, value), do: NaiveDateTime.from_iso8601(value)
-
-  defp parse_calendar(DateTime, value) do
-    case DateTime.from_iso8601(value) do
-      {:ok, datetime, _offset} -> {:ok, datetime}
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp calendar_error(Date), do: :invalid_date
-  defp calendar_error(Time), do: :invalid_time
-  defp calendar_error(DateTime), do: :invalid_datetime
-  defp calendar_error(NaiveDateTime), do: :invalid_naive_datetime
 
   defp parse_integer(value) when is_integer(value), do: {:ok, value}
 
@@ -293,46 +280,6 @@ defmodule ToolCall.Coerce do
   defp field_key(%Field{key: nil, name: name}), do: name
   defp field_key(%Field{key: key}), do: key
 
-  defp coerce_keyword(additional, value) do
-    value
-    |> Enum.reduce_while({:ok, []}, &keyword_pair(&1, &2, additional))
-    |> case do
-      {:ok, pairs} -> {:ok, Enum.reverse(pairs)}
-      error -> error
-    end
-  end
-
-  defp keyword_pair({key, raw}, {:ok, acc}, additional) do
-    case coerce_pair(additional, key, raw) do
-      {:ok, pair} -> {:cont, {:ok, [pair | acc]}}
-      {:error, reason} -> {:halt, {:error, reason}}
-    end
-  end
-
-  defp coerce_pair(additional, key, raw) do
-    case keyword_key(key) do
-      {:ok, atom} -> coerce_keyword_value(additional, key, raw, atom)
-      {:error, reason} -> {:error, reason}
-    end
-  end
-
-  defp coerce_keyword_value(additional, key, raw, atom) do
-    case coerce(additional, raw) do
-      {:ok, coerced} -> {:ok, {atom, coerced}}
-      {:error, reason} -> {:error, {key, reason}}
-    end
-  end
-
-  defp keyword_key(key) when is_atom(key), do: {:ok, key}
-
-  defp keyword_key(key) when is_binary(key) do
-    {:ok, String.to_existing_atom(key)}
-  rescue
-    ArgumentError -> {:error, {:unknown_atom, key}}
-  end
-
-  defp keyword_key(key), do: {:error, {:invalid_key, key}}
-
   defp coerce_extra(%Type{} = type, value, fields) do
     known = MapSet.new(fields, & &1.name)
     extra = Map.reject(value, fn {key, _} -> MapSet.member?(known, key) end)
@@ -352,8 +299,8 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  # `char()` and `Decimal.t()` are precompiled in `Patterns`; a hand-built
-  # pattern is compiled on demand instead of being cached globally.
+  # `char()` is precompiled in `Patterns`; a hand-built pattern is compiled on
+  # demand instead of being cached globally.
   defp pattern_regex(pattern), do: Patterns.regex(pattern) || Regex.compile!(pattern)
 
   defp coerce_fields_for_extra(additional, extra) do

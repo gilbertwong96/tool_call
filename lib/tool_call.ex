@@ -28,9 +28,10 @@ defmodule ToolCall do
 
   See `docs/design.md`. `@type`, `@typep` and `@opaque` declarations in the same
   module are resolved before mapping, including parameterised ones. Unknown
-  types degrade to `{}` (any value) rather than failing compilation; types that
-  JSON cannot express at all (functions, pids, refs) are flagged with a
-  compile-time warning.
+  types degrade to `{}` (any value) rather than failing compilation unless a
+  `ToolCall.TypeProvider` registered with `use ToolCall, types: [...]` resolves
+  them; types that JSON cannot express at all (functions, pids, refs) are
+  flagged with a compile-time warning.
   """
 
   if not (Code.ensure_loaded?(:json) and function_exported?(:json, :format, 1)) do
@@ -41,16 +42,38 @@ defmodule ToolCall do
 
   @doc false
   defmacro __using__(opts) do
-    if opts != [] do
-      raise ArgumentError, "use ToolCall accepts no options, got: #{inspect(opts)}"
+    {types, rest} = Keyword.pop(opts, :types, [])
+
+    if rest != [] do
+      raise ArgumentError, "use ToolCall accepts only :types, got: #{inspect(rest)}"
     end
 
+    providers = ToolCall.Typespec.builtin_providers() ++ expand_providers(types, __CALLER__)
+
     quote do
+      @tool_call_type_providers unquote(providers)
       Module.register_attribute(__MODULE__, :tool_call_defs, accumulate: true)
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
       @on_definition ToolCall
       @before_compile ToolCall
+      unquote_splicing(for provider <- providers, do: quote(do: require(unquote(provider))))
     end
+  end
+
+  defp expand_providers(providers, env) when is_list(providers) do
+    Enum.map(providers, fn provider ->
+      case Macro.expand(provider, env) do
+        module when is_atom(module) ->
+          module
+
+        _other ->
+          raise ArgumentError, "expected a module in :types, got: #{inspect(provider)}"
+      end
+    end)
+  end
+
+  defp expand_providers(other, _env) do
+    raise ArgumentError, ":types must be a list of modules, got: #{inspect(other)}"
   end
 
   @doc false
@@ -68,7 +91,8 @@ defmodule ToolCall do
     specs = Module.get_attribute(module, :spec) |> List.wrap()
     overrides = module |> Module.get_attribute(:tool_param) |> List.wrap()
 
-    tools = ToolCall.Builder.build(module, defs, specs, overrides, env)
+    providers = Module.get_attribute(module, :tool_call_type_providers) || []
+    tools = ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
     schemas = ToolCall.Emit.precompile(tools)
     embedded = Enum.map(tools, &drop_provenance/1)
 
@@ -90,8 +114,8 @@ defmodule ToolCall do
   @doc """
   Returns the tools derived from a module.
 
-  The embedded IR keeps `Type.source`, which calendar, charlist and Decimal
-  handling need at runtime, and drops the spec and parameter ASTs, which are
+  The embedded IR keeps `Type.source`, which calendar and charlist handling
+  need at runtime, and drops the spec and parameter ASTs, which are
   compile-time provenance only.
   """
   @spec tools(module()) :: [Tool.t()]
@@ -165,7 +189,7 @@ defmodule ToolCall do
     module.__run__(name, args)
   end
 
-  # `Type.source` is runtime data (calendar, charlist and Decimal handling);
+  # `Type.source` is runtime data (calendar and charlist handling);
   # the spec and parameter ASTs are compile-time provenance only.
   defp drop_provenance(%Tool{} = tool) do
     %{tool | source: nil, params: Enum.map(tool.params, &%{&1 | source: nil})}

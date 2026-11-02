@@ -66,6 +66,8 @@ exactly where Code.Typespec and `Code.fetch_docs` read from. See
 - `ToolCall.tools/1` — the IR, if you want to build your own emitter.
 - `ToolCall.describe/2` — `%{module, name, description, parameters}` per tool,
   with no provider envelope, for clients that build the request themselves.
+- `ToolCall.TypeProvider` — resolves custom remote types registered with
+  `use ToolCall, types: [...]`.
 - `mix tool_call.export` — the same schemas as JSON (`openai`, `anthropic` or
   `mcp`).
 
@@ -75,6 +77,45 @@ Both `emit/3` and `run/3` accept the module or, for `emit/3`, the IR directly:
 json = ToolCall.emit(MyApp.Tools.Weather, :openai, strict: true)
 schema = ToolCall.emit(hd(ToolCall.tools(MyApp.Tools.Weather)), :anthropic)
 ```
+
+## Custom types
+
+Built-in remote types are resolved by a built-in provider. A user-defined type
+gets a `ToolCall.TypeProvider` registered per tool module:
+
+```elixir
+defmodule MyApp.MoneyType do
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(Money, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, pattern: "^-?\\d+\\.\\d{2}$"}}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+
+  @impl true
+  def coerce(value), do: {:ok, Money.new(value)}
+end
+
+defmodule MyApp.Tools do
+  use ToolCall, types: [MyApp.MoneyType]
+
+  @spec price(amount :: Money.t()) :: Money.t()
+  def price(amount), do: amount
+end
+```
+
+`resolve/3` receives the remote module, the type name and the already-resolved
+argument types. Return `{:ok, %ToolCall.IR.Type{}}`, or `:error` to fall back to
+`{}`. `coerce/1` is optional; it runs after the wire value has been coerced.
+Providers are tried after the built-ins (`String`, `Keyword`, `Path`, calendar),
+so a provider cannot replace them. `types:` is per module. The provider module
+must be compiled before the tool module; the generated `require` adds that
+compile dependency.
+
+`Decimal.t()` is not built in; implement a provider for it, or use `String.t()`
+and convert in the function.
 
 ## Conventions
 
@@ -159,10 +200,6 @@ end
   as strings (`format` is set for date/time/date-time; a naive datetime has no
   offset to describe) and are parsed from ISO 8601 before dispatch. An
   unparsable value is `{:invalid_argument, {name, {:invalid_date, value}}}`.
-- `Decimal.t()` is a decimal string on both sides. JSON has no decimal type, and
-  a JSON number is a binary float, so the schema carries a decimal `pattern` and
-  the function receives the string; call `Decimal.new/1` if you need the struct.
-  No `decimal` dependency is imposed.
 - `atom()` is described as an unconstrained string. The dispatcher maps a string
   to an atom only when that atom already exists in the VM; unless the type is
   nullable it rejects `null` and booleans. Prefer `:a | :b` so the schema carries
@@ -182,14 +219,13 @@ end
 
 `0.1.0-dev`. Working: compile-time derivation, local `@type` resolution, the
 type subset in [`docs/design.md`](docs/design.md), OpenAI (with `strict: true`)
-and Anthropic emitters, coercion, dispatcher, compile-time warnings for
+and Anthropic emitters, custom type providers, coercion, dispatcher, compile-time warnings for
 unnamed arguments, missing `@spec`, unrepresentable types and stray
 `@tool_param` entries.
 
 Not implemented yet: recursive types (`$ref`/`$defs`), struct field extraction
-with `@enforce_keys`, `@typedoc` capture, `Decimal` conversion at dispatch time,
-result encoding, Gemini/MCP `emit/3` targets (MCP export exists), streaming
-deltas, approval hooks, timeouts.
+with `@enforce_keys`, `@typedoc` capture, result encoding, Gemini/MCP `emit/3`
+targets (MCP export exists), streaming deltas, approval hooks, timeouts.
 
 ## Installation
 

@@ -28,6 +28,10 @@ defmodule ToolCall.IR do
     unknown remote type. `kind: :unsupported` means "the domain is known but
     JSON cannot express it" (functions, pids, refs). Emitters render both as
     `%{}`; only `:unsupported` triggers a compile-time warning.
+
+    `format` is the JSON Schema format string, set by a `ToolCall.TypeProvider`
+    provider. `transform` is a `{module, function}` set by a provider; it runs
+    after the wire value has been coerced.
     """
     defstruct kind: :any,
               minimum: nil,
@@ -38,6 +42,8 @@ defmodule ToolCall.IR do
               values: nil,
               variants: nil,
               pattern: nil,
+              format: nil,
+              transform: nil,
               nullable: false,
               source: nil
 
