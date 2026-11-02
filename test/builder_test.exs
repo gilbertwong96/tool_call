@@ -348,7 +348,7 @@ defmodule ToolCall.BuilderTest do
 
     assert param_schema(module, "go", "n")["default"] == 3
     assert param_schema(module, "go", "s")["default"] == "x"
-    assert param_schema(module, "go", "a")["default"] == :ok
+    assert param_schema(module, "go", "a")["default"] == "ok"
     assert param_schema(module, "go", "b")["default"] == true
     assert param_schema(module, "go", "l")["default"] == [1, 2]
     assert param_schema(module, "go", "m")["default"] == %{a: 1}
@@ -382,6 +382,24 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "chars", "xs")["default"] == "ab"
   end
 
+  test "renders atom defaults as strings, including nested values" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Atom defaults."
+        @spec go(a :: atom(), l :: list(atom()), m :: %{flag: atom()}, b :: boolean()) :: :ok
+        def go(a \\\\ true, l \\\\ [true, :ok], m \\\\ %{flag: false}, b \\\\ true), do: {a, l, m, b}
+      end
+      """)
+
+    assert param_schema(module, "go", "a")["default"] == "true"
+    assert param_schema(module, "go", "l")["default"] == ["true", "ok"]
+    assert param_schema(module, "go", "m")["default"] == %{flag: "false"}
+    assert param_schema(module, "go", "b")["default"] == true
+  end
+
   test "keeps negative literal defaults" do
     module =
       compile!("""
@@ -410,7 +428,7 @@ defmodule ToolCall.BuilderTest do
       end
       """)
 
-    assert param_schema(module, "go", "x")["default"] == :error
+    assert param_schema(module, "go", "x")["default"] == "error"
     assert hd(ToolCall.emit(module, :openai))["function"]["parameters"]["required"] == []
     assert ToolCall.run(module, "go", %{}) == {:ok, :error}
   end

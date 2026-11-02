@@ -113,7 +113,47 @@ defmodule ToolCall.Emit.Schema do
 
   defp put_default(schema, %Param{} = param, opts) do
     # The API rejects `default` in strict mode; nullability carries the same idea.
-    if strict?(opts), do: schema, else: Map.put(schema, "default", param.default)
+    if strict?(opts),
+      do: schema,
+      else: Map.put(schema, "default", atom_default(param.type, param.default))
+  end
+
+  # `atom()` is a string on the wire, so an atom default must be rendered as one
+  # too. The walk follows arrays and objects so nested defaults match their schema.
+  defp atom_default(%Type{kind: :atom, nullable: true}, nil), do: nil
+  defp atom_default(%Type{kind: :atom}, value) when is_atom(value), do: Atom.to_string(value)
+
+  defp atom_default(%Type{kind: :union, nullable: true}, nil), do: nil
+
+  defp atom_default(%Type{kind: :union, variants: variants}, value) when is_atom(value) do
+    if Enum.any?(variants || [], &(&1.kind == :atom)), do: Atom.to_string(value), else: value
+  end
+
+  defp atom_default(%Type{kind: :array, items: items}, values) when is_list(values),
+    do: Enum.map(values, &atom_default(items || %Type{kind: :any}, &1))
+
+  defp atom_default(%Type{kind: :tuple, items: items}, values) when is_list(values) do
+    items = items || []
+
+    if length(items) == length(values),
+      do: Enum.zip_with(items, values, &atom_default/2),
+      else: values
+  end
+
+  defp atom_default(%Type{kind: :object} = type, value) when is_map(value) do
+    fields = type.fields || []
+
+    Map.new(value, fn {key, item} ->
+      {key, atom_default(field_type(fields, key) || type.additional || %Type{kind: :any}, item)}
+    end)
+  end
+
+  defp atom_default(_type, value), do: value
+
+  defp field_type(fields, key) do
+    Enum.find_value(fields, fn field ->
+      if field.key == key or field.name == key, do: field.type
+    end)
   end
 
   defp force_required(%Param{required: true} = param), do: param

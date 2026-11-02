@@ -88,7 +88,8 @@ schema = ToolCall.emit(hd(ToolCall.tools(MyApp.Tools.Weather)), :anthropic)
   `DateTime.utc_now()`) are not sent to the model; the parameter is still
   optional. Defaults JSON cannot carry (tuples) are dropped too. `~s`, `~c` and
   `~w` sigil defaults are kept (a charlist default is sent as a string); sigils
-  that interpolate or build non-JSON values (dates, regexes) are dropped.
+  that interpolate or build non-JSON values (dates, regexes) are dropped. An
+  `atom()` default is sent as its string form, including `true` and `false`.
 - **Names must be unique and provider-safe.** A duplicate argument name is
   exposed as `name_2` with a warning; an unnamed `_` argument falls back to the
   head variable or `argN`. Provider tool names must match
