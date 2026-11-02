@@ -556,7 +556,7 @@ defmodule ToolCall.BuilderTest do
     assert ToolCall.Builder.warn_location({"file.ex", 3}) == [file: "file.ex", line: 3]
   end
 
-  test "expands __MODULE__ in a type" do
+  test "resolves __MODULE__ in a local type and as a literal" do
     module =
       compile!("""
       defmodule FIXTURE do
@@ -567,11 +567,19 @@ defmodule ToolCall.BuilderTest do
         @doc "Module type."
         @spec go(x :: __MODULE__.t()) :: :ok
         def go(_x), do: :ok
+
+        @doc "Bare module."
+        @spec bare(x :: __MODULE__) :: __MODULE__
+        def bare(x), do: x
       end
       """)
 
-    # `__MODULE__.t()` is a remote reference, not a local alias, so it degrades.
-    assert param_schema(module, "go", "x") == %{}
+    assert param_schema(module, "go", "x") == %{"type" => "integer"}
+
+    assert param_schema(module, "bare", "x") == %{
+             "type" => "string",
+             "enum" => [Atom.to_string(module)]
+           }
   end
 
   test "warns and skips a function without a @spec" do

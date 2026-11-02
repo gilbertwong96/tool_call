@@ -177,6 +177,7 @@ defmodule ToolCall.Builder do
       |> Enum.map(fn {arg_ast, index} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
         type_ast = substitute_vars(type_ast, bindings)
+        type_ast = localize_module_types(type_ast)
         {type_ast, truncated?} = LocalTypes.expand(type_ast, context.definitions)
         type_ast = expand_aliases(type_ast, context.env)
 
@@ -593,6 +594,18 @@ defmodule ToolCall.Builder do
 
   defp doc_value(nil), do: nil
   defp doc_value({_line, value}), do: value
+
+  # `__MODULE__.t()` is a remote reference to the current module; treat it as
+  # the local call `t()` so LocalTypes can inline it like `t()`.
+  defp localize_module_types(ast) do
+    Macro.prewalk(ast, fn
+      {{:., _, [{:__MODULE__, _, _}, fun]}, meta, args} when is_atom(fun) and is_list(args) ->
+        {fun, meta, args}
+
+      node ->
+        node
+    end)
+  end
 
   defp expand_aliases(ast, env), do: Macro.prewalk(ast, &expand_alias(&1, env))
 
