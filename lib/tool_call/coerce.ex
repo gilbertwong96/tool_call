@@ -57,11 +57,26 @@ defmodule ToolCall.Coerce do
   defp transform(%Type{transform: nil}, value), do: {:ok, value}
 
   defp transform(%Type{transform: {module, function}}, value) do
-    case apply(module, function, [value]) do
+    result =
+      try do
+        apply(module, function, [value])
+      rescue
+        exception ->
+          {:error, {:invalid_transform, {:raised, Exception.message(exception)}}}
+      catch
+        :throw, thrown -> {:error, {:invalid_transform, {:thrown, thrown}}}
+        :exit, reason -> {:error, {:invalid_transform, {:exited, reason}}}
+      end
+
+    case result do
       {:ok, transformed} -> {:ok, transformed}
       {:error, reason} -> {:error, reason}
       other -> {:error, {:invalid_transform, other}}
     end
+  end
+
+  defp transform(%Type{transform: transform}, _value) do
+    {:error, {:invalid_transform, transform}}
   end
 
   defp coerce_kind(%Type{kind: :integer} = type, value) do
@@ -291,7 +306,7 @@ defmodule ToolCall.Coerce do
       is_nil(type.additional) ->
         {:error, {:unknown_keys, Map.keys(extra)}}
 
-      type.additional.kind == :any ->
+      type.additional.kind == :any and is_nil(type.additional.transform) ->
         {:ok, extra}
 
       true ->

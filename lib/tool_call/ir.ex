@@ -29,9 +29,11 @@ defmodule ToolCall.IR do
     JSON cannot express it" (functions, pids, refs). Emitters render both as
     `%{}`; only `:unsupported` triggers a compile-time warning.
 
-    `format` is the JSON Schema format string, set by a `ToolCall.TypeProvider`
-    provider. `transform` is a `{module, function}` set by a provider; it runs
-    after the wire value has been coerced.
+    `format` is the JSON Schema format string and `transform` is the
+    `{module, function}` that runs after the wire value has been coerced. Both
+    are populated by a `ToolCall.TypeProvider`; a hand-built calendar node must
+    set them explicitly. `source` is provenance except for `:charlist`, which
+    still drives charlist conversion and its schema default.
     """
     defstruct kind: :any,
               minimum: nil,
@@ -46,6 +48,23 @@ defmodule ToolCall.IR do
               transform: nil,
               nullable: false,
               source: nil
+
+    @kinds [
+      :integer,
+      :float,
+      :number,
+      :string,
+      :boolean,
+      :atom,
+      :array,
+      :object,
+      :tuple,
+      :enum,
+      :union,
+      :null,
+      :any,
+      :unsupported
+    ]
 
     @type kind ::
             :integer
@@ -62,6 +81,10 @@ defmodule ToolCall.IR do
             | :null
             | :any
             | :unsupported
+
+    @doc false
+    @spec kinds() :: [kind()]
+    def kinds, do: @kinds
 
     @type t :: %__MODULE__{}
   end

@@ -7,13 +7,19 @@ defmodule ToolCall.TypeProvider do
   the remote module, the type name and the already-resolved argument types.
 
   Return `{:ok, %ToolCall.IR.Type{}}` to describe the value, or `:error` to let
-  the type fall back to `{}`.
+  the type fall back to `{}`. A returned node is validated recursively at
+  compile time: unknown kinds, non-string or uncompilable patterns, malformed
+  transforms, and malformed `fields`/`items`/`variants`/`additional` raise an
+  `ArgumentError` naming the provider and the remote type.
 
   Implement `coerce/1` to convert the wire-coerced value into the function's
-  value domain; it runs after the built-in coercion. It is a shorthand for a
-  provider that resolves one type: a provider that handles several types can
-  return `%ToolCall.IR.Type{transform: {Module, :fun}}` instead and leave
-  `coerce/1` undefined.
+  value domain; it runs after the built-in coercion. It is not called for an
+  absent or explicit `nil` optional value, nor for `nil` accepted by a nullable
+  type. A raised, thrown or exited exception becomes
+  `{:error, {:invalid_transform, ...}}` like any other coercion failure. It is a
+  shorthand for a provider that resolves one type: a provider that handles
+  several types can return `%ToolCall.IR.Type{transform: {Module, :fun}}`
+  instead and leave `coerce/1` undefined.
   """
 
   @callback resolve(module(), atom(), [ToolCall.IR.Type.t()]) ::

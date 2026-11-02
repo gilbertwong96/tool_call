@@ -26,8 +26,11 @@ defmodule ToolCall.Typespec do
   such as `String.t()` arrive as `{:__aliases__, ...}` and degrade to `:any`.
 
   Built-in providers resolve `String`, `Keyword`, `Path` and the calendar types
-  and are used by default. `use ToolCall, types: [...]` appends providers after
-  them.
+  and are used by default. Passing `providers` explicitly replaces that default;
+  `use ToolCall, types: [...]` prepends the built-ins before the user list. A
+  provider must return a well-formed IR node: an unknown kind, a non-string or
+  uncompilable pattern, a malformed transform, or malformed
+  `fields`/`items`/`variants`/`additional` raises at compile time.
   """
   @spec to_type(term(), [module()]) :: Type.t()
   def to_type(ast, providers \\ @builtin_providers)
@@ -171,20 +174,250 @@ defmodule ToolCall.Typespec do
   defp resolve_provider(provider, module, function, args) do
     case provider.resolve(module, function, args) do
       {:ok, %Type{} = type} ->
-        if function_exported?(provider, :coerce, 1) do
-          %{type | transform: {provider, :coerce}}
-        else
-          type
-        end
+        type
+        |> maybe_provider_coerce(provider)
+        |> validate_provider_type!(provider, module, function, args)
 
       :error ->
         nil
 
       other ->
-        raise ArgumentError,
-              "type provider #{inspect(provider)} returned #{inspect(other)} for " <>
-                "#{inspect(module)}.#{function}/#{length(args)}"
+        provider_type_error!(
+          provider,
+          module,
+          function,
+          args,
+          "returned #{inspect(other)}"
+        )
     end
+  end
+
+  defp maybe_provider_coerce(%Type{} = type, provider) do
+    if function_exported?(provider, :coerce, 1),
+      do: %{type | transform: {provider, :coerce}},
+      else: type
+  end
+
+  defp validate_provider_type!(%Type{} = type, provider, module, function, args) do
+    if type.kind not in Type.kinds() do
+      provider_type_error!(
+        provider,
+        module,
+        function,
+        args,
+        "unknown kind #{inspect(type.kind)}"
+      )
+    end
+
+    validate_pattern!(type, provider, module, function, args)
+    validate_transform!(type, provider, module, function, args)
+    validate_children!(type, provider, module, function, args)
+    type
+  end
+
+  defp validate_pattern!(%Type{pattern: nil}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_pattern!(
+         %Type{pattern: pattern},
+         provider,
+         module,
+         function,
+         args
+       )
+       when is_binary(pattern) do
+    case Regex.compile(pattern) do
+      {:ok, _regex} ->
+        :ok
+
+      {:error, {reason, _position}} ->
+        provider_type_error!(
+          provider,
+          module,
+          function,
+          args,
+          "pattern #{inspect(pattern)} does not compile: #{reason}"
+        )
+    end
+  end
+
+  defp validate_pattern!(%Type{pattern: pattern}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "pattern must be a string, got: #{inspect(pattern)}"
+    )
+  end
+
+  defp validate_transform!(
+         %Type{transform: nil},
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: :ok
+
+  defp validate_transform!(
+         %Type{transform: {module, function}},
+         _provider,
+         _remote,
+         _fun,
+         _args
+       )
+       when is_atom(module) and is_atom(function),
+       do: :ok
+
+  defp validate_transform!(%Type{transform: transform}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "transform must be nil or {module, function}, got: #{inspect(transform)}"
+    )
+  end
+
+  defp validate_children!(%Type{} = type, provider, module, function, args) do
+    validate_items!(type, provider, module, function, args)
+    validate_fields!(type, provider, module, function, args)
+    validate_additional!(type, provider, module, function, args)
+    validate_variants!(type, provider, module, function, args)
+    type
+  end
+
+  defp validate_items!(%Type{kind: :array, items: nil}, _provider, _module, _function, _args),
+    do: :ok
+
+  defp validate_items!(
+         %Type{kind: :array, items: %Type{} = items},
+         provider,
+         module,
+         function,
+         args
+       ),
+       do: validate_provider_type!(items, provider, module, function, args)
+
+  defp validate_items!(%Type{kind: :array, items: items}, provider, module, function, args),
+    do: invalid_child!(provider, module, function, args, "items", items)
+
+  defp validate_items!(%Type{kind: :tuple, items: nil}, _provider, _module, _function, _args),
+    do: :ok
+
+  defp validate_items!(
+         %Type{kind: :tuple, items: items},
+         provider,
+         module,
+         function,
+         args
+       )
+       when is_list(items),
+       do: validate_type_list!(items, provider, module, function, args)
+
+  defp validate_items!(%Type{kind: :tuple, items: items}, provider, module, function, args),
+    do: invalid_child!(provider, module, function, args, "items", items)
+
+  defp validate_items!(%Type{}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_fields!(%Type{kind: :object, fields: nil}, _provider, _module, _function, _args),
+    do: :ok
+
+  defp validate_fields!(
+         %Type{kind: :object, fields: fields},
+         provider,
+         module,
+         function,
+         args
+       )
+       when is_list(fields) do
+    Enum.each(fields, fn
+      %Field{type: %Type{} = type} ->
+        validate_provider_type!(type, provider, module, function, args)
+
+      other ->
+        invalid_child!(provider, module, function, args, "field", other)
+    end)
+  end
+
+  defp validate_fields!(%Type{kind: :object, fields: fields}, provider, module, function, args),
+    do: invalid_child!(provider, module, function, args, "fields", fields)
+
+  defp validate_fields!(%Type{}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_additional!(
+         %Type{kind: :object, additional: nil},
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: :ok
+
+  defp validate_additional!(
+         %Type{kind: :object, additional: %Type{} = additional},
+         provider,
+         module,
+         function,
+         args
+       ),
+       do: validate_provider_type!(additional, provider, module, function, args)
+
+  defp validate_additional!(
+         %Type{kind: :object, additional: additional},
+         provider,
+         module,
+         function,
+         args
+       ),
+       do: invalid_child!(provider, module, function, args, "additional", additional)
+
+  defp validate_additional!(%Type{}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_variants!(
+         %Type{kind: :union, variants: variants},
+         provider,
+         module,
+         function,
+         args
+       )
+       when is_list(variants),
+       do: validate_type_list!(variants, provider, module, function, args)
+
+  defp validate_variants!(
+         %Type{kind: :union, variants: variants},
+         provider,
+         module,
+         function,
+         args
+       ),
+       do: invalid_child!(provider, module, function, args, "variants", variants)
+
+  defp validate_variants!(%Type{}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_type_list!(types, provider, module, function, args) do
+    Enum.each(types, fn
+      %Type{} = type -> validate_provider_type!(type, provider, module, function, args)
+      other -> invalid_child!(provider, module, function, args, "nested type", other)
+    end)
+  end
+
+  @spec invalid_child!(module(), module(), atom(), list(), String.t(), term()) :: no_return()
+  defp invalid_child!(provider, module, function, args, field, value) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "#{field} must contain ToolCall.IR types, got: #{inspect(value)}"
+    )
+  end
+
+  @spec provider_type_error!(module(), module(), atom(), list(), String.t()) :: no_return()
+  defp provider_type_error!(provider, module, function, args, reason) do
+    raise ArgumentError,
+          "type provider #{inspect(provider)} returned an invalid type for " <>
+            "#{inspect(module)}.#{function}/#{length(args)}: #{reason}"
   end
 
   @doc """

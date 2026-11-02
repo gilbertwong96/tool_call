@@ -32,7 +32,8 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `--format`, `-f` - `openai` (default), `anthropic` or `mcp`
     * `--out`, `-o` - write to a file instead of stdout
     * `--app`, `-a` - application to discover tool modules in
-    * `--strict` - emit the strict JSON Schema subset; ignored by `anthropic`
+    * `--strict` - emit the strict JSON Schema subset for OpenAI and MCP;
+      ignored by `anthropic`
 
   Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
   27.1+. The formatter belongs to OTP, so a file is reproducible per OTP version

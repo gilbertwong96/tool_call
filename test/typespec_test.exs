@@ -170,6 +170,12 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :any} = ir({{:., [], [SomeUnknown, :t]}, [], []})
   end
 
+  test "built-in providers only match t/0" do
+    assert %Type{kind: :any} = ir({{:., [], [String, :foo]}, [], []})
+    assert %Type{kind: :any} = ir({{:., [], [Path, :foo]}, [], []})
+    assert %Type{kind: :any} = ir({{:., [], [Date, :foo]}, [], []})
+  end
+
   test "literal values" do
     assert %Type{kind: :null} = ir(nil)
     assert %Type{kind: :enum, values: [true]} = ir(true)

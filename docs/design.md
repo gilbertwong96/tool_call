@@ -152,11 +152,17 @@ build warns. Depth 18 now compiles in 28 ms.
 
 **Remote types are provider-driven.** `String`, `Keyword`, `Path` and the
 calendar types come from the built-in stdlib provider.
-`use ToolCall, types: [...]` appends providers for other remote types; a
+`use ToolCall, types: [...]` prepends the built-ins before user providers; a
 provider receives the argument types already resolved to IR and returns an IR
-node, or `:error` to fall back to `:any`. An optional `coerce/1` runs after the
-built-in wire coercion. A remote type without a matching provider degrades to
-`{}` and warns.
+node, or `:error` to fall back to `:any`. The returned node is validated
+recursively at compile time: unknown kinds, invalid patterns or transforms, and
+malformed `fields`/`items`/`variants`/`additional` raise. An optional `coerce/1`
+runs after the built-in wire coercion. A remote type without a matching provider
+degrades to `{}` and warns.
+
+The IR is also public for runtime-built tools. A hand-built calendar node must
+set `format`/`transform`; `source` is provenance except for `:charlist`, which
+still drives charlist conversion and its schema default.
 
 Not handled: type variables (generics), recursive types (no `$ref`/`$defs`, so a
 recursive reference becomes `{}`), bitstrings with explicit sizes, struct

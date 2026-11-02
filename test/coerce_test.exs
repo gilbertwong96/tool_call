@@ -1,7 +1,17 @@
+defmodule ToolCall.CoerceTest.Transform do
+  @moduledoc false
+
+  def raising(_value), do: raise("boom")
+  def throwing(_value), do: throw(:boom)
+  def exiting(_value), do: exit(:boom)
+  def wrapping(value), do: {:ok, {:wrapped, value}}
+end
+
 defmodule ToolCall.CoerceTest do
   use ExUnit.Case, async: true
 
   alias ToolCall.Coerce
+  alias ToolCall.CoerceTest.Transform
   alias ToolCall.IR.{Field, Param, Type}
 
   defp integer(opts \\ []) do
@@ -420,6 +430,37 @@ defmodule ToolCall.CoerceTest do
 
     test "still accept a JSON integer" do
       assert {:ok, 5} = Coerce.coerce(integer(), 5, :string_integer)
+    end
+  end
+
+  describe "transforms" do
+    test "wraps raised, thrown and exited transform exceptions" do
+      type = fn fun -> %Type{kind: :string, transform: {Transform, fun}} end
+
+      assert {:error, {:invalid_transform, {:raised, "boom"}}} =
+               Coerce.coerce(type.(:raising), "x")
+
+      assert {:error, {:invalid_transform, {:thrown, :boom}}} =
+               Coerce.coerce(type.(:throwing), "x")
+
+      assert {:error, {:invalid_transform, {:exited, :boom}}} =
+               Coerce.coerce(type.(:exiting), "x")
+    end
+
+    test "rejects a malformed transform" do
+      assert {:error, {:invalid_transform, :bad}} =
+               Coerce.coerce(%Type{kind: :string, transform: :bad}, "x")
+    end
+
+    test "applies a transform on any-typed additional values" do
+      type = %Type{
+        kind: :object,
+        fields: [],
+        additional: %Type{kind: :any, transform: {Transform, :wrapping}}
+      }
+
+      assert {:ok, %{"x" => {:wrapped, "value"}}} =
+               Coerce.coerce(type, %{"x" => "value"})
     end
   end
 

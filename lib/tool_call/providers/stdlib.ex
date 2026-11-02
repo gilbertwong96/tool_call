@@ -5,11 +5,11 @@ defmodule ToolCall.Providers.Stdlib do
   alias ToolCall.IR.Type
 
   @impl true
-  def resolve(String, _function, _args), do: {:ok, %Type{kind: :string, source: {String, :t}}}
+  def resolve(String, :t, []), do: {:ok, %Type{kind: :string, source: {String, :t}}}
 
-  def resolve(Path, _function, _args), do: {:ok, %Type{kind: :string, source: {Path, :t}}}
+  def resolve(Path, :t, []), do: {:ok, %Type{kind: :string, source: {Path, :t}}}
 
-  def resolve(Keyword, _function, args) do
+  def resolve(Keyword, :t, args) do
     case args do
       [] -> {:ok, keyword_type(%Type{kind: :any})}
       [type] -> {:ok, keyword_type(type)}
@@ -17,7 +17,7 @@ defmodule ToolCall.Providers.Stdlib do
     end
   end
 
-  def resolve(module, _function, _args) when module in [Date, Time, DateTime, NaiveDateTime] do
+  def resolve(module, :t, []) when module in [Date, Time, DateTime, NaiveDateTime] do
     {:ok, calendar_type(module)}
   end
 

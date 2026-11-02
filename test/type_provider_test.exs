@@ -126,6 +126,167 @@ defmodule ToolCall.TypeProviderTest.StringProvider do
   def resolve(_module, _function, _args), do: :error
 end
 
+defmodule ToolCall.TypeProviderTest.RaiseType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.RaiseProvider do
+  @moduledoc false
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(ToolCall.TypeProviderTest.RaiseType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string}}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+
+  @impl true
+  def coerce(_value), do: raise("provider boom")
+end
+
+defmodule ToolCall.TypeProviderTest.BadKindType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadPatternType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadPatternValueType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadTransformType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadFieldsType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadFieldType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadItemsType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadTupleType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadTupleElementType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadAdditionalType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadVariantsType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.NestedType do
+  @moduledoc false
+  @type t :: term()
+end
+
+defmodule ToolCall.TypeProviderTest.NestedProvider do
+  @moduledoc false
+  @behaviour ToolCall.TypeProvider
+
+  alias ToolCall.IR.{Field, Type}
+
+  @impl true
+  def resolve(ToolCall.TypeProviderTest.NestedType, :t, []) do
+    {:ok,
+     %Type{
+       kind: :union,
+       variants: [
+         %Type{
+           kind: :object,
+           fields: [%Field{name: "value", key: :value, type: %Type{kind: :string}}],
+           additional: %Type{kind: :any}
+         },
+         %Type{kind: :object, fields: nil, additional: nil},
+         %Type{kind: :tuple, items: [%Type{kind: :string}]},
+         %Type{kind: :tuple, items: nil},
+         %Type{kind: :array, items: %Type{kind: :string}},
+         %Type{kind: :array, items: nil}
+       ]
+     }}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+end
+
+defmodule ToolCall.TypeProviderTest.InvalidProvider do
+  @moduledoc false
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(ToolCall.TypeProviderTest.BadKindType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :bogus}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadPatternType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, pattern: "["}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadPatternValueType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, pattern: :not_a_string}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadTransformType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, transform: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadFieldsType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :object, fields: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadFieldType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :object, fields: [%ToolCall.IR.Field{name: "x", type: :bad}]}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadItemsType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :array, items: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadTupleType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :tuple, items: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadTupleElementType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :tuple, items: [:bad]}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadAdditionalType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :object, fields: [], additional: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadVariantsType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :union, variants: :bad}}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+end
+
 defmodule ToolCall.TypeProviderTest.Tools do
   @moduledoc false
   use ToolCall,
@@ -135,7 +296,8 @@ defmodule ToolCall.TypeProviderTest.Tools do
       ToolCall.TypeProviderTest.AliasProvider,
       ToolCall.TypeProviderTest.StrictProvider,
       ToolCall.TypeProviderTest.WeirdProvider,
-      ToolCall.TypeProviderTest.StringProvider
+      ToolCall.TypeProviderTest.StringProvider,
+      ToolCall.TypeProviderTest.RaiseProvider
     ]
 
   @doc "Price."
@@ -162,6 +324,10 @@ defmodule ToolCall.TypeProviderTest.Tools do
   @doc "Built-in string."
   @spec string_type(value :: String.t()) :: String.t()
   def string_type(value), do: value
+
+  @doc "Raises in coerce."
+  @spec raises(value :: ToolCall.TypeProviderTest.RaiseType.t()) :: String.t()
+  def raises(value), do: value
 end
 
 defmodule ToolCall.TypeProviderTest do
@@ -251,6 +417,121 @@ defmodule ToolCall.TypeProviderTest do
     end
   end
 
+  test "contains an exception raised by a provider coerce" do
+    assert {:error,
+            {:invalid_argument, {"value", {:invalid_transform, {:raised, "provider boom"}}}}} =
+             ToolCall.run(Tools, "raises", %{"value" => "x"})
+  end
+
+  test "rejects a provider type with an unknown kind" do
+    assert_raise ArgumentError, ~r/unknown kind :bogus/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadKindType
+      )
+    end
+  end
+
+  test "rejects a provider type with an uncompilable pattern" do
+    assert_raise ArgumentError, ~r/does not compile/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadPatternType
+      )
+    end
+  end
+
+  test "rejects a provider type with a non-string pattern" do
+    assert_raise ArgumentError, ~r/pattern must be a string/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadPatternValueType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed transform" do
+    assert_raise ArgumentError, ~r/transform must be nil or/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadTransformType
+      )
+    end
+  end
+
+  test "accepts a well-formed nested provider type" do
+    module =
+      compile_tool(
+        ToolCall.TypeProviderTest.NestedProvider,
+        ToolCall.TypeProviderTest.NestedType
+      )
+
+    assert [%{"function" => %{"name" => "go"}}] = ToolCall.emit(module, :openai)
+  end
+
+  test "rejects a provider type with malformed fields" do
+    assert_raise ArgumentError, ~r/fields must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadFieldsType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed field" do
+    assert_raise ArgumentError, ~r/field must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadFieldType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed array items" do
+    assert_raise ArgumentError, ~r/items must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadItemsType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed tuple items" do
+    assert_raise ArgumentError, ~r/items must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadTupleType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed tuple element" do
+    assert_raise ArgumentError, ~r/nested type must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadTupleElementType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed additional values" do
+    assert_raise ArgumentError, ~r/additional must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadAdditionalType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed variants" do
+    assert_raise ArgumentError, ~r/variants must contain ToolCall.IR types/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadVariantsType
+      )
+    end
+  end
+
   test "validates the :types option" do
     assert_raise ArgumentError, ~r/:types must be a list/, fn ->
       compile!("""
@@ -268,6 +549,14 @@ defmodule ToolCall.TypeProviderTest do
       """)
     end
 
+    assert_raise ArgumentError, ~r/expected a module in :types/, fn ->
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [nil]
+      end
+      """)
+    end
+
     assert_raise ArgumentError, ~r/accepts only :types/, fn ->
       compile!("""
       defmodule FIXTURE do
@@ -275,5 +564,17 @@ defmodule ToolCall.TypeProviderTest do
       end
       """)
     end
+  end
+
+  defp compile_tool(provider, type) do
+    compile!("""
+    defmodule FIXTURE do
+      use ToolCall, types: [#{inspect(provider)}]
+
+      @doc "Provider."
+      @spec go(value :: #{inspect(type)}.t()) :: String.t()
+      def go(value), do: value
+    end
+    """)
   end
 end

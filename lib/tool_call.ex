@@ -63,7 +63,7 @@ defmodule ToolCall do
   defp expand_providers(providers, env) when is_list(providers) do
     Enum.map(providers, fn provider ->
       case Macro.expand(provider, env) do
-        module when is_atom(module) ->
+        module when is_atom(module) and module not in [nil, true, false] ->
           module
 
         _other ->
