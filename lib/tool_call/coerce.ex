@@ -153,7 +153,9 @@ defmodule ToolCall.Coerce do
   defp coerce_kind(%Type{kind: :object}, value), do: {:error, {:expected_object, value}}
 
   defp coerce_kind(%Type{kind: :union} = type, value) do
-    Enum.reduce_while(type.variants, {:error, {:no_variant_matched, value}}, fn variant, _acc ->
+    variants = type.variants || []
+
+    Enum.reduce_while(variants, {:error, {:no_variant_matched, value}}, fn variant, _acc ->
       case coerce(variant, value) do
         {:ok, coerced} -> {:halt, {:ok, coerced}}
         {:error, _reason} -> {:cont, {:error, {:no_variant_matched, value}}}

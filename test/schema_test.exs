@@ -46,6 +46,10 @@ defmodule ToolCall.SchemaTest do
       assert Schema.type(%Type{kind: :null}) == %{"type" => "null"}
     end
 
+    test "a hand-built nil enum keeps null" do
+      assert Schema.type(%Type{kind: :enum, values: [nil]}) == %{"enum" => [nil]}
+    end
+
     test "boolean literals render as a boolean enum" do
       assert Schema.type(%Type{kind: :enum, values: [true]}) == %{
                "type" => "boolean",

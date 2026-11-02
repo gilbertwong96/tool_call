@@ -319,6 +319,11 @@ defmodule ToolCall.CoerceTest do
   end
 
   describe "union variants" do
+    test "a hand-built union without variants reports no match" do
+      assert {:error, {:no_variant_matched, 1}} =
+               Coerce.coerce(%Type{kind: :union, variants: nil}, 1)
+    end
+
     test "take the first match and report when none does" do
       type = %Type{kind: :union, variants: [%Type{kind: :integer}, %Type{kind: :string}]}
 

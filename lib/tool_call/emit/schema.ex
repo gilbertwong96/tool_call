@@ -179,7 +179,8 @@ defmodule ToolCall.Emit.Schema do
       Enum.all?(values, &is_boolean/1) ->
         %{"type" => "boolean", "enum" => values}
 
-      Enum.all?(values, &is_atom/1) and not Enum.any?(values, &is_boolean/1) ->
+      Enum.all?(values, &is_atom/1) and
+          not Enum.any?(values, &(is_boolean(&1) or is_nil(&1))) ->
         %{"type" => "string", "enum" => Enum.map(values, &Atom.to_string/1)}
 
       Enum.all?(values, &is_integer/1) ->
