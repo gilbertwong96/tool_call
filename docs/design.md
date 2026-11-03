@@ -126,7 +126,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `1..10` | `:integer` 1..10 | bounds |
 | `float()` | `:float` | `{"type":"number"}` |
 | `number()` | `:number` | `{"type":"number"}` |
-| `String.t()`, `binary()`, `bitstring()` | `:string` | `{"type":"string"}` |
+| `String.t()`, `binary()`, `bitstring()`, `nonempty_binary()`, `nonempty_string()` | `:string` | `{"type":"string"}` |
 | `charlist()` | `:string` | `{"type":"string"}`; the function receives a charlist |
 | `char()` | `:string` | `+ "pattern": "^[\\s\\S]$"`, enforced at dispatch; the function receives the codepoint |
 | `boolean()` | `:boolean` | `{"type":"boolean"}` |
@@ -142,11 +142,12 @@ build warns. Depth 18 now compiles in 28 ms.
 | `[t]`, `list(t)` | `:array` | `{"type":"array","items":...}` |
 | `nonempty_list(t)` | `:array` | `+ "minItems": 1` |
 | `{a, b}`, `{a, b, c}` | `:tuple` | `prefixItems` + min/maxItems; strict keeps only the size; the function receives a tuple |
+| `tuple()` | `:tuple`, no fixed items | array with unconstrained items; the function receives a tuple |
 | `keyword(t)`, `Keyword.t()` | `:object` | `additionalProperties: <t>`; the function receives a keyword list |
 | `Date.t()`, `DateTime.t()`, `Time.t()` | `:string` | `+ "format": "date" / "time" / "date-time"`; parsed from ISO 8601 at dispatch |
 | `NaiveDateTime.t()` | `:string` | no `format`: RFC 3339 `date-time` needs an offset; parsed at dispatch |
 | `Path.t()` | `:string` | `{"type":"string"}`; already a binary |
-| `fun()`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning |
+| `fun()`, `fun(...)`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning |
 | `term()`, `any()` | `:any` | `{}` |
 | unknown remote type without a provider | `:any` | `{}` |
 
@@ -206,6 +207,11 @@ the spec:
 
 Keeping these orthogonal means the function stays reusable outside of tool
 calls.
+
+All string wire values are Unicode. Invalid UTF-8 from a provider or direct
+caller is rejected at dispatch as `{:invalid_utf8, value}` rather than raised;
+the schema can only say `"type": "string"`, so the runtime boundary is the
+enforcement point.
 
 **The value domain is restored at dispatch.** Coercion does not stop at checking
 the wire value: `%{a: integer()}` is handed over with atom keys, `keyword(t)` as a

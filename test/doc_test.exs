@@ -86,6 +86,19 @@ defmodule ToolCall.DocTest do
            } = Doc.parse(doc)
   end
 
+  test "accepts parameter names ending in ? or !" do
+    doc = """
+    Search.
+
+    ## Parameters
+      * `query?` - free text
+      * `force!` - bypass cache
+    """
+
+    assert %{params: %{"query?" => "free text", "force!" => "bypass cache"}} =
+             Doc.parse(doc)
+  end
+
   test "accepts alternative headings and bullet styles" do
     doc = """
     Search.

@@ -7,6 +7,19 @@ defmodule ToolCall.SchemaTest do
   alias ToolCall.IR.{Field, Param, Tool, Type}
 
   describe "type/2" do
+    test "renders numeric bounds for float and number" do
+      assert Schema.type(%Type{kind: :float, minimum: 1.5, maximum: 2.5}) == %{
+               "type" => "number",
+               "minimum" => 1.5,
+               "maximum" => 2.5
+             }
+
+      assert Schema.type(%Type{kind: :number, minimum: 1}) == %{
+               "type" => "number",
+               "minimum" => 1
+             }
+    end
+
     test "renders numeric scalars" do
       assert Schema.type(%Type{kind: :float}) == %{"type" => "number"}
       assert Schema.type(%Type{kind: :number}) == %{"type" => "number"}
@@ -126,8 +139,31 @@ defmodule ToolCall.SchemaTest do
              }
     end
 
+    test "an unconstrained tuple renders an array with unconstrained items" do
+      assert Schema.type(%Type{kind: :tuple, items: nil}) == %{
+               "type" => "array",
+               "items" => %{}
+             }
+
+      assert Schema.type(%Type{kind: :tuple, items: nil}, strict: true) == %{
+               "type" => "array",
+               "items" => %{}
+             }
+    end
+
     test "an array without items renders an open item schema" do
       assert Schema.type(%Type{kind: :array}) == %{"type" => "array", "items" => %{}}
+    end
+
+    test "renders array bounds" do
+      type = %Type{kind: :array, items: %Type{kind: :integer}, minimum: 1, maximum: 3}
+
+      assert Schema.type(type) == %{
+               "type" => "array",
+               "items" => %{"type" => "integer"},
+               "minItems" => 1,
+               "maxItems" => 3
+             }
     end
 
     test "a nullable anyOf gets a null variant" do
@@ -255,6 +291,25 @@ defmodule ToolCall.SchemaTest do
     assert Schema.type(%Type{kind: :union, variants: [], nullable: true}) == %{
              "anyOf" => [%{"type" => "null"}]
            }
+  end
+
+  test "strict mode keeps a nullable null as a single null type" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: nil) :: nil
+        def go(x \\\\ nil), do: x
+      end
+      """)
+
+    assert param_schema(module, "go", "x") == %{"type" => "null"}
+
+    assert module
+           |> ToolCall.emit(:openai, strict: true)
+           |> hd()
+           |> get_in(["function", "parameters", "properties", "x"]) == %{"type" => "null"}
   end
 
   test "a default tuple of the wrong size is kept as is" do

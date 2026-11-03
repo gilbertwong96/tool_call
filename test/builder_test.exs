@@ -437,6 +437,21 @@ defmodule ToolCall.BuilderTest do
     refute Map.has_key?(param_schema(module, "go", "num"), "default")
   end
 
+  test "drops map defaults whose keys JSON cannot represent" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(m :: map(), l :: list(map())) :: term()
+        def go(m \\\\ %{1 => "x"}, l \\\\ [%{1 => "x"}]), do: {m, l}
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "go", "m"), "default")
+    refute Map.has_key?(param_schema(module, "go", "l"), "default")
+  end
+
   test "keeps negative literal defaults" do
     module =
       compile!("""

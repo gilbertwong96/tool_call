@@ -72,6 +72,27 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"a" => 1, "c" => 3})
   end
 
+  test "returns invalid utf-8 as a tool error instead of raising" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(text :: String.t(), pattern :: String.t(), chars :: charlist()) :: term()
+        def go(text, pattern, chars), do: {text, pattern, chars}
+      end
+      """)
+
+    assert {:error, {:invalid_argument, {"text", {:invalid_utf8, <<255>>}}}} =
+             ToolCall.run(module, :go, %{"text" => <<255>>, "pattern" => "x", "chars" => "x"})
+
+    assert {:error, {:invalid_argument, {"pattern", {:invalid_utf8, <<255>>}}}} =
+             ToolCall.run(module, :go, %{"text" => "x", "pattern" => <<255>>, "chars" => "x"})
+
+    assert {:error, {:invalid_argument, {"chars", {:invalid_utf8, <<255>>}}}} =
+             ToolCall.run(module, :go, %{"text" => "x", "pattern" => "x", "chars" => <<255>>})
+  end
+
   test "restores tuple arguments" do
     module =
       compile!("""
@@ -105,6 +126,21 @@ defmodule ToolCall.RunnerTest do
     assert {:ok, ?\n} = ToolCall.run(module, :char, %{"c" => "\n"})
     assert {:ok, ?é} = ToolCall.run(module, :char, %{"c" => "é"})
     assert {:error, _reason} = ToolCall.run(module, :char, %{"c" => "ab"})
+  end
+
+  test "restores an unconstrained tuple argument" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(t :: tuple()) :: term()
+        def go(t), do: t
+      end
+      """)
+
+    assert {:ok, {1, "a"}} = ToolCall.run(module, :go, %{"t" => [1, "a"]})
+    assert {:ok, {}} = ToolCall.run(module, :go, %{"t" => []})
   end
 
   test "prepares runtime char patterns with unicode" do

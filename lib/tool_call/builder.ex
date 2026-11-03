@@ -509,10 +509,11 @@ defmodule ToolCall.Builder do
     pairs
     |> Enum.reduce_while({:ok, %{}}, fn {key, value}, {:ok, acc} ->
       with {:ok, key} <- literal(key, env),
+           true <- is_atom(key) or is_binary(key),
            {:ok, value} <- literal(value, env) do
         {:cont, {:ok, Map.put(acc, key, value)}}
       else
-        :error -> {:halt, :error}
+        _other -> {:halt, :error}
       end
     end)
   end

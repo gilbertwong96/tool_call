@@ -127,7 +127,8 @@ and convert in the function.
 - **A default makes a parameter optional.** `def f(a, b \\ 1)` puts `a` in
   `required` and leaves `b` out. Defaults that are not literals (such as
   `DateTime.utc_now()`) are not sent to the model; the parameter is still
-  optional. Defaults JSON cannot carry (tuples) are dropped too. `~s`, `~c` and
+  optional. Defaults JSON cannot carry (tuples, non-string map keys) are
+  dropped too. `~s`, `~c` and
   `~w` sigil defaults are kept (a charlist default is sent as a string); sigils
   that interpolate or build non-JSON values (dates, regexes) are dropped. An
   `atom()` default is sent as its string form, including `true` and `false`.
@@ -200,6 +201,11 @@ end
   as strings (`format` is set for date/time/date-time; a naive datetime has no
   offset to describe) and are parsed from ISO 8601 before dispatch. An
   unparsable value is `{:invalid_argument, {name, {:invalid_date, value}}}`.
+- **Every string parameter must be valid UTF-8 at runtime.** JSON strings are
+  Unicode; if a provider or direct caller hands the dispatcher invalid UTF-8,
+  it returns `{:invalid_argument, {name, {:invalid_utf8, value}}}` instead of
+  raising. This applies to `String.t()`, `binary()`, `bitstring()`, patterns,
+  `charlist()`, `char()`, atoms, enums and keyword keys.
 - `atom()` is described as an unconstrained string. The dispatcher maps a string
   to an atom only when that atom already exists in the VM; unless the type is
   nullable it rejects `null` and booleans. Prefer `:a | :b` so the schema carries

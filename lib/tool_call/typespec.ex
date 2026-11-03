@@ -138,6 +138,12 @@ defmodule ToolCall.Typespec do
     %Type{kind: :array, items: to_type(type, providers), minimum: 1}
   end
 
+  defp local(:nonempty_binary, [], _providers),
+    do: %Type{kind: :string, source: :binary}
+
+  defp local(:nonempty_string, [], _providers),
+    do: %Type{kind: :string, source: :string}
+
   defp local(:keyword, args, providers) do
     case args do
       [] -> Stdlib.keyword_type(%Type{kind: :any})
@@ -149,7 +155,7 @@ defmodule ToolCall.Typespec do
   defp local(:map, [], _providers),
     do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
 
-  defp local(:tuple, [], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
+  defp local(:tuple, [], _providers), do: %Type{kind: :tuple, items: nil}
 
   defp local(:as_boolean, [type], providers), do: to_type(type, providers)
   defp local(:as_boolean, [], _providers), do: %Type{kind: :boolean}
@@ -158,6 +164,8 @@ defmodule ToolCall.Typespec do
 
   defp local(name, [], _providers) when name in @unrepresentable,
     do: %Type{kind: :unsupported, source: name}
+
+  defp local(:fun, _args, _providers), do: %Type{kind: :unsupported, source: :fun}
 
   defp local(:struct, [], _providers),
     do: %Type{kind: :object, fields: [], additional: %Type{kind: :any}}
@@ -305,7 +313,8 @@ defmodule ToolCall.Typespec do
     validate_bound!(kind, minimum, "minimum", provider, module, function, args)
     validate_bound!(kind, maximum, "maximum", provider, module, function, args)
     validate_bound_order!(minimum, maximum, provider, module, function, args)
-    validate_array_minimum!(kind, minimum, provider, module, function, args)
+    validate_array_bound!(kind, minimum, "minimum", provider, module, function, args)
+    validate_array_bound!(kind, maximum, "maximum", provider, module, function, args)
     type
   end
 
@@ -360,18 +369,18 @@ defmodule ToolCall.Typespec do
   defp validate_bound_order!(_minimum, _maximum, _provider, _module, _function, _args),
     do: :ok
 
-  defp validate_array_minimum!(:array, minimum, provider, module, function, args)
-       when is_integer(minimum) and minimum < 0 do
+  defp validate_array_bound!(:array, value, name, provider, module, function, args)
+       when is_integer(value) and value < 0 do
     provider_type_error!(
       provider,
       module,
       function,
       args,
-      "array minimum must be >= 0, got: #{inspect(minimum)}"
+      "array #{name} must be >= 0, got: #{inspect(value)}"
     )
   end
 
-  defp validate_array_minimum!(_kind, _minimum, _provider, _module, _function, _args),
+  defp validate_array_bound!(_kind, _value, _name, _provider, _module, _function, _args),
     do: :ok
 
   defp validate_format!(%Type{format: nil}, _provider, _module, _function, _args), do: :ok

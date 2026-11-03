@@ -10,6 +10,10 @@ defmodule ToolCall.Coerce do
     * JSON has no atoms, so `:enum` values arrive as strings and are mapped
       back to atoms.
 
+  JSON strings are Unicode; invalid UTF-8 binaries are rejected with
+  `{:invalid_utf8, value}` so a bad provider payload never raises out of
+  `ToolCall.run/3`.
+
   Patterns must already be compiled into `ToolCall.IR.Type.pattern_regex`.
   Hand-built types can be prepared with `ToolCall.Typespec.validate_type!/1`.
 
@@ -89,43 +93,58 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :float}, value) when is_float(value), do: {:ok, value}
+  defp coerce_kind(%Type{kind: :float} = type, value) when is_float(value),
+    do: check_bounds(type, value)
 
-  defp coerce_kind(%Type{kind: :float}, value) when is_integer(value) do
+  defp coerce_kind(%Type{kind: :float} = type, value) when is_integer(value) do
     if abs(value) <= @max_float,
-      do: {:ok, value * 1.0},
+      do: check_bounds(type, value * 1.0),
       else: {:error, {:expected_float, value}}
   end
 
   defp coerce_kind(%Type{kind: :float}, value), do: {:error, {:expected_float, value}}
 
-  defp coerce_kind(%Type{kind: :number}, value) when is_number(value), do: {:ok, value}
+  defp coerce_kind(%Type{kind: :number} = type, value) when is_number(value),
+    do: check_bounds(type, value)
+
   defp coerce_kind(%Type{kind: :number}, value), do: {:error, {:expected_number, value}}
 
   defp coerce_kind(%Type{kind: :string, source: :charlist}, value) when is_binary(value) do
-    {:ok, String.to_charlist(value)}
-  rescue
-    _exception in [ArgumentError, UnicodeConversionError] ->
-      {:error, {:expected_string, value}}
+    if String.valid?(value),
+      do: {:ok, String.to_charlist(value)},
+      else: {:error, {:invalid_utf8, value}}
   end
 
   defp coerce_kind(%Type{kind: :string, source: :char} = type, value) when is_binary(value) do
-    if String.valid?(value) and Regex.match?(pattern_regex(type), value) do
-      [codepoint | _rest] = String.to_charlist(value)
-      {:ok, codepoint}
-    else
-      {:error, {:pattern_mismatch, type.pattern, value}}
+    cond do
+      not String.valid?(value) ->
+        {:error, {:invalid_utf8, value}}
+
+      Regex.match?(pattern_regex(type), value) ->
+        [codepoint | _rest] = String.to_charlist(value)
+        {:ok, codepoint}
+
+      true ->
+        {:error, {:pattern_mismatch, type.pattern, value}}
     end
   end
 
-  defp coerce_kind(%Type{kind: :string, pattern: nil}, value) when is_binary(value),
-    do: {:ok, value}
+  defp coerce_kind(%Type{kind: :string, pattern: nil}, value) when is_binary(value) do
+    if String.valid?(value), do: {:ok, value}, else: {:error, {:invalid_utf8, value}}
+  end
 
   defp coerce_kind(%Type{kind: :string, pattern: pattern} = type, value)
        when is_binary(value) do
-    if Regex.match?(pattern_regex(type), value),
-      do: {:ok, value},
-      else: {:error, {:pattern_mismatch, pattern, value}}
+    cond do
+      not String.valid?(value) ->
+        {:error, {:invalid_utf8, value}}
+
+      Regex.match?(pattern_regex(type), value) ->
+        {:ok, value}
+
+      true ->
+        {:error, {:pattern_mismatch, pattern, value}}
+    end
   end
 
   defp coerce_kind(%Type{kind: :string}, value), do: {:error, {:expected_string, value}}
@@ -141,12 +160,16 @@ defmodule ToolCall.Coerce do
        do: {:ok, value}
 
   defp coerce_kind(%Type{kind: :atom}, value) when is_binary(value) do
-    atom = String.to_existing_atom(value)
+    if String.valid?(value) do
+      atom = String.to_existing_atom(value)
 
-    if is_boolean(atom) or is_nil(atom) do
-      {:error, {:expected_atom, value}}
+      if is_boolean(atom) or is_nil(atom) do
+        {:error, {:expected_atom, value}}
+      else
+        {:ok, atom}
+      end
     else
-      {:ok, atom}
+      {:error, {:invalid_utf8, value}}
     end
   rescue
     ArgumentError -> {:error, {:unknown_atom, value}}
@@ -158,17 +181,27 @@ defmodule ToolCall.Coerce do
 
   defp coerce_kind(%Type{kind: :array} = type, value) when is_list(value) do
     with {:ok, items} <- coerce_each(type.items || %Type{kind: :any}, value) do
+      length = length(items)
       minimum = type.minimum || 0
+      maximum = type.maximum
 
-      if length(items) >= minimum do
-        {:ok, items}
-      else
-        {:error, {:too_few_items, length(items), minimum}}
+      cond do
+        length < minimum ->
+          {:error, {:too_few_items, length, minimum}}
+
+        not is_nil(maximum) and length > maximum ->
+          {:error, {:too_many_items, length, maximum}}
+
+        true ->
+          {:ok, items}
       end
     end
   end
 
   defp coerce_kind(%Type{kind: :array}, value), do: {:error, {:expected_array, value}}
+
+  defp coerce_kind(%Type{kind: :tuple, items: nil}, value) when is_list(value),
+    do: {:ok, List.to_tuple(value)}
 
   defp coerce_kind(%Type{kind: :tuple} = type, value) when is_list(value) do
     items = type.items || []
@@ -204,10 +237,18 @@ defmodule ToolCall.Coerce do
     end)
   end
 
-  defp coerce_enum(%Type{values: nil}, value), do: coerce_empty_enum(value)
-  defp coerce_enum(%Type{values: []}, value), do: coerce_empty_enum(value)
+  defp coerce_enum(%Type{} = type, value) when is_binary(value) do
+    if String.valid?(value),
+      do: coerce_enum_value(type, value),
+      else: {:error, {:invalid_utf8, value}}
+  end
 
-  defp coerce_enum(%Type{values: values}, value) do
+  defp coerce_enum(%Type{} = type, value), do: coerce_enum_value(type, value)
+
+  defp coerce_enum_value(%Type{values: nil}, value), do: coerce_empty_enum(value)
+  defp coerce_enum_value(%Type{values: []}, value), do: coerce_empty_enum(value)
+
+  defp coerce_enum_value(%Type{values: values}, value) do
     cond do
       value in values ->
         {:ok, value}
@@ -238,13 +279,18 @@ defmodule ToolCall.Coerce do
   defp parse_integer(value) when is_integer(value), do: {:ok, value}
 
   defp parse_integer(value) when is_binary(value) do
-    if String.starts_with?(value, "+") do
-      {:error, {:expected_integer_string, value}}
-    else
-      case Integer.parse(value) do
-        {integer, ""} -> {:ok, integer}
-        _other -> {:error, {:expected_integer_string, value}}
-      end
+    cond do
+      not String.valid?(value) ->
+        {:error, {:invalid_utf8, value}}
+
+      String.starts_with?(value, "+") ->
+        {:error, {:expected_integer_string, value}}
+
+      true ->
+        case Integer.parse(value) do
+          {integer, ""} -> {:ok, integer}
+          _other -> {:error, {:expected_integer_string, value}}
+        end
     end
   end
 

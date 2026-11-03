@@ -48,8 +48,8 @@ defmodule ToolCall.Emit.Schema do
   end
 
   defp base(%Type{kind: :integer} = type, _opts), do: bounds(%{"type" => "integer"}, type)
-  defp base(%Type{kind: :float}, _opts), do: %{"type" => "number"}
-  defp base(%Type{kind: :number}, _opts), do: %{"type" => "number"}
+  defp base(%Type{kind: :float} = type, _opts), do: bounds(%{"type" => "number"}, type)
+  defp base(%Type{kind: :number} = type, _opts), do: bounds(%{"type" => "number"}, type)
 
   defp base(%Type{kind: :string} = type, _opts) do
     %{"type" => "string"}
@@ -210,7 +210,11 @@ defmodule ToolCall.Emit.Schema do
       "items" => do_type(type.items || %Type{kind: :any}, opts)
     }
     |> maybe_put("minItems", type.minimum)
+    |> maybe_put("maxItems", type.maximum)
   end
+
+  defp tuple(%Type{items: nil}, _opts),
+    do: %{"type" => "array", "items" => %{}}
 
   defp tuple(%Type{} = type, opts) do
     items = Enum.map(type.items || [], &do_type(&1, opts))
@@ -252,6 +256,9 @@ defmodule ToolCall.Emit.Schema do
 
   defp nullable(schema, %Type{nullable: true}) do
     case schema do
+      # `null` is already the whole domain; adding another null branch or
+      # widening it again just produces `["null", "null"]`.
+      %{"type" => "null"} -> schema
       # `enum` constrains independently of `type`, so widening the type is not
       # enough: null needs its own branch.
       %{"enum" => _values} -> %{"anyOf" => [schema, %{"type" => "null"}]}

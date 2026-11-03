@@ -177,7 +177,7 @@ defmodule ToolCall do
   def emit(module_or_tools, target, opts \\ [])
 
   def emit(module, target, opts) when is_atom(module) do
-    ensure_tool_module!(module)
+    ensure_tool_module!(module, :__schemas__)
     ToolCall.Emit.lookup(module.__schemas__(), target, opts)
   end
 
@@ -187,7 +187,7 @@ defmodule ToolCall do
   @doc "Runs a tool by name. `args` uses string keys, as decoded from JSON."
   @spec run(module(), atom() | String.t(), term()) :: {:ok, term()} | {:error, term()}
   def run(module, name, args) do
-    ensure_tool_module!(module)
+    ensure_tool_module!(module, :__run__)
     module.__run__(name, args)
   end
 
@@ -197,10 +197,14 @@ defmodule ToolCall do
     %{tool | source: nil, params: Enum.map(tool.params, &%{&1 | source: nil})}
   end
 
-  defp ensure_tool_module!(module) do
+  defp ensure_tool_module!(module, function \\ :__tools__) do
     if not (is_atom(module) and Code.ensure_loaded?(module) and
-              function_exported?(module, :__tools__, 0)) do
+              function_exported?(module, function, function_arity(function))) do
       raise ArgumentError, "#{inspect(module)} does not use ToolCall"
     end
   end
+
+  defp function_arity(:__schemas__), do: 0
+  defp function_arity(:__run__), do: 2
+  defp function_arity(:__tools__), do: 0
 end

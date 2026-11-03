@@ -113,7 +113,11 @@ defmodule ToolCall.Providers.Stdlib do
   defp keyword_key(key) when is_atom(key), do: {:ok, key}
 
   defp keyword_key(key) when is_binary(key) do
-    {:ok, String.to_existing_atom(key)}
+    if String.valid?(key) do
+      {:ok, String.to_existing_atom(key)}
+    else
+      {:error, {:invalid_utf8, key}}
+    end
   rescue
     ArgumentError -> {:error, {:unknown_atom, key}}
   end

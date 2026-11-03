@@ -194,8 +194,9 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :string, source: :string} = ir({:string, [], []})
     assert %Type{kind: :string, source: :charlist} = ir({:charlist, [], []})
     assert %Type{kind: :string, source: :bitstring} = ir({:bitstring, [], []})
+    assert %Type{kind: :string, source: :string} = ir({:nonempty_string, [], []})
     assert %Type{kind: :array, items: %Type{kind: :any}} = ir({:list, [], []})
-    assert %Type{kind: :array, items: %Type{kind: :any}} = ir({:tuple, [], []})
+    assert %Type{kind: :tuple, items: nil} = ir({:tuple, [], []})
     assert %Type{kind: :object, additional: %Type{kind: :any}} = ir({:map, [], []})
     assert %Type{kind: :object, additional: %Type{kind: :any}} = ir({:keyword, [], []})
     assert %Type{kind: :object, additional: %Type{kind: :any}} = ir({:struct, [], []})
@@ -216,6 +217,19 @@ defmodule ToolCall.TypespecTest do
   test "Keyword.t/1 keeps its value type" do
     assert %Type{kind: :object, additional: %Type{kind: :integer}} =
              ir({{:., [], [Keyword, :t]}, [], [{:integer, [], []}]})
+  end
+
+  test "validate_type!/1 rejects negative array bounds" do
+    assert_raise ArgumentError, ~r/array minimum must be >= 0/, fn ->
+      Typespec.validate_type!(%Type{kind: :array, minimum: -1})
+    end
+
+    assert_raise ArgumentError, ~r/array maximum must be >= 0/, fn ->
+      Typespec.validate_type!(%Type{kind: :array, maximum: -1})
+    end
+
+    assert %Type{kind: :array, minimum: 1, maximum: 2} =
+             Typespec.validate_type!(%Type{kind: :array, minimum: 1, maximum: 2})
   end
 
   test "validate_type!/1 rejects empty non-nullable unions and duplicate fields" do
@@ -315,7 +329,12 @@ defmodule ToolCall.TypespecTest do
   test "unrepresentable domains are flagged, unknown ones degrade" do
     assert %Type{kind: :unsupported} = ir({:pid, [], []})
     assert %Type{kind: :unsupported} = ir([{:->, [], [[], {:integer, [], []}]}])
+
+    assert %Type{kind: :unsupported} =
+             ir({:fun, [], [{:->, [], [[{:integer, [], []}], {:integer, [], []}]}]})
+
     assert %Type{kind: :any} = ir({:term, [], []})
     assert %Type{kind: :any} = ir({:some_unknown_type, [], []})
+    assert %Type{kind: :string} = ir({:nonempty_binary, [], []})
   end
 end

@@ -80,6 +80,14 @@ defmodule ToolCall.CoerceTest do
       huge = Integer.pow(10, 400)
       assert {:error, {:expected_float, ^huge}} = Coerce.coerce(float(), huge)
     end
+
+    test "enforces float bounds" do
+      type = %Type{kind: :float, minimum: 1.5, maximum: 2.5}
+
+      assert {:ok, 2.0} = Coerce.coerce(type, 2)
+      assert {:error, {:below_minimum, 1.0, 1.5}} = Coerce.coerce(type, 1.0)
+      assert {:error, {:above_maximum, 3.0, 2.5}} = Coerce.coerce(type, 3.0)
+    end
   end
 
   describe "numbers" do
@@ -90,6 +98,14 @@ defmodule ToolCall.CoerceTest do
 
     test "rejects a non-number" do
       assert {:error, {:expected_number, "x"}} = Coerce.coerce(number(), "x")
+    end
+
+    test "enforces number bounds" do
+      type = %Type{kind: :number, minimum: 1, maximum: 3}
+
+      assert {:ok, 2} = Coerce.coerce(type, 2)
+      assert {:error, {:below_minimum, 0.5, 1}} = Coerce.coerce(type, 0.5)
+      assert {:error, {:above_maximum, 4, 3}} = Coerce.coerce(type, 4)
     end
   end
 
@@ -133,6 +149,11 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, "x"} = Coerce.coerce(%Type{kind: :enum, values: []}, "x")
       assert {:ok, "x"} = Coerce.coerce(%Type{kind: :enum, values: nil}, "x")
       assert {:error, {:invalid_enum, 1, []}} = Coerce.coerce(%Type{kind: :enum, values: []}, 1)
+    end
+
+    test "rejects invalid utf-8 before matching an enum" do
+      assert {:error, {:invalid_utf8, <<255>>}} =
+               Coerce.coerce(%Type{kind: :enum, values: [:a]}, <<255>>)
     end
   end
 
@@ -217,6 +238,11 @@ defmodule ToolCall.CoerceTest do
                Coerce.coerce(type, %{"definitely_not_an_existing_atom" => "x"})
     end
 
+    test "rejects invalid utf-8 keyword keys" do
+      type = keyword(%Type{kind: :string})
+      assert {:error, {:invalid_utf8, <<255>>}} = Coerce.coerce(type, %{<<255>> => "x"})
+    end
+
     test "reports which keyword value failed" do
       type = keyword(integer())
       assert {:error, {"a", {:expected_integer, "x"}}} = Coerce.coerce(type, %{"a" => "x"})
@@ -232,6 +258,22 @@ defmodule ToolCall.CoerceTest do
     test "strings" do
       assert {:ok, "a"} = Coerce.coerce(%Type{kind: :string}, "a")
       assert {:error, {:expected_string, 1}} = Coerce.coerce(%Type{kind: :string}, 1)
+    end
+
+    test "rejects invalid utf-8 for every string wire shape" do
+      invalid = <<255>>
+
+      for type <- [
+            %Type{kind: :string},
+            %Type{kind: :string, source: :binary},
+            %Type{kind: :string, source: :bitstring},
+            %Type{kind: :string, source: :charlist},
+            %Type{kind: :string, source: :char},
+            %Type{kind: :string, pattern: "^.$"},
+            %Type{kind: :string, source: {String, :t}}
+          ] do
+        assert {:error, {:invalid_utf8, ^invalid}} = Coerce.coerce(type, invalid)
+      end
     end
 
     test "parses calendar types from ISO 8601" do
@@ -268,7 +310,7 @@ defmodule ToolCall.CoerceTest do
     end
 
     test "rejects invalid utf-8 charlists instead of raising" do
-      assert {:error, {:expected_string, <<255>>}} =
+      assert {:error, {:invalid_utf8, <<255>>}} =
                Coerce.coerce(%Type{kind: :string, source: :charlist}, <<255>>)
     end
 
@@ -300,7 +342,7 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, ?\n} = Coerce.coerce(type, "\n")
       assert {:ok, ?é} = Coerce.coerce(type, "é")
       assert {:error, {:pattern_mismatch, _, "ab"}} = Coerce.coerce(type, "ab")
-      assert {:error, {:pattern_mismatch, _, <<255>>}} = Coerce.coerce(type, <<255>>)
+      assert {:error, {:invalid_utf8, <<255>>}} = Coerce.coerce(type, <<255>>)
     end
 
     test "booleans" do
@@ -325,6 +367,7 @@ defmodule ToolCall.CoerceTest do
       assert {:error, {:expected_atom, "true"}} = Coerce.coerce(%Type{kind: :atom}, "true")
       assert {:error, {:expected_atom, "false"}} = Coerce.coerce(%Type{kind: :atom}, "false")
       assert {:error, {:expected_atom, "nil"}} = Coerce.coerce(%Type{kind: :atom}, "nil")
+      assert {:error, {:invalid_utf8, <<255>>}} = Coerce.coerce(%Type{kind: :atom}, <<255>>)
       assert {:ok, nil} = Coerce.coerce(%Type{kind: :atom, nullable: true}, nil)
     end
 
@@ -359,6 +402,12 @@ defmodule ToolCall.CoerceTest do
       assert {:error, {:too_few_items, 1, 2}} = Coerce.coerce(type, [1])
     end
 
+    test "enforce maxItems" do
+      type = %Type{kind: :array, items: %Type{kind: :integer}, maximum: 2}
+      assert {:ok, [1, 2]} = Coerce.coerce(type, [1, 2])
+      assert {:error, {:too_many_items, 3, 2}} = Coerce.coerce(type, [1, 2, 3])
+    end
+
     test "reject a non-list" do
       assert {:error, {:expected_array, "x"}} = Coerce.coerce(%Type{kind: :array}, "x")
     end
@@ -372,6 +421,13 @@ defmodule ToolCall.CoerceTest do
       assert {:error, {:wrong_tuple_size, 1, 2}} = Coerce.coerce(type, [1])
       assert {:error, {:expected_array, %{}}} = Coerce.coerce(type, %{})
       assert {:error, {0, {:expected_integer, "a"}}} = Coerce.coerce(type, ["a", "b"])
+    end
+
+    test "an unconstrained tuple accepts any arity" do
+      type = %Type{kind: :tuple, items: nil}
+
+      assert {:ok, {1, "a"}} = Coerce.coerce(type, [1, "a"])
+      assert {:ok, {}} = Coerce.coerce(type, [])
     end
   end
 
@@ -454,6 +510,11 @@ defmodule ToolCall.CoerceTest do
     test "rejects a leading plus sign, matching the schema pattern" do
       assert {:error, {:expected_integer_string, "+1"}} =
                Coerce.coerce(integer(), "+1", :string_integer)
+    end
+
+    test "rejects invalid utf-8 before parsing an integer string" do
+      assert {:error, {:invalid_utf8, <<255>>}} =
+               Coerce.coerce(integer(), <<255>>, :string_integer)
     end
 
     test "enforce bounds after parsing" do

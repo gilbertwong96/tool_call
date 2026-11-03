@@ -16,7 +16,8 @@ defmodule ToolCall.Runner do
 
   `args` uses string keys, as JSON decodes them, including nested object values;
   `keyword(t)` values also accept atom keys because a keyword list is their value
-  domain.
+  domain. Invalid UTF-8 binaries in string arguments become
+  `{:invalid_argument, {name, {:invalid_utf8, value}}}` errors.
 
   Runtime tool lists are validated before dispatch. Compiled tools can use
   `run_prepared/4` to skip that validation.

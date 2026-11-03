@@ -201,6 +201,7 @@ end
 | `%{"b" => 2}` on `def f(a \\ 1, b \\ 2)` | `{:error, {:argument_gap, "a", ["b"]}}` — a reduced-arity call would bind `2` to `a`; use `%{"a" => 2, "b" => ...}` |
 | `%{"b" => 2}` on `def f(a \\ 1, b)` | `{:ok, {1, 2}}` — Elixir can omit `a` while keeping required `b` |
 | `%{"city" => "Oslo", "days" => 1.5}` | `{:error, {:invalid_argument, {"days", {:expected_integer, 1.5}}}}` |
+| an invalid UTF-8 binary in any string argument | `{:error, {:invalid_argument, {name, {:invalid_utf8, value}}}}` |
 | `%{"city" => "Oslo", "days" => nil}` | `{:ok, ...}` — null for an optional argument means "use the default" |
 | `[1, 2]` instead of a map | `{:error, {:invalid_arguments, [1, 2]}}` |
 | a raising function | `{:error, {:raised, "..."}}` |
@@ -221,6 +222,11 @@ The full error list is in the [README](../README.md#errors).
   `{:invalid_argument, {name, {:invalid_date, value}}}` and the model can retry.
   Declare `String.t()` if you
   want the raw string.
+- **String arguments must be valid UTF-8.** JSON strings are Unicode; invalid
+  bytes from a provider or direct caller become
+  `{:invalid_argument, {name, {:invalid_utf8, value}}}`, not an exception. This
+  applies to `String.t()`, `binary()`, `bitstring()`, patterns, `charlist()`,
+  `char()`, atoms, enums and keyword keys.
 - **Wire shapes are restored before dispatch.** `%{a: integer()}` arrives with
   atom keys at every declared level, `keyword(t)` as a keyword list,
   `charlist()` as a charlist, `char()` as a codepoint, tuples as Erlang tuples,
