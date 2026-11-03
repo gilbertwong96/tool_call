@@ -218,9 +218,8 @@ defmodule ToolCall.Typespec do
 
     type = validate_pattern!(type, provider, module, function, args)
     validate_transform!(type, provider, module, function, args)
-    validate_metadata!(type, provider, module, function, args)
+    type = validate_metadata!(type, provider, module, function, args)
     validate_children!(type, provider, module, function, args)
-    type
   end
 
   defp validate_pattern!(%Type{pattern: nil} = type, _provider, _module, _function, _args),
@@ -373,96 +372,120 @@ defmodule ToolCall.Typespec do
   defp validate_values!(%Type{}, _provider, _module, _function, _args), do: :ok
 
   defp validate_children!(%Type{} = type, provider, module, function, args) do
-    validate_items!(type, provider, module, function, args)
-    validate_fields!(type, provider, module, function, args)
-    validate_additional!(type, provider, module, function, args)
-    validate_variants!(type, provider, module, function, args)
     type
+    |> validate_items!(provider, module, function, args)
+    |> validate_fields!(provider, module, function, args)
+    |> validate_additional!(provider, module, function, args)
+    |> validate_variants!(provider, module, function, args)
   end
 
-  defp validate_items!(%Type{kind: :array, items: nil}, _provider, _module, _function, _args),
-    do: :ok
+  defp validate_items!(
+         %Type{kind: :array, items: nil} = type,
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: type
 
   defp validate_items!(
-         %Type{kind: :array, items: %Type{} = items},
+         %Type{kind: :array, items: %Type{} = items} = type,
          provider,
          module,
          function,
          args
-       ),
-       do: validate_provider_type!(items, provider, module, function, args)
+       ) do
+    %{type | items: validate_provider_type!(items, provider, module, function, args)}
+  end
 
   defp validate_items!(%Type{kind: :array, items: items}, provider, module, function, args),
     do: invalid_child!(provider, module, function, args, "items", items)
 
-  defp validate_items!(%Type{kind: :tuple, items: nil}, _provider, _module, _function, _args),
-    do: :ok
+  defp validate_items!(
+         %Type{kind: :tuple, items: nil} = type,
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: type
 
   defp validate_items!(
-         %Type{kind: :tuple, items: items},
+         %Type{kind: :tuple, items: items} = type,
          provider,
          module,
          function,
          args
        )
-       when is_list(items),
-       do: validate_type_list!(items, provider, module, function, args)
+       when is_list(items) do
+    %{type | items: validate_type_list!(items, provider, module, function, args)}
+  end
 
   defp validate_items!(%Type{kind: :tuple, items: items}, provider, module, function, args),
     do: invalid_child!(provider, module, function, args, "items", items)
 
-  defp validate_items!(%Type{}, _provider, _module, _function, _args), do: :ok
-
-  defp validate_fields!(%Type{kind: :object, fields: nil}, _provider, _module, _function, _args),
-    do: :ok
+  defp validate_items!(%Type{} = type, _provider, _module, _function, _args), do: type
 
   defp validate_fields!(
-         %Type{kind: :object, fields: fields},
+         %Type{kind: :object, fields: nil} = type,
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: type
+
+  defp validate_fields!(
+         %Type{kind: :object, fields: fields} = type,
          provider,
          module,
          function,
          args
        )
        when is_list(fields) do
-    Enum.each(fields, fn
-      %Field{type: %Type{} = type, name: name, key: key, required: required}
-      when is_binary(name) and is_atom(key) and is_boolean(required) ->
-        validate_provider_type!(type, provider, module, function, args)
+    fields =
+      Enum.map(fields, fn
+        %Field{type: %Type{} = field_type, name: name, key: key, required: required} = field
+        when is_binary(name) and is_atom(key) and is_boolean(required) ->
+          %{field | type: validate_provider_type!(field_type, provider, module, function, args)}
 
-      other ->
-        provider_type_error!(
-          provider,
-          module,
-          function,
-          args,
-          "field must have a string name, atom key, boolean required and ToolCall.IR.Type, " <>
-            "got: #{inspect(other)}"
-        )
-    end)
+        other ->
+          provider_type_error!(
+            provider,
+            module,
+            function,
+            args,
+            "field must have a string name, atom key, boolean required and ToolCall.IR.Type, " <>
+              "got: #{inspect(other)}"
+          )
+      end)
+
+    %{type | fields: fields}
   end
 
   defp validate_fields!(%Type{kind: :object, fields: fields}, provider, module, function, args),
     do: invalid_child!(provider, module, function, args, "fields", fields)
 
-  defp validate_fields!(%Type{}, _provider, _module, _function, _args), do: :ok
+  defp validate_fields!(%Type{} = type, _provider, _module, _function, _args), do: type
 
   defp validate_additional!(
-         %Type{kind: :object, additional: nil},
+         %Type{kind: :object, additional: nil} = type,
          _provider,
          _module,
          _function,
          _args
        ),
-       do: :ok
+       do: type
 
   defp validate_additional!(
-         %Type{kind: :object, additional: %Type{} = additional},
+         %Type{kind: :object, additional: %Type{} = additional} = type,
          provider,
          module,
          function,
          args
-       ),
-       do: validate_provider_type!(additional, provider, module, function, args)
+       ) do
+    %{type | additional: validate_provider_type!(additional, provider, module, function, args)}
+  end
 
   defp validate_additional!(
          %Type{kind: :object, additional: additional},
@@ -473,17 +496,18 @@ defmodule ToolCall.Typespec do
        ),
        do: invalid_child!(provider, module, function, args, "additional", additional)
 
-  defp validate_additional!(%Type{}, _provider, _module, _function, _args), do: :ok
+  defp validate_additional!(%Type{} = type, _provider, _module, _function, _args), do: type
 
   defp validate_variants!(
-         %Type{kind: :union, variants: variants},
+         %Type{kind: :union, variants: variants} = type,
          provider,
          module,
          function,
          args
        )
-       when is_list(variants),
-       do: validate_type_list!(variants, provider, module, function, args)
+       when is_list(variants) do
+    %{type | variants: validate_type_list!(variants, provider, module, function, args)}
+  end
 
   defp validate_variants!(
          %Type{kind: :union, variants: variants},
@@ -494,10 +518,10 @@ defmodule ToolCall.Typespec do
        ),
        do: invalid_child!(provider, module, function, args, "variants", variants)
 
-  defp validate_variants!(%Type{}, _provider, _module, _function, _args), do: :ok
+  defp validate_variants!(%Type{} = type, _provider, _module, _function, _args), do: type
 
   defp validate_type_list!(types, provider, module, function, args) do
-    Enum.each(types, fn
+    Enum.map(types, fn
       %Type{} = type -> validate_provider_type!(type, provider, module, function, args)
       other -> invalid_child!(provider, module, function, args, "nested type", other)
     end)

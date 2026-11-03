@@ -261,6 +261,7 @@ defmodule ToolCall.TypeProviderTest.NestedProvider do
          %Type{kind: :tuple, items: nil},
          %Type{kind: :array, items: %Type{kind: :string}},
          %Type{kind: :array, items: nil},
+         %Type{kind: :array, items: %Type{kind: :string, pattern: "^x$"}},
          %Type{kind: :enum, values: [:a, :b]},
          %Type{kind: :enum, values: nil},
          %Type{kind: :integer, minimum: 0, maximum: 10},
@@ -531,6 +532,25 @@ defmodule ToolCall.TypeProviderTest do
       )
 
     assert [%{"function" => %{"name" => "go"}}] = ToolCall.emit(module, :openai)
+  end
+
+  test "compiles nested provider patterns into the IR" do
+    type =
+      ToolCall.Typespec.to_type(
+        {{:., [], [ToolCall.TypeProviderTest.NestedType, :t]}, [], []},
+        [ToolCall.TypeProviderTest.NestedProvider]
+      )
+
+    pattern =
+      Enum.find(
+        type.variants,
+        &match?(
+          %ToolCall.IR.Type{kind: :array, items: %ToolCall.IR.Type{pattern: "^x$"}},
+          &1
+        )
+      )
+
+    assert %ToolCall.IR.Type{pattern_regex: %Regex{}} = pattern.items
   end
 
   test "rejects a provider type with malformed fields" do
