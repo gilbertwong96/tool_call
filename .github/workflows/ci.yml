@@ -47,5 +47,6 @@ jobs:
       - run: mix deps.get
       - run: MIX_ENV=dev mix deps.get
       - run: mix ci
-      - run: mix test --cover
-      - run: MIX_ENV=dev mix docs
+      - run: mix test --cover > /tmp/cover.out
+      - run: grep -q '100.00% | Total' /tmp/cover.out
+      - run: MIX_ENV=dev mix docs --warnings-as-errors
