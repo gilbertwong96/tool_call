@@ -211,6 +211,26 @@ defmodule ToolCall.TypeProviderTest.BadMinimumType do
   @type t :: String.t()
 end
 
+defmodule ToolCall.TypeProviderTest.BadArrayMinimumType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadBoundOrderType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadArrayBoundType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadEnumValueType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
 defmodule ToolCall.TypeProviderTest.BadFormatType do
   @moduledoc false
   @type t :: String.t()
@@ -265,6 +285,9 @@ defmodule ToolCall.TypeProviderTest.NestedProvider do
          %Type{kind: :enum, values: [:a, :b]},
          %Type{kind: :enum, values: nil},
          %Type{kind: :integer, minimum: 0, maximum: 10},
+         %Type{kind: :float, minimum: 1.5, maximum: 2.5},
+         %Type{kind: :array, items: %Type{kind: :string}, minimum: 1},
+         %Type{kind: :enum, values: [nil, true, 1, "x", :a]},
          %Type{kind: :string, format: "date"},
          %Type{kind: :string, nullable: true}
        ]
@@ -329,6 +352,22 @@ defmodule ToolCall.TypeProviderTest.InvalidProvider do
 
   def resolve(ToolCall.TypeProviderTest.BadMinimumType, :t, []) do
     {:ok, %ToolCall.IR.Type{kind: :integer, minimum: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadArrayMinimumType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :array, minimum: -1}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadBoundOrderType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :integer, minimum: 10, maximum: 1}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadArrayBoundType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :array, minimum: 1.5}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadEnumValueType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :enum, values: [%{}]}}
   end
 
   def resolve(ToolCall.TypeProviderTest.BadFormatType, :t, []) do
@@ -626,10 +665,46 @@ defmodule ToolCall.TypeProviderTest do
   end
 
   test "rejects a provider type with a malformed minimum" do
-    assert_raise ArgumentError, ~r/minimum must be an integer or nil/, fn ->
+    assert_raise ArgumentError, ~r/minimum must be a number or nil/, fn ->
       compile_tool(
         ToolCall.TypeProviderTest.InvalidProvider,
         ToolCall.TypeProviderTest.BadMinimumType
+      )
+    end
+  end
+
+  test "rejects a provider type with a negative array minimum" do
+    assert_raise ArgumentError, ~r/array minimum must be >= 0/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadArrayMinimumType
+      )
+    end
+  end
+
+  test "rejects a provider type with reversed bounds" do
+    assert_raise ArgumentError, ~r/minimum must be <= maximum/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadBoundOrderType
+      )
+    end
+  end
+
+  test "rejects a non-integer array bound" do
+    assert_raise ArgumentError, ~r/array minimum must be an integer/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadArrayBoundType
+      )
+    end
+  end
+
+  test "rejects a provider enum with a non-scalar value" do
+    assert_raise ArgumentError, ~r/enum values must be JSON scalars/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadEnumValueType
       )
     end
   end

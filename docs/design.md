@@ -156,8 +156,8 @@ calendar types come from the built-in stdlib provider.
 provider receives the argument types already resolved to IR and returns an IR
 node, or `:error` to fall back to `:any`. The returned node is validated
 recursively at compile time: unknown kinds, invalid patterns, transforms, enum
-values, bounds, formats, nullability or field metadata, and malformed
-`fields`/`items`/`variants`/`additional` raise. An optional `coerce/1` runs after
+values, bounds, bound ordering, array minimums, formats, nullability or field
+metadata, and malformed `fields`/`items`/`variants`/`additional` raise. An optional `coerce/1` runs after
 the built-in wire coercion. A remote type without a matching provider degrades
 to `{}` and warns.
 

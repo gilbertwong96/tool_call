@@ -244,6 +244,30 @@ defmodule ToolCall.SchemaTest do
     end
   end
 
+  test "rejects a runtime tool with a non-string name" do
+    tool = %Tool{name: :bad, params: []}
+
+    assert_raise ArgumentError, ~r/tool name must be a string/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
+  test "rejects a runtime parameter with invalid metadata" do
+    tool = %Tool{name: "bad", params: [%Param{name: :bad, type: %Type{kind: :string}}]}
+
+    assert_raise ArgumentError, ~r/invalid parameter/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
+  test "validates runtime tools through Emit directly" do
+    tool = %Tool{name: "bad", params: [%Param{name: "value", type: %Type{kind: :bogus}}]}
+
+    assert_raise ArgumentError, ~r/invalid ToolCall IR: unknown kind/, fn ->
+      ToolCall.Emit.emit(tool, :openai)
+    end
+  end
+
   test "treats a nil strict option as false" do
     assert Schema.strict?(strict: nil) == false
     assert Schema.strict?(strict: true) == true

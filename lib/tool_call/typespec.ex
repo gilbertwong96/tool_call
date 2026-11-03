@@ -29,8 +29,8 @@ defmodule ToolCall.Typespec do
   and are used by default. Passing `providers` explicitly replaces that default;
   `use ToolCall, types: [...]` prepends the built-ins before the user list. A
   provider must return a well-formed IR node: an unknown kind, a non-string or
-  uncompilable pattern, a malformed transform, enum values, bounds, formats,
-  nullability, field metadata, or malformed
+  uncompilable pattern, a malformed transform, enum values, bounds, bound
+  ordering, array minimums, formats, nullability, field metadata, or malformed
   `fields`/`items`/`variants`/`additional` raises at compile time.
   """
   @spec to_type(term(), [module()]) :: Type.t()
@@ -296,31 +296,83 @@ defmodule ToolCall.Typespec do
   end
 
   defp validate_bounds!(
-         %Type{minimum: minimum, maximum: maximum},
+         %Type{kind: kind, minimum: minimum, maximum: maximum} = type,
          provider,
          module,
          function,
          args
        ) do
-    validate_bound!(minimum, "minimum", provider, module, function, args)
-    validate_bound!(maximum, "maximum", provider, module, function, args)
+    validate_bound!(kind, minimum, "minimum", provider, module, function, args)
+    validate_bound!(kind, maximum, "maximum", provider, module, function, args)
+    validate_bound_order!(minimum, maximum, provider, module, function, args)
+    validate_array_minimum!(kind, minimum, provider, module, function, args)
+    type
   end
 
-  defp validate_bound!(nil, _name, _provider, _module, _function, _args), do: :ok
+  defp validate_bound!(_kind, nil, _name, _provider, _module, _function, _args), do: :ok
 
-  defp validate_bound!(value, _name, _provider, _module, _function, _args)
+  defp validate_bound!(:array, value, _name, _provider, _module, _function, _args)
        when is_integer(value),
        do: :ok
 
-  defp validate_bound!(value, name, provider, module, function, args) do
+  defp validate_bound!(:array, value, name, provider, module, function, args) do
     provider_type_error!(
       provider,
       module,
       function,
       args,
-      "#{name} must be an integer or nil, got: #{inspect(value)}"
+      "array #{name} must be an integer or nil, got: #{inspect(value)}"
     )
   end
+
+  defp validate_bound!(_kind, value, _name, _provider, _module, _function, _args)
+       when is_number(value),
+       do: :ok
+
+  defp validate_bound!(_kind, value, name, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "#{name} must be a number or nil, got: #{inspect(value)}"
+    )
+  end
+
+  defp validate_bound_order!(
+         minimum,
+         maximum,
+         provider,
+         module,
+         function,
+         args
+       )
+       when is_number(minimum) and is_number(maximum) and minimum > maximum do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "minimum must be <= maximum, got: #{inspect(minimum)} > #{inspect(maximum)}"
+    )
+  end
+
+  defp validate_bound_order!(_minimum, _maximum, _provider, _module, _function, _args),
+    do: :ok
+
+  defp validate_array_minimum!(:array, minimum, provider, module, function, args)
+       when is_integer(minimum) and minimum < 0 do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "array minimum must be >= 0, got: #{inspect(minimum)}"
+    )
+  end
+
+  defp validate_array_minimum!(_kind, _minimum, _provider, _module, _function, _args),
+    do: :ok
 
   defp validate_format!(%Type{format: nil}, _provider, _module, _function, _args), do: :ok
 
@@ -355,9 +407,10 @@ defmodule ToolCall.Typespec do
   defp validate_values!(%Type{kind: :enum, values: nil}, _provider, _module, _function, _args),
     do: :ok
 
-  defp validate_values!(%Type{kind: :enum, values: values}, _provider, _module, _function, _args)
-       when is_list(values),
-       do: :ok
+  defp validate_values!(%Type{kind: :enum, values: values}, provider, module, function, args)
+       when is_list(values) do
+    Enum.each(values, &validate_enum_value!(&1, provider, module, function, args))
+  end
 
   defp validate_values!(%Type{kind: :enum, values: values}, provider, module, function, args) do
     provider_type_error!(
@@ -370,6 +423,20 @@ defmodule ToolCall.Typespec do
   end
 
   defp validate_values!(%Type{}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_enum_value!(value, _provider, _module, _function, _args)
+       when is_binary(value) or is_number(value) or is_boolean(value) or is_atom(value),
+       do: :ok
+
+  defp validate_enum_value!(value, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "enum values must be JSON scalars, got: #{inspect(value)}"
+    )
+  end
 
   defp validate_children!(%Type{} = type, provider, module, function, args) do
     type

@@ -180,15 +180,8 @@ defmodule ToolCall do
     ToolCall.Emit.lookup(module.__schemas__(), target, opts)
   end
 
-  def emit(%Tool{} = tool, target, opts) do
-    validate_tool!(tool)
-    ToolCall.Emit.emit(tool, target, opts)
-  end
-
-  def emit(tools, target, opts) when is_list(tools) do
-    Enum.each(tools, &validate_tool!/1)
-    ToolCall.Emit.emit(tools, target, opts)
-  end
+  def emit(%Tool{} = tool, target, opts), do: ToolCall.Emit.emit(tool, target, opts)
+  def emit(tools, target, opts) when is_list(tools), do: ToolCall.Emit.emit(tools, target, opts)
 
   @doc "Runs a tool by name. `args` uses string keys, as decoded from JSON."
   @spec run(module(), atom() | String.t(), term()) :: {:ok, term()} | {:error, term()}
@@ -208,9 +201,5 @@ defmodule ToolCall do
               function_exported?(module, :__tools__, 0)) do
       raise ArgumentError, "#{inspect(module)} does not use ToolCall"
     end
-  end
-
-  defp validate_tool!(%Tool{params: params}) do
-    Enum.each(params || [], &ToolCall.Typespec.validate_type!(&1.type))
   end
 end
