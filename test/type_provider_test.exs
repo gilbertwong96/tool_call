@@ -201,6 +201,31 @@ defmodule ToolCall.TypeProviderTest.BadVariantsType do
   @type t :: String.t()
 end
 
+defmodule ToolCall.TypeProviderTest.BadValuesType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadMinimumType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadFormatType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadNullableType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TypeProviderTest.BadFieldMetadataType do
+  @moduledoc false
+  @type t :: String.t()
+end
+
 defmodule ToolCall.TypeProviderTest.NestedType do
   @moduledoc false
   @type t :: term()
@@ -220,14 +245,27 @@ defmodule ToolCall.TypeProviderTest.NestedProvider do
        variants: [
          %Type{
            kind: :object,
-           fields: [%Field{name: "value", key: :value, type: %Type{kind: :string}}],
+           fields: [
+             %Field{name: "value", key: :value, type: %Type{kind: :string}},
+             %Field{
+               name: "optional",
+               key: :optional,
+               type: %Type{kind: :integer},
+               required: false
+             }
+           ],
            additional: %Type{kind: :any}
          },
          %Type{kind: :object, fields: nil, additional: nil},
          %Type{kind: :tuple, items: [%Type{kind: :string}]},
          %Type{kind: :tuple, items: nil},
          %Type{kind: :array, items: %Type{kind: :string}},
-         %Type{kind: :array, items: nil}
+         %Type{kind: :array, items: nil},
+         %Type{kind: :enum, values: [:a, :b]},
+         %Type{kind: :enum, values: nil},
+         %Type{kind: :integer, minimum: 0, maximum: 10},
+         %Type{kind: :string, format: "date"},
+         %Type{kind: :string, nullable: true}
        ]
      }}
   end
@@ -282,6 +320,32 @@ defmodule ToolCall.TypeProviderTest.InvalidProvider do
 
   def resolve(ToolCall.TypeProviderTest.BadVariantsType, :t, []) do
     {:ok, %ToolCall.IR.Type{kind: :union, variants: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadValuesType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :enum, values: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadMinimumType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :integer, minimum: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadFormatType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, format: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadNullableType, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, nullable: :bad}}
+  end
+
+  def resolve(ToolCall.TypeProviderTest.BadFieldMetadataType, :t, []) do
+    {:ok,
+     %ToolCall.IR.Type{
+       kind: :object,
+       fields: [
+         %ToolCall.IR.Field{name: :bad, key: "bad", type: %ToolCall.IR.Type{kind: :string}}
+       ]
+     }}
   end
 
   def resolve(_module, _function, _args), do: :error
@@ -479,7 +543,7 @@ defmodule ToolCall.TypeProviderTest do
   end
 
   test "rejects a provider type with a malformed field" do
-    assert_raise ArgumentError, ~r/field must contain ToolCall.IR types/, fn ->
+    assert_raise ArgumentError, ~r/field must have a string name/, fn ->
       compile_tool(
         ToolCall.TypeProviderTest.InvalidProvider,
         ToolCall.TypeProviderTest.BadFieldType
@@ -528,6 +592,51 @@ defmodule ToolCall.TypeProviderTest do
       compile_tool(
         ToolCall.TypeProviderTest.InvalidProvider,
         ToolCall.TypeProviderTest.BadVariantsType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed enum values" do
+    assert_raise ArgumentError, ~r/values must be a list or nil/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadValuesType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed minimum" do
+    assert_raise ArgumentError, ~r/minimum must be an integer or nil/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadMinimumType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed format" do
+    assert_raise ArgumentError, ~r/format must be a string or nil/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadFormatType
+      )
+    end
+  end
+
+  test "rejects a provider type with a malformed nullable flag" do
+    assert_raise ArgumentError, ~r/nullable must be a boolean/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadNullableType
+      )
+    end
+  end
+
+  test "rejects a provider type with malformed field metadata" do
+    assert_raise ArgumentError, ~r/field must have a string name/, fn ->
+      compile_tool(
+        ToolCall.TypeProviderTest.InvalidProvider,
+        ToolCall.TypeProviderTest.BadFieldMetadataType
       )
     end
   end

@@ -114,9 +114,9 @@ defmodule ToolCall do
   @doc """
   Returns the tools derived from a module.
 
-  The embedded IR keeps `Type.source`, which calendar and charlist handling
-  need at runtime, and drops the spec and parameter ASTs, which are
-  compile-time provenance only.
+  The embedded IR keeps `Type.source`, which charlist handling needs at
+  runtime, and drops the spec and parameter ASTs, which are compile-time
+  provenance only.
   """
   @spec tools(module()) :: [Tool.t()]
   def tools(module) do
@@ -161,7 +161,8 @@ defmodule ToolCall do
   embedded as a literal, so this is a map lookup and `strict` may be a runtime
   boolean. A module returns a list with one schema per tool; a single
   `ToolCall.IR.Tool` returns one schema map and a list of them a list, rendered
-  on demand, which is what dynamically built tools need.
+  on demand, which is what dynamically built tools need. Runtime IR is
+  validated before rendering; invalid types raise `ArgumentError`.
 
   ## Options
 
@@ -179,8 +180,15 @@ defmodule ToolCall do
     ToolCall.Emit.lookup(module.__schemas__(), target, opts)
   end
 
-  def emit(%Tool{} = tool, target, opts), do: ToolCall.Emit.emit(tool, target, opts)
-  def emit(tools, target, opts) when is_list(tools), do: ToolCall.Emit.emit(tools, target, opts)
+  def emit(%Tool{} = tool, target, opts) do
+    validate_tool!(tool)
+    ToolCall.Emit.emit(tool, target, opts)
+  end
+
+  def emit(tools, target, opts) when is_list(tools) do
+    Enum.each(tools, &validate_tool!/1)
+    ToolCall.Emit.emit(tools, target, opts)
+  end
 
   @doc "Runs a tool by name. `args` uses string keys, as decoded from JSON."
   @spec run(module(), atom() | String.t(), term()) :: {:ok, term()} | {:error, term()}
@@ -189,8 +197,8 @@ defmodule ToolCall do
     module.__run__(name, args)
   end
 
-  # `Type.source` is runtime data (calendar and charlist handling);
-  # the spec and parameter ASTs are compile-time provenance only.
+  # `Type.source` is runtime data for charlist handling; the spec and parameter
+  # ASTs are compile-time provenance only.
   defp drop_provenance(%Tool{} = tool) do
     %{tool | source: nil, params: Enum.map(tool.params, &%{&1 | source: nil})}
   end
@@ -200,5 +208,9 @@ defmodule ToolCall do
               function_exported?(module, :__tools__, 0)) do
       raise ArgumentError, "#{inspect(module)} does not use ToolCall"
     end
+  end
+
+  defp validate_tool!(%Tool{params: params}) do
+    Enum.each(params || [], &ToolCall.Typespec.validate_type!(&1.type))
   end
 end

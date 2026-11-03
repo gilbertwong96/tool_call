@@ -155,14 +155,16 @@ calendar types come from the built-in stdlib provider.
 `use ToolCall, types: [...]` prepends the built-ins before user providers; a
 provider receives the argument types already resolved to IR and returns an IR
 node, or `:error` to fall back to `:any`. The returned node is validated
-recursively at compile time: unknown kinds, invalid patterns or transforms, and
-malformed `fields`/`items`/`variants`/`additional` raise. An optional `coerce/1`
-runs after the built-in wire coercion. A remote type without a matching provider
-degrades to `{}` and warns.
+recursively at compile time: unknown kinds, invalid patterns, transforms, enum
+values, bounds, formats, nullability or field metadata, and malformed
+`fields`/`items`/`variants`/`additional` raise. An optional `coerce/1` runs after
+the built-in wire coercion. A remote type without a matching provider degrades
+to `{}` and warns.
 
 The IR is also public for runtime-built tools. A hand-built calendar node must
 set `format`/`transform`; `source` is provenance except for `:charlist`, which
-still drives charlist conversion and its schema default.
+still drives charlist conversion and its schema default. `ToolCall.emit/3`
+validates runtime IR before rendering.
 
 Not handled: type variables (generics), recursive types (no `$ref`/`$defs`, so a
 recursive reference becomes `{}`), bitstrings with explicit sizes, struct

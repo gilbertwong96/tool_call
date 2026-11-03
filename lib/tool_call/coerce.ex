@@ -106,8 +106,9 @@ defmodule ToolCall.Coerce do
   defp coerce_kind(%Type{kind: :string, pattern: nil}, value) when is_binary(value),
     do: {:ok, value}
 
-  defp coerce_kind(%Type{kind: :string, pattern: pattern}, value) when is_binary(value) do
-    if Regex.match?(pattern_regex(pattern), value),
+  defp coerce_kind(%Type{kind: :string, pattern: pattern} = type, value)
+       when is_binary(value) do
+    if Regex.match?(pattern_regex(type), value),
       do: {:ok, value},
       else: {:error, {:pattern_mismatch, pattern, value}}
   end
@@ -314,9 +315,12 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  # `char()` is precompiled in `Patterns`; a hand-built pattern is compiled on
-  # demand instead of being cached globally.
-  defp pattern_regex(pattern), do: Patterns.regex(pattern) || Regex.compile!(pattern)
+  # Known/provider patterns are compiled into `pattern_regex`; a hand-built
+  # pattern is compiled on demand instead of being cached globally.
+  defp pattern_regex(%Type{pattern_regex: %Regex{} = regex}), do: regex
+
+  defp pattern_regex(%Type{pattern: pattern}),
+    do: Patterns.regex(pattern) || Regex.compile!(pattern)
 
   defp coerce_fields_for_extra(additional, extra) do
     Enum.reduce_while(extra, {:ok, %{}}, fn {key, raw}, {:ok, acc} ->

@@ -275,6 +275,14 @@ defmodule ToolCall.CoerceTest do
                Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "ab")
     end
 
+    test "uses the compiled pattern when present" do
+      type = ToolCall.Typespec.to_type({:char, [], []})
+
+      assert %Type{pattern_regex: %Regex{}} = type
+      assert {:ok, "a"} = Coerce.coerce(type, "a")
+      assert {:error, {:pattern_mismatch, "^.$", "ab"}} = Coerce.coerce(type, "ab")
+    end
+
     test "booleans" do
       assert {:ok, true} = Coerce.coerce(%Type{kind: :boolean}, true)
       assert {:error, {:expected_boolean, "true"}} = Coerce.coerce(%Type{kind: :boolean}, "true")

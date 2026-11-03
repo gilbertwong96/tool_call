@@ -29,7 +29,8 @@ defmodule ToolCall.Typespec do
   and are used by default. Passing `providers` explicitly replaces that default;
   `use ToolCall, types: [...]` prepends the built-ins before the user list. A
   provider must return a well-formed IR node: an unknown kind, a non-string or
-  uncompilable pattern, a malformed transform, or malformed
+  uncompilable pattern, a malformed transform, enum values, bounds, formats,
+  nullability, field metadata, or malformed
   `fields`/`items`/`variants`/`additional` raises at compile time.
   """
   @spec to_type(term(), [module()]) :: Type.t()
@@ -117,8 +118,14 @@ defmodule ToolCall.Typespec do
   defp local(:string, [], _providers), do: %Type{kind: :string, source: :string}
   defp local(:charlist, [], _providers), do: %Type{kind: :string, source: :charlist}
 
-  defp local(:char, [], _providers),
-    do: %Type{kind: :string, pattern: Patterns.char(), source: :char}
+  defp local(:char, [], _providers) do
+    %Type{
+      kind: :string,
+      pattern: Patterns.char(),
+      pattern_regex: Patterns.regex(Patterns.char()),
+      source: :char
+    }
+  end
 
   defp local(:list, [], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
   defp local(:list, [type], providers), do: %Type{kind: :array, items: to_type(type, providers)}
@@ -209,16 +216,18 @@ defmodule ToolCall.Typespec do
       )
     end
 
-    validate_pattern!(type, provider, module, function, args)
+    type = validate_pattern!(type, provider, module, function, args)
     validate_transform!(type, provider, module, function, args)
+    validate_metadata!(type, provider, module, function, args)
     validate_children!(type, provider, module, function, args)
     type
   end
 
-  defp validate_pattern!(%Type{pattern: nil}, _provider, _module, _function, _args), do: :ok
+  defp validate_pattern!(%Type{pattern: nil} = type, _provider, _module, _function, _args),
+    do: %{type | pattern_regex: nil}
 
   defp validate_pattern!(
-         %Type{pattern: pattern},
+         %Type{pattern: pattern} = type,
          provider,
          module,
          function,
@@ -226,8 +235,8 @@ defmodule ToolCall.Typespec do
        )
        when is_binary(pattern) do
     case Regex.compile(pattern) do
-      {:ok, _regex} ->
-        :ok
+      {:ok, regex} ->
+        %{type | pattern_regex: regex}
 
       {:error, {reason, _position}} ->
         provider_type_error!(
@@ -278,6 +287,90 @@ defmodule ToolCall.Typespec do
       "transform must be nil or {module, function}, got: #{inspect(transform)}"
     )
   end
+
+  defp validate_metadata!(%Type{} = type, provider, module, function, args) do
+    validate_bounds!(type, provider, module, function, args)
+    validate_format!(type, provider, module, function, args)
+    validate_nullable!(type, provider, module, function, args)
+    validate_values!(type, provider, module, function, args)
+    type
+  end
+
+  defp validate_bounds!(
+         %Type{minimum: minimum, maximum: maximum},
+         provider,
+         module,
+         function,
+         args
+       ) do
+    validate_bound!(minimum, "minimum", provider, module, function, args)
+    validate_bound!(maximum, "maximum", provider, module, function, args)
+  end
+
+  defp validate_bound!(nil, _name, _provider, _module, _function, _args), do: :ok
+
+  defp validate_bound!(value, _name, _provider, _module, _function, _args)
+       when is_integer(value),
+       do: :ok
+
+  defp validate_bound!(value, name, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "#{name} must be an integer or nil, got: #{inspect(value)}"
+    )
+  end
+
+  defp validate_format!(%Type{format: nil}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_format!(%Type{format: format}, _provider, _module, _function, _args)
+       when is_binary(format),
+       do: :ok
+
+  defp validate_format!(%Type{format: format}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "format must be a string or nil, got: #{inspect(format)}"
+    )
+  end
+
+  defp validate_nullable!(%Type{nullable: nullable}, _provider, _module, _function, _args)
+       when is_boolean(nullable),
+       do: :ok
+
+  defp validate_nullable!(%Type{nullable: nullable}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "nullable must be a boolean, got: #{inspect(nullable)}"
+    )
+  end
+
+  defp validate_values!(%Type{kind: :enum, values: nil}, _provider, _module, _function, _args),
+    do: :ok
+
+  defp validate_values!(%Type{kind: :enum, values: values}, _provider, _module, _function, _args)
+       when is_list(values),
+       do: :ok
+
+  defp validate_values!(%Type{kind: :enum, values: values}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "values must be a list or nil, got: #{inspect(values)}"
+    )
+  end
+
+  defp validate_values!(%Type{}, _provider, _module, _function, _args), do: :ok
 
   defp validate_children!(%Type{} = type, provider, module, function, args) do
     validate_items!(type, provider, module, function, args)
@@ -332,11 +425,19 @@ defmodule ToolCall.Typespec do
        )
        when is_list(fields) do
     Enum.each(fields, fn
-      %Field{type: %Type{} = type} ->
+      %Field{type: %Type{} = type, name: name, key: key, required: required}
+      when is_binary(name) and is_atom(key) and is_boolean(required) ->
         validate_provider_type!(type, provider, module, function, args)
 
       other ->
-        invalid_child!(provider, module, function, args, "field", other)
+        provider_type_error!(
+          provider,
+          module,
+          function,
+          args,
+          "field must have a string name, atom key, boolean required and ToolCall.IR.Type, " <>
+            "got: #{inspect(other)}"
+        )
     end)
   end
 
@@ -402,7 +503,15 @@ defmodule ToolCall.Typespec do
     end)
   end
 
-  @spec invalid_child!(module(), module(), atom(), list(), String.t(), term()) :: no_return()
+  @spec invalid_child!(
+          module() | nil,
+          module() | nil,
+          atom() | nil,
+          list() | nil,
+          String.t(),
+          term()
+        ) ::
+          no_return()
   defp invalid_child!(provider, module, function, args, field, value) do
     provider_type_error!(
       provider,
@@ -413,11 +522,31 @@ defmodule ToolCall.Typespec do
     )
   end
 
-  @spec provider_type_error!(module(), module(), atom(), list(), String.t()) :: no_return()
+  @spec provider_type_error!(
+          module() | nil,
+          module() | nil,
+          atom() | nil,
+          list() | nil,
+          String.t()
+        ) :: no_return()
+  defp provider_type_error!(nil, _module, _function, _args, reason) do
+    raise ArgumentError, "invalid ToolCall IR: #{reason}"
+  end
+
   defp provider_type_error!(provider, module, function, args, reason) do
     raise ArgumentError,
           "type provider #{inspect(provider)} returned an invalid type for " <>
             "#{inspect(module)}.#{function}/#{length(args)}: #{reason}"
+  end
+
+  @doc false
+  @spec validate_type!(Type.t()) :: Type.t()
+  def validate_type!(%Type{} = type) do
+    validate_provider_type!(type, nil, nil, nil, nil)
+  end
+
+  def validate_type!(other) do
+    raise ArgumentError, "invalid ToolCall IR: expected a type, got: #{inspect(other)}"
   end
 
   @doc """

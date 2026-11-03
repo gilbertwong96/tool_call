@@ -225,6 +225,25 @@ defmodule ToolCall.SchemaTest do
     assert ToolCall.emit(%{tool | params: nil}, :openai)["function"]["parameters"] == expected
   end
 
+  test "validates runtime tool types before rendering" do
+    tool = %Tool{
+      name: "bad",
+      params: [%Param{name: "value", type: %Type{kind: :bogus}}]
+    }
+
+    assert_raise ArgumentError, ~r/invalid ToolCall IR: unknown kind :bogus/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
+  test "rejects a non-Type runtime IR param" do
+    tool = %Tool{name: "bad", params: [%Param{name: "value", type: :bad}]}
+
+    assert_raise ArgumentError, ~r/expected a type, got: :bad/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
   test "treats a nil strict option as false" do
     assert Schema.strict?(strict: nil) == false
     assert Schema.strict?(strict: true) == true

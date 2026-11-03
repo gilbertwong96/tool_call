@@ -32,8 +32,10 @@ defmodule ToolCall.IR do
     `format` is the JSON Schema format string and `transform` is the
     `{module, function}` that runs after the wire value has been coerced. Both
     are populated by a `ToolCall.TypeProvider`; a hand-built calendar node must
-    set them explicitly. `source` is provenance except for `:charlist`, which
-    still drives charlist conversion and its schema default.
+    set them explicitly. `pattern` is the JSON Schema regex string and
+    `pattern_regex` is its compiled form, used by coercion when present.
+    `source` is provenance except for `:charlist`, which still drives charlist
+    conversion and its schema default.
     """
     defstruct kind: :any,
               minimum: nil,
@@ -44,6 +46,7 @@ defmodule ToolCall.IR do
               values: nil,
               variants: nil,
               pattern: nil,
+              pattern_regex: nil,
               format: nil,
               transform: nil,
               nullable: false,

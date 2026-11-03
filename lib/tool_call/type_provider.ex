@@ -9,8 +9,9 @@ defmodule ToolCall.TypeProvider do
   Return `{:ok, %ToolCall.IR.Type{}}` to describe the value, or `:error` to let
   the type fall back to `{}`. A returned node is validated recursively at
   compile time: unknown kinds, non-string or uncompilable patterns, malformed
-  transforms, and malformed `fields`/`items`/`variants`/`additional` raise an
-  `ArgumentError` naming the provider and the remote type.
+  transforms, enum values, bounds, formats, nullability, field metadata, and
+  malformed `fields`/`items`/`variants`/`additional` raise an `ArgumentError`
+  naming the provider and the remote type.
 
   Implement `coerce/1` to convert the wire-coerced value into the function's
   value domain; it runs after the built-in coercion. It is not called for an
