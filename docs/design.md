@@ -126,7 +126,8 @@ build warns. Depth 18 now compiles in 28 ms.
 | `1..10` | `:integer` 1..10 | bounds |
 | `float()` | `:float` | `{"type":"number"}` |
 | `number()` | `:number` | `{"type":"number"}` |
-| `String.t()`, `binary()`, `bitstring()`, `nonempty_binary()`, `nonempty_string()` | `:string` | `{"type":"string"}` |
+| `String.t()`, `binary()`, `bitstring()` | `:string` | `{"type":"string"}` |
+| `nonempty_binary()`, `nonempty_string()` | `:string` | `+ "pattern": "^[\\s\\S]+$"` |
 | `charlist()` | `:string` | `{"type":"string"}`; the function receives a charlist |
 | `char()` | `:string` | `+ "pattern": "^[\\s\\S]$"`, enforced at dispatch; the function receives the codepoint |
 | `boolean()` | `:boolean` | `{"type":"boolean"}` |

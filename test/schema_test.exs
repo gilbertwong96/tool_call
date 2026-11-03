@@ -139,6 +139,13 @@ defmodule ToolCall.SchemaTest do
              }
     end
 
+    test "nonempty strings carry a nonempty pattern" do
+      assert Schema.type(%Type{kind: :string, pattern: "^[\\s\\S]+$"}) == %{
+               "type" => "string",
+               "pattern" => "^[\\s\\S]+$"
+             }
+    end
+
     test "an unconstrained tuple renders an array with unconstrained items" do
       assert Schema.type(%Type{kind: :tuple, items: nil}) == %{
                "type" => "array",
@@ -268,7 +275,7 @@ defmodule ToolCall.SchemaTest do
     refute Map.has_key?(param_schema(module, "negative", "c"), "default")
   end
 
-  test "omits a char default that is not valid utf-8" do
+  test "rejects a default that is not valid utf-8" do
     tool = %Tool{
       name: "go",
       params: [
@@ -280,7 +287,9 @@ defmodule ToolCall.SchemaTest do
       ]
     }
 
-    refute Map.has_key?(Schema.params(tool)["properties"]["c"], "default")
+    assert_raise ArgumentError, ~r/default must be JSON-encodable/, fn ->
+      Schema.params(tool)
+    end
   end
 
   test "rejects an empty non-nullable union before rendering" do

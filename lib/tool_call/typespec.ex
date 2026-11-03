@@ -138,11 +138,8 @@ defmodule ToolCall.Typespec do
     %Type{kind: :array, items: to_type(type, providers), minimum: 1}
   end
 
-  defp local(:nonempty_binary, [], _providers),
-    do: %Type{kind: :string, source: :binary}
-
-  defp local(:nonempty_string, [], _providers),
-    do: %Type{kind: :string, source: :string}
+  defp local(:nonempty_binary, [], _providers), do: nonempty_string_type(:binary)
+  defp local(:nonempty_string, [], _providers), do: nonempty_string_type(:string)
 
   defp local(:keyword, args, providers) do
     case args do
@@ -172,6 +169,15 @@ defmodule ToolCall.Typespec do
 
   defp local(name, args, _providers) do
     %Type{kind: :any, source: {name, args}}
+  end
+
+  defp nonempty_string_type(source) do
+    %Type{
+      kind: :string,
+      source: source,
+      pattern: Patterns.nonempty(),
+      pattern_regex: Patterns.regex(Patterns.nonempty())
+    }
   end
 
   # --- remote types ---------------------------------------------------------
@@ -241,18 +247,28 @@ defmodule ToolCall.Typespec do
          args
        )
        when is_binary(pattern) do
-    case Regex.compile(pattern, "u") do
-      {:ok, regex} ->
-        %{type | pattern_regex: regex}
+    if String.valid?(pattern) do
+      case Regex.compile(pattern, "u") do
+        {:ok, regex} ->
+          %{type | pattern_regex: regex}
 
-      {:error, {reason, _position}} ->
-        provider_type_error!(
-          provider,
-          module,
-          function,
-          args,
-          "pattern #{inspect(pattern)} does not compile: #{reason}"
-        )
+        {:error, {reason, _position}} ->
+          provider_type_error!(
+            provider,
+            module,
+            function,
+            args,
+            "pattern #{inspect(pattern)} does not compile: #{reason}"
+          )
+      end
+    else
+      provider_type_error!(
+        provider,
+        module,
+        function,
+        args,
+        "pattern must be valid UTF-8, got: #{inspect(pattern)}"
+      )
     end
   end
 
@@ -385,9 +401,20 @@ defmodule ToolCall.Typespec do
 
   defp validate_format!(%Type{format: nil}, _provider, _module, _function, _args), do: :ok
 
-  defp validate_format!(%Type{format: format}, _provider, _module, _function, _args)
-       when is_binary(format),
-       do: :ok
+  defp validate_format!(%Type{format: format}, provider, module, function, args)
+       when is_binary(format) do
+    if String.valid?(format) do
+      :ok
+    else
+      provider_type_error!(
+        provider,
+        module,
+        function,
+        args,
+        "format must be valid UTF-8, got: #{inspect(format)}"
+      )
+    end
+  end
 
   defp validate_format!(%Type{format: format}, provider, module, function, args) do
     provider_type_error!(
@@ -433,8 +460,22 @@ defmodule ToolCall.Typespec do
 
   defp validate_values!(%Type{}, _provider, _module, _function, _args), do: :ok
 
+  defp validate_enum_value!(value, provider, module, function, args) when is_binary(value) do
+    if String.valid?(value) do
+      :ok
+    else
+      provider_type_error!(
+        provider,
+        module,
+        function,
+        args,
+        "enum values must be valid UTF-8, got: #{inspect(value)}"
+      )
+    end
+  end
+
   defp validate_enum_value!(value, _provider, _module, _function, _args)
-       when is_binary(value) or is_number(value) or is_boolean(value) or is_atom(value),
+       when is_number(value) or is_boolean(value) or is_atom(value),
        do: :ok
 
   defp validate_enum_value!(value, provider, module, function, args) do
@@ -523,6 +564,7 @@ defmodule ToolCall.Typespec do
       Enum.map(fields, fn
         %Field{type: %Type{} = field_type, name: name, key: key, required: required} = field
         when is_binary(name) and is_atom(key) and is_boolean(required) ->
+          validate_name!(name, "field")
           %{field | type: validate_provider_type!(field_type, provider, module, function, args)}
 
         other ->
@@ -699,6 +741,7 @@ defmodule ToolCall.Typespec do
   @spec validate_tool!(Tool.t()) :: Tool.t()
   def validate_tool!(%Tool{name: name, description: description, params: params} = tool)
       when is_binary(name) do
+    validate_name!(name, "tool")
     validate_description!(description, "tool")
     params = Enum.map(params || [], &prepare_param!/1)
     validate_unique_params!(params)
@@ -725,6 +768,7 @@ defmodule ToolCall.Typespec do
          } = param
        )
        when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
+    validate_name!(name, "parameter")
     validate_description!(description, "parameter")
     validate_default!(default)
     type = validate_type!(type)
@@ -767,9 +811,25 @@ defmodule ToolCall.Typespec do
     |> Enum.map(&elem(&1, 0))
   end
 
+  defp validate_name!(name, owner) do
+    if String.valid?(name) do
+      :ok
+    else
+      raise ArgumentError,
+            "invalid ToolCall IR: #{owner} name must be valid UTF-8, got: #{inspect(name)}"
+    end
+  end
+
   defp validate_description!(nil, _owner), do: :ok
 
-  defp validate_description!(description, _owner) when is_binary(description), do: :ok
+  defp validate_description!(description, _owner) when is_binary(description) do
+    if String.valid?(description) do
+      :ok
+    else
+      raise ArgumentError,
+            "invalid ToolCall IR: description must be valid UTF-8, got: #{inspect(description)}"
+    end
+  end
 
   defp validate_description!(description, owner) do
     raise ArgumentError,
@@ -787,15 +847,16 @@ defmodule ToolCall.Typespec do
   end
 
   defp json_value?(value)
-       when is_nil(value) or is_boolean(value) or is_atom(value) or is_binary(value) or
-              is_number(value),
+       when is_nil(value) or is_boolean(value) or is_atom(value) or is_number(value),
        do: true
+
+  defp json_value?(value) when is_binary(value), do: String.valid?(value)
 
   defp json_value?(value) when is_list(value), do: Enum.all?(value, &json_value?/1)
 
   defp json_value?(value) when is_map(value) and not is_struct(value) do
     Enum.all?(value, fn {key, item} ->
-      (is_binary(key) or is_atom(key)) and json_value?(item)
+      (is_atom(key) or (is_binary(key) and String.valid?(key))) and json_value?(item)
     end)
   end
 

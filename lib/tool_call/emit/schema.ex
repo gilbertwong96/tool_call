@@ -277,7 +277,7 @@ defmodule ToolCall.Emit.Schema do
   end
 
   defp char_default(value) when is_binary(value) do
-    if String.valid?(value) and String.length(value) == 1, do: value, else: nil
+    if String.length(value) == 1, do: value, else: nil
   end
 
   defp char_default(_value), do: nil

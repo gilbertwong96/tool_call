@@ -260,6 +260,16 @@ defmodule ToolCall.CoerceTest do
       assert {:error, {:expected_string, 1}} = Coerce.coerce(%Type{kind: :string}, 1)
     end
 
+    test "nonempty strings reject the empty value" do
+      for source <- [:binary, :string] do
+        type = %Type{kind: :string, source: source, pattern: "^[\\s\\S]+$"}
+        type = ToolCall.Typespec.validate_type!(type)
+
+        assert {:ok, "a"} = Coerce.coerce(type, "a")
+        assert {:error, {:pattern_mismatch, _, ""}} = Coerce.coerce(type, "")
+      end
+    end
+
     test "rejects invalid utf-8 for every string wire shape" do
       invalid = <<255>>
 

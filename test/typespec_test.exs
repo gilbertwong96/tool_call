@@ -253,6 +253,64 @@ defmodule ToolCall.TypespecTest do
     end
   end
 
+  test "validate_type!/1 rejects invalid UTF-8 metadata" do
+    assert_raise ArgumentError, ~r/format must be valid UTF-8/, fn ->
+      Typespec.validate_type!(%Type{kind: :string, format: <<255>>})
+    end
+
+    assert_raise ArgumentError, ~r/pattern must be valid UTF-8/, fn ->
+      Typespec.validate_type!(%Type{kind: :string, pattern: <<255>>})
+    end
+
+    assert_raise ArgumentError, ~r/enum values must be valid UTF-8/, fn ->
+      Typespec.validate_type!(%Type{kind: :enum, values: [<<255>>]})
+    end
+
+    assert_raise ArgumentError, ~r/field name must be valid UTF-8/, fn ->
+      Typespec.validate_type!(%Type{
+        kind: :object,
+        fields: [%Field{name: <<255>>, key: :x, type: %Type{kind: :string}}]
+      })
+    end
+  end
+
+  test "validate_tool!/1 rejects invalid UTF-8 names, descriptions and defaults" do
+    base = %ToolCall.IR.Param{name: "x", type: %Type{kind: :string}}
+
+    assert_raise ArgumentError, ~r/tool name must be valid UTF-8/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{name: <<255>>, params: []})
+    end
+
+    assert_raise ArgumentError, ~r/parameter name must be valid UTF-8/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{
+        name: "go",
+        params: [%{base | name: <<255>>}]
+      })
+    end
+
+    assert_raise ArgumentError, ~r/description must be valid UTF-8/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{
+        name: "go",
+        description: <<255>>,
+        params: []
+      })
+    end
+
+    assert_raise ArgumentError, ~r/default must be JSON-encodable/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{
+        name: "go",
+        params: [%{base | default: <<255>>}]
+      })
+    end
+
+    assert_raise ArgumentError, ~r/default must be JSON-encodable/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{
+        name: "go",
+        params: [%{base | default: %{<<255>> => "x"}}]
+      })
+    end
+  end
+
   test "validate_tool!/1 rejects duplicate parameter names and invalid wire types" do
     param = %ToolCall.IR.Param{name: "x", type: %Type{kind: :integer}}
 
