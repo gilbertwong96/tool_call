@@ -33,9 +33,10 @@ defmodule ToolCall.IR do
     `{module, function}` that runs after the wire value has been coerced. Both
     are populated by a `ToolCall.TypeProvider`; a hand-built calendar node must
     set them explicitly. `pattern` is the JSON Schema regex string and
-    `pattern_regex` is its compiled form, used by coercion when present.
-    `source` is provenance except for `:charlist`, which still drives charlist
-    conversion and its schema default.
+    `pattern_regex` is its compiled form, required by coercion. Use
+    `ToolCall.Typespec.validate_type!/1` to build a validated copy of a
+    hand-written type. `source` is provenance except for `:charlist`, which
+    still drives charlist conversion and its schema default.
     """
     defstruct kind: :any,
               minimum: nil,

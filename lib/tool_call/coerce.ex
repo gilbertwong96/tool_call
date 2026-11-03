@@ -10,11 +10,13 @@ defmodule ToolCall.Coerce do
     * JSON has no atoms, so `:enum` values arrive as strings and are mapped
       back to atoms.
 
+  Patterns must already be compiled into `ToolCall.IR.Type.pattern_regex`.
+  Hand-built types can be prepared with `ToolCall.Typespec.validate_type!/1`.
+
   See `docs/number-handling.md`.
   """
 
   alias ToolCall.IR.{Field, Param, Type}
-  alias ToolCall.Patterns
 
   # DBL_MAX; an integer above it cannot be widened without raising ArithmeticError.
   @max_float 1.797_693_134_862_315_7e308
@@ -315,22 +317,15 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  # Known/provider patterns are compiled into `pattern_regex`; a hand-built
-  # pattern is cached per process instead of being compiled on every value.
+  # Patterns are compiled when the IR is built; `Coerce` never compiles them
+  # on demand. Hand-built types must set `pattern_regex` or go through
+  # `ToolCall.Typespec.validate_type!/1`.
   defp pattern_regex(%Type{pattern_regex: %Regex{} = regex}), do: regex
 
   defp pattern_regex(%Type{pattern: pattern}) do
-    key = {__MODULE__, :pattern, pattern}
-
-    case Process.get(key) do
-      %Regex{} = regex ->
-        regex
-
-      _ ->
-        regex = Patterns.regex(pattern) || Regex.compile!(pattern)
-        Process.put(key, regex)
-        regex
-    end
+    raise ArgumentError,
+          "invalid ToolCall IR: pattern #{inspect(pattern)} has no compiled pattern_regex; " <>
+            "use ToolCall.Typespec.validate_type!/1 or set pattern_regex"
   end
 
   defp coerce_fields_for_extra(additional, extra) do

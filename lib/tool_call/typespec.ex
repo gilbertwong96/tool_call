@@ -630,7 +630,13 @@ defmodule ToolCall.Typespec do
             "#{inspect(module)}.#{function}/#{length(args)}: #{reason}"
   end
 
-  @doc false
+  @doc """
+  Validates a runtime `ToolCall.IR.Type` and returns a copy with compiled
+  `pattern_regex`.
+
+  Use this for hand-built types before passing them to `ToolCall.Coerce` or
+  rendering them with `ToolCall.Emit`.
+  """
   @spec validate_type!(Type.t()) :: Type.t()
   def validate_type!(%Type{} = type) do
     validate_provider_type!(type, nil, nil, nil, nil)

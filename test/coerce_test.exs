@@ -261,18 +261,17 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, ~c"abc"} = Coerce.coerce(%Type{kind: :string, source: :charlist}, "abc")
     end
 
-    test "compiles a custom pattern without caching it" do
-      type = %Type{kind: :string, pattern: "^x$"}
-
-      assert {:ok, "x"} = Coerce.coerce(type, "x")
-      assert {:error, {:pattern_mismatch, "^x$", "y"}} = Coerce.coerce(type, "y")
+    test "requires a compiled pattern for hand-built types" do
+      assert_raise ArgumentError, ~r/no compiled pattern_regex/, fn ->
+        Coerce.coerce(%Type{kind: :string, pattern: "^x$"}, "x")
+      end
     end
 
     test "enforces the rendered pattern" do
-      assert {:ok, "a"} = Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "a")
+      type = ToolCall.Typespec.validate_type!(%Type{kind: :string, pattern: "^.$"})
 
-      assert {:error, {:pattern_mismatch, "^.$", "ab"}} =
-               Coerce.coerce(%Type{kind: :string, pattern: "^.$"}, "ab")
+      assert {:ok, "a"} = Coerce.coerce(type, "a")
+      assert {:error, {:pattern_mismatch, "^.$", "ab"}} = Coerce.coerce(type, "ab")
     end
 
     test "uses the compiled pattern when present" do
