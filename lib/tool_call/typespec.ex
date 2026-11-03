@@ -7,7 +7,7 @@ defmodule ToolCall.Typespec do
   breaks compilation of unrelated tools.
   """
 
-  alias ToolCall.IR.{Field, Type}
+  alias ToolCall.IR.{Field, Param, Tool, Type}
   alias ToolCall.Patterns
   alias ToolCall.Providers.Stdlib
 
@@ -638,6 +638,31 @@ defmodule ToolCall.Typespec do
 
   def validate_type!(other) do
     raise ArgumentError, "invalid ToolCall IR: expected a type, got: #{inspect(other)}"
+  end
+
+  @doc false
+  @spec validate_tool!(Tool.t()) :: Tool.t()
+  def validate_tool!(%Tool{name: name, params: params} = tool) when is_binary(name) do
+    Enum.each(params || [], &validate_param!/1)
+    tool
+  end
+
+  def validate_tool!(%Tool{} = tool) do
+    raise ArgumentError,
+          "invalid ToolCall IR: tool name must be a string, got: #{inspect(tool.name)}"
+  end
+
+  def validate_tool!(other) do
+    raise ArgumentError, "invalid ToolCall IR: expected a tool, got: #{inspect(other)}"
+  end
+
+  defp validate_param!(%Param{name: name, type: type, wire: wire, required: required})
+       when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
+    validate_type!(type)
+  end
+
+  defp validate_param!(other) do
+    raise ArgumentError, "invalid ToolCall IR: invalid parameter #{inspect(other)}"
   end
 
   @doc """

@@ -316,11 +316,22 @@ defmodule ToolCall.Coerce do
   end
 
   # Known/provider patterns are compiled into `pattern_regex`; a hand-built
-  # pattern is compiled on demand instead of being cached globally.
+  # pattern is cached per process instead of being compiled on every value.
   defp pattern_regex(%Type{pattern_regex: %Regex{} = regex}), do: regex
 
-  defp pattern_regex(%Type{pattern: pattern}),
-    do: Patterns.regex(pattern) || Regex.compile!(pattern)
+  defp pattern_regex(%Type{pattern: pattern}) do
+    key = {__MODULE__, :pattern, pattern}
+
+    case Process.get(key) do
+      %Regex{} = regex ->
+        regex
+
+      _ ->
+        regex = Patterns.regex(pattern) || Regex.compile!(pattern)
+        Process.put(key, regex)
+        regex
+    end
+  end
 
   defp coerce_fields_for_extra(additional, extra) do
     Enum.reduce_while(extra, {:ok, %{}}, fn {key, raw}, {:ok, acc} ->

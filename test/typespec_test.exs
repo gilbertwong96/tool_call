@@ -218,6 +218,12 @@ defmodule ToolCall.TypespecTest do
              ir({{:., [], [Keyword, :t]}, [], [{:integer, [], []}]})
   end
 
+  test "validate_tool!/1 rejects a non-tool" do
+    assert_raise ArgumentError, ~r/expected a tool/, fn ->
+      Typespec.validate_tool!(:not_a_tool)
+    end
+  end
+
   test "unknown remote types keep their source" do
     assert %Type{kind: :any, source: {SomeUnknown, :t, []}} =
              ir({{:., [], [SomeUnknown, :t]}, [], []})

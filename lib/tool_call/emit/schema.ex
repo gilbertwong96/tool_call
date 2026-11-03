@@ -11,6 +11,7 @@ defmodule ToolCall.Emit.Schema do
   @doc "Renders the `parameters`/`input_schema` object for a tool."
   @spec params(Tool.t(), keyword()) :: map()
   def params(%Tool{} = tool, opts \\ []) do
+    ToolCall.Typespec.validate_tool!(tool)
     params = tool.params || []
     params = if strict?(opts), do: Enum.map(params, &force_required/1), else: params
 
@@ -35,6 +36,12 @@ defmodule ToolCall.Emit.Schema do
   @doc "Renders a single type node."
   @spec type(Type.t(), keyword()) :: map()
   def type(%Type{} = type, opts \\ []) do
+    type
+    |> ToolCall.Typespec.validate_type!()
+    |> do_type(opts)
+  end
+
+  defp do_type(%Type{} = type, opts) do
     type
     |> base(opts)
     |> nullable(type)
@@ -61,13 +68,13 @@ defmodule ToolCall.Emit.Schema do
   defp base(%Type{kind: :object} = type, opts), do: object(type, opts)
 
   defp base(%Type{kind: :union} = type, opts),
-    do: %{"anyOf" => Enum.map(type.variants, &type(&1, opts))}
+    do: %{"anyOf" => Enum.map(type.variants, &do_type(&1, opts))}
 
   defp param(%Param{} = param, opts) do
     schema =
       case param.wire do
         :string_integer -> string_integer(param.type)
-        _wire -> type(param.type, opts)
+        _wire -> do_type(param.type, opts)
       end
 
     put_default(schema, param, opts)
@@ -189,13 +196,13 @@ defmodule ToolCall.Emit.Schema do
   defp array(%Type{} = type, opts) do
     %{
       "type" => "array",
-      "items" => type(type.items || %Type{kind: :any}, opts)
+      "items" => do_type(type.items || %Type{kind: :any}, opts)
     }
     |> maybe_put("minItems", type.minimum)
   end
 
   defp tuple(%Type{} = type, opts) do
-    items = Enum.map(type.items || [], &type(&1, opts))
+    items = Enum.map(type.items || [], &do_type(&1, opts))
     size = length(items)
 
     schema = %{"type" => "array", "minItems" => size, "maxItems" => size}
@@ -212,7 +219,7 @@ defmodule ToolCall.Emit.Schema do
 
     %{
       "type" => "object",
-      "properties" => Map.new(fields, &{&1.name, type(&1.type, opts)}),
+      "properties" => Map.new(fields, &{&1.name, do_type(&1.type, opts)}),
       "required" => for(field <- fields, field.required, do: field.name)
     }
     |> put_additional(additional, opts)
@@ -230,7 +237,7 @@ defmodule ToolCall.Emit.Schema do
     do: Map.put(schema, "additionalProperties", true)
 
   defp put_additional(schema, %Type{} = additional, opts),
-    do: Map.put(schema, "additionalProperties", type(additional, opts))
+    do: Map.put(schema, "additionalProperties", do_type(additional, opts))
 
   defp nullable(schema, %Type{nullable: true}) do
     case schema do

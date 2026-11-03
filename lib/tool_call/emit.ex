@@ -10,7 +10,7 @@ defmodule ToolCall.Emit do
   values on demand. Runtime IR is validated before rendering.
   """
 
-  alias ToolCall.IR.{Param, Tool}
+  alias ToolCall.IR.Tool
 
   @type target :: :openai | :anthropic
 
@@ -21,15 +21,8 @@ defmodule ToolCall.Emit do
     Enum.map(tools, &emit(&1, target, opts))
   end
 
-  def emit(%Tool{} = tool, :openai, opts) do
-    validate_tool!(tool)
-    ToolCall.Emit.OpenAI.emit(tool, opts)
-  end
-
-  def emit(%Tool{} = tool, :anthropic, opts) do
-    validate_tool!(tool)
-    ToolCall.Emit.Anthropic.emit(tool, opts)
-  end
+  def emit(%Tool{} = tool, :openai, opts), do: ToolCall.Emit.OpenAI.emit(tool, opts)
+  def emit(%Tool{} = tool, :anthropic, opts), do: ToolCall.Emit.Anthropic.emit(tool, opts)
 
   def emit(%Tool{}, target, _opts) do
     raise ArgumentError,
@@ -67,23 +60,5 @@ defmodule ToolCall.Emit do
     |> Enum.map(&elem(&1, 0))
     |> Enum.uniq()
     |> Enum.map_join(", ", &inspect/1)
-  end
-
-  defp validate_tool!(%Tool{name: name, params: params}) when is_binary(name) do
-    Enum.each(params || [], &validate_param!/1)
-  end
-
-  defp validate_tool!(%Tool{} = tool) do
-    raise ArgumentError,
-          "invalid ToolCall IR: tool name must be a string, got: #{inspect(tool.name)}"
-  end
-
-  defp validate_param!(%Param{name: name, type: type, wire: wire, required: required})
-       when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
-    ToolCall.Typespec.validate_type!(type)
-  end
-
-  defp validate_param!(other) do
-    raise ArgumentError, "invalid ToolCall IR: invalid parameter #{inspect(other)}"
   end
 end
