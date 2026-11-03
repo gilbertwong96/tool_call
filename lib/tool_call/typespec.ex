@@ -648,7 +648,9 @@ defmodule ToolCall.Typespec do
 
   @doc false
   @spec validate_tool!(Tool.t()) :: Tool.t()
-  def validate_tool!(%Tool{name: name, params: params} = tool) when is_binary(name) do
+  def validate_tool!(%Tool{name: name, description: description, params: params} = tool)
+      when is_binary(name) do
+    validate_description!(description, "tool")
     %{tool | params: Enum.map(params || [], &prepare_param!/1)}
   end
 
@@ -661,14 +663,59 @@ defmodule ToolCall.Typespec do
     raise ArgumentError, "invalid ToolCall IR: expected a tool, got: #{inspect(other)}"
   end
 
-  defp prepare_param!(%Param{name: name, type: type, wire: wire, required: required} = param)
+  defp prepare_param!(
+         %Param{
+           name: name,
+           type: type,
+           wire: wire,
+           required: required,
+           description: description,
+           default: default
+         } = param
+       )
        when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
+    validate_description!(description, "parameter")
+    validate_default!(default)
     %{param | type: validate_type!(type)}
   end
 
   defp prepare_param!(other) do
     raise ArgumentError, "invalid ToolCall IR: invalid parameter #{inspect(other)}"
   end
+
+  defp validate_description!(nil, _owner), do: :ok
+
+  defp validate_description!(description, _owner) when is_binary(description), do: :ok
+
+  defp validate_description!(description, owner) do
+    raise ArgumentError,
+          "invalid ToolCall IR: #{owner} description must be a string or nil, " <>
+            "got: #{inspect(description)}"
+  end
+
+  defp validate_default!(default) do
+    if json_value?(default) do
+      :ok
+    else
+      raise ArgumentError,
+            "invalid ToolCall IR: default must be JSON-encodable, got: #{inspect(default)}"
+    end
+  end
+
+  defp json_value?(value)
+       when is_nil(value) or is_boolean(value) or is_atom(value) or is_binary(value) or
+              is_number(value),
+       do: true
+
+  defp json_value?(value) when is_list(value), do: Enum.all?(value, &json_value?/1)
+
+  defp json_value?(value) when is_map(value) and not is_struct(value) do
+    Enum.all?(value, fn {key, item} ->
+      (is_binary(key) or is_atom(key)) and json_value?(item)
+    end)
+  end
+
+  defp json_value?(_value), do: false
 
   @doc """
   True when the tree contains a domain JSON cannot represent at all.

@@ -260,6 +260,42 @@ defmodule ToolCall.SchemaTest do
     end
   end
 
+  test "rejects a runtime tool with an invalid description" do
+    tool = %Tool{name: "bad", description: :bad, params: []}
+
+    assert_raise ArgumentError, ~r/tool description must be a string/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
+  test "rejects a runtime parameter with an invalid description" do
+    tool = %Tool{
+      name: "bad",
+      params: [%Param{name: "value", type: %Type{kind: :string}, description: :bad}]
+    }
+
+    assert_raise ArgumentError, ~r/parameter description must be a string/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
+  test "rejects a runtime parameter with a non-JSON default" do
+    tool = %Tool{
+      name: "bad",
+      params: [
+        %Param{
+          name: "value",
+          type: %Type{kind: :string},
+          default: ~D[2024-01-01]
+        }
+      ]
+    }
+
+    assert_raise ArgumentError, ~r/default must be JSON-encodable/, fn ->
+      ToolCall.emit(tool, :openai)
+    end
+  end
+
   test "validates runtime tools through Emit directly" do
     tool = %Tool{name: "bad", params: [%Param{name: "value", type: %Type{kind: :bogus}}]}
 
