@@ -107,7 +107,8 @@ defmodule ToolCall do
       def __tool__(name), do: Enum.find(__tools__(), &(&1.name == to_string(name)))
 
       @doc false
-      def __run__(name, args), do: ToolCall.Runner.run(__MODULE__, __tools__(), name, args)
+      def __run__(name, args),
+        do: ToolCall.Runner.run_prepared(__MODULE__, __tools__(), name, args)
     end
   end
 

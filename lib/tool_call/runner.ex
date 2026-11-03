@@ -8,7 +8,7 @@ defmodule ToolCall.Runner do
 
   require Logger
 
-  alias ToolCall.Coerce
+  alias ToolCall.{Coerce, Typespec}
   alias ToolCall.IR.{Param, Tool}
 
   @doc """
@@ -17,10 +17,23 @@ defmodule ToolCall.Runner do
   `args` uses string keys, as JSON decodes them, including nested object values;
   `keyword(t)` values also accept atom keys because a keyword list is their value
   domain.
+
+  Runtime tool lists are validated before dispatch. Compiled tools can use
+  `run_prepared/4` to skip that validation.
   """
   @spec run(module(), [Tool.t()], atom() | String.t(), term()) ::
           {:ok, term()} | {:error, term()}
   def run(module, tools, name, args) when is_map(args) do
+    tools = Enum.map(tools, &Typespec.validate_tool!/1)
+    run_prepared(module, tools, name, args)
+  end
+
+  def run(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+
+  @doc false
+  @spec run_prepared(module(), [Tool.t()], atom() | String.t(), term()) ::
+          {:ok, term()} | {:error, term()}
+  def run_prepared(module, tools, name, args) when is_map(args) do
     name = to_string(name)
 
     with {:ok, tool} <- fetch(tools, name),
@@ -32,7 +45,7 @@ defmodule ToolCall.Runner do
     end
   end
 
-  def run(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+  def run_prepared(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
 
   # Reporting a known name as "unknown" because it arrived as an atom is
   # misleading; JSON objects decode to strings, so say what is wrong.

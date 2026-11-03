@@ -649,8 +649,7 @@ defmodule ToolCall.Typespec do
   @doc false
   @spec validate_tool!(Tool.t()) :: Tool.t()
   def validate_tool!(%Tool{name: name, params: params} = tool) when is_binary(name) do
-    Enum.each(params || [], &validate_param!/1)
-    tool
+    %{tool | params: Enum.map(params || [], &prepare_param!/1)}
   end
 
   def validate_tool!(%Tool{} = tool) do
@@ -662,12 +661,12 @@ defmodule ToolCall.Typespec do
     raise ArgumentError, "invalid ToolCall IR: expected a tool, got: #{inspect(other)}"
   end
 
-  defp validate_param!(%Param{name: name, type: type, wire: wire, required: required})
+  defp prepare_param!(%Param{name: name, type: type, wire: wire, required: required} = param)
        when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
-    validate_type!(type)
+    %{param | type: validate_type!(type)}
   end
 
-  defp validate_param!(other) do
+  defp prepare_param!(other) do
     raise ArgumentError, "invalid ToolCall IR: invalid parameter #{inspect(other)}"
   end
 

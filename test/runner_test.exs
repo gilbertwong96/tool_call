@@ -140,6 +140,44 @@ defmodule ToolCall.RunnerTest do
     assert {:ok, :pong} = ToolCall.Runner.run(module, [tool], "ping", %{})
   end
 
+  test "validates and prepares runtime tools" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        def ping(value), do: value
+      end
+      """)
+
+    tool = %ToolCall.IR.Tool{
+      name: "ping",
+      params: [
+        %ToolCall.IR.Param{
+          name: "value",
+          type: %ToolCall.IR.Type{kind: :string, pattern: "^x$"}
+        }
+      ],
+      module: module,
+      fun: :ping
+    }
+
+    prepared = ToolCall.Typespec.validate_tool!(tool)
+
+    assert %ToolCall.IR.Tool{
+             params: [
+               %ToolCall.IR.Param{
+                 type: %ToolCall.IR.Type{pattern_regex: %Regex{}}
+               }
+             ]
+           } = prepared
+
+    assert {:ok, "x"} = ToolCall.Runner.run(module, [tool], "ping", %{"value" => "x"})
+  end
+
+  test "rejects non-map arguments through the validating entry" do
+    assert {:error, {:invalid_arguments, "bad"}} =
+             ToolCall.Runner.run(__MODULE__, [], "ping", "bad")
+  end
+
   test "rejects non-string keys instead of reporting a known name as unknown" do
     module = pair_tool()
 
