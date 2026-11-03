@@ -233,7 +233,7 @@ defmodule ToolCall.Typespec do
          args
        )
        when is_binary(pattern) do
-    case Regex.compile(pattern) do
+    case Regex.compile(pattern, "u") do
       {:ok, regex} ->
         %{type | pattern_regex: regex}
 
@@ -527,6 +527,7 @@ defmodule ToolCall.Typespec do
           )
       end)
 
+    validate_unique_fields!(fields)
     %{type | fields: fields}
   end
 
@@ -534,6 +535,24 @@ defmodule ToolCall.Typespec do
     do: invalid_child!(provider, module, function, args, "fields", fields)
 
   defp validate_fields!(%Type{} = type, _provider, _module, _function, _args), do: type
+
+  defp validate_unique_fields!(fields) do
+    duplicate_names = fields |> Enum.map(& &1.name) |> duplicate_values()
+    duplicate_keys = fields |> Enum.map(& &1.key) |> Enum.reject(&is_nil/1) |> duplicate_values()
+
+    cond do
+      duplicate_names != [] ->
+        raise ArgumentError,
+              "invalid ToolCall IR: duplicate field names #{inspect(duplicate_names)}"
+
+      duplicate_keys != [] ->
+        raise ArgumentError,
+              "invalid ToolCall IR: duplicate field keys #{inspect(duplicate_keys)}"
+
+      true ->
+        :ok
+    end
+  end
 
   defp validate_additional!(
          %Type{kind: :object, additional: nil} = type,
@@ -564,6 +583,20 @@ defmodule ToolCall.Typespec do
        do: invalid_child!(provider, module, function, args, "additional", additional)
 
   defp validate_additional!(%Type{} = type, _provider, _module, _function, _args), do: type
+
+  defp validate_variants!(
+         %Type{kind: :union, variants: []} = type,
+         provider,
+         module,
+         function,
+         args
+       ) do
+    if type.nullable do
+      type
+    else
+      invalid_child!(provider, module, function, args, "variants", [])
+    end
+  end
 
   defp validate_variants!(
          %Type{kind: :union, variants: variants} = type,
@@ -658,7 +691,9 @@ defmodule ToolCall.Typespec do
   def validate_tool!(%Tool{name: name, description: description, params: params} = tool)
       when is_binary(name) do
     validate_description!(description, "tool")
-    %{tool | params: Enum.map(params || [], &prepare_param!/1)}
+    params = Enum.map(params || [], &prepare_param!/1)
+    validate_unique_params!(params)
+    %{tool | params: params}
   end
 
   def validate_tool!(%Tool{} = tool) do
@@ -683,11 +718,44 @@ defmodule ToolCall.Typespec do
        when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
     validate_description!(description, "parameter")
     validate_default!(default)
-    %{param | type: validate_type!(type)}
+    type = validate_type!(type)
+    validate_wire!(wire, type, name)
+    %{param | type: type}
   end
 
   defp prepare_param!(other) do
     raise ArgumentError, "invalid ToolCall IR: invalid parameter #{inspect(other)}"
+  end
+
+  defp validate_wire!(:number, _type, _name), do: :ok
+
+  defp validate_wire!(:string_integer, %Type{kind: :integer}, _name), do: :ok
+
+  defp validate_wire!(:string_integer, %Type{kind: kind}, name) do
+    raise ArgumentError,
+          "invalid ToolCall IR: wire :string_integer requires an integer parameter, " <>
+            "got #{inspect(kind)} for #{inspect(name)}"
+  end
+
+  defp validate_unique_params!(params) do
+    params
+    |> Enum.map(& &1.name)
+    |> duplicate_values()
+    |> case do
+      [] ->
+        :ok
+
+      names ->
+        raise ArgumentError,
+              "invalid ToolCall IR: duplicate parameter names #{inspect(names)}"
+    end
+  end
+
+  defp duplicate_values(values) do
+    values
+    |> Enum.frequencies()
+    |> Enum.filter(fn {_value, count} -> count > 1 end)
+    |> Enum.map(&elem(&1, 0))
   end
 
   defp validate_description!(nil, _owner), do: :ok

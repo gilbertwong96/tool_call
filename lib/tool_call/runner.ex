@@ -107,24 +107,43 @@ defmodule ToolCall.Runner do
 
   defp missing_param(%Param{}), do: {:ok, :missing}
 
-  # Default arguments are trailing-only in Elixir, so arguments after the first
-  # gap cannot be passed positionally. Silently dropping them would hand the
-  # function a different call than the model asked for.
+  # Elixir fills defaults in declaration order: a reduced-arity call receives
+  # every required argument plus a prefix of the optional arguments. A required
+  # argument after an omitted optional one is fine; a later optional argument
+  # after an omitted optional one is not, because apply/3 would shift it into
+  # the wrong position.
   defp positional(%Tool{} = tool, values) do
-    {args, missing, dropped} =
-      Enum.reduce(tool.params, {[], nil, []}, fn param, {args, missing, dropped} ->
-        case {Map.fetch(values, param.name), missing} do
-          {{:ok, value}, nil} -> {[value | args], nil, dropped}
-          {{:ok, _value}, missing} -> {args, missing, dropped ++ [param.name]}
-          {:error, nil} -> {args, param.name, dropped}
-          {:error, _missing} -> {args, missing, dropped}
+    params = tool.params || []
+    provided = Enum.filter(params, &Map.has_key?(values, &1.name))
+    optional = Enum.filter(params, &(not &1.required))
+    provided_optional = Enum.filter(optional, &Map.has_key?(values, &1.name))
+
+    if optional_prefix?(provided_optional, optional) do
+      {:ok, Enum.map(provided, &Map.fetch!(values, &1.name))}
+    else
+      {missing, dropped} = first_optional_gap(optional, values)
+      {:error, {:argument_gap, missing.name, Enum.map(dropped, & &1.name)}}
+    end
+  end
+
+  defp optional_prefix?(provided, optional), do: Enum.take(optional, length(provided)) == provided
+
+  defp first_optional_gap(optional, values) do
+    {missing, dropped, _seen_missing?} =
+      Enum.reduce(optional, {nil, [], false}, fn param, {missing, dropped, seen_missing?} ->
+        cond do
+          not Map.has_key?(values, param.name) ->
+            {missing || param, dropped, true}
+
+          seen_missing? ->
+            {missing, dropped ++ [param], true}
+
+          true ->
+            {missing, dropped, false}
         end
       end)
 
-    case dropped do
-      [] -> {:ok, Enum.reverse(args)}
-      _ -> {:error, {:argument_gap, missing, dropped}}
-    end
+    {missing, dropped}
   end
 
   defp invoke(module, %Tool{} = tool, args) do

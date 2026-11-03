@@ -15,7 +15,7 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :float} = ir({:float, [], []})
     assert %Type{kind: :number} = ir({:number, [], []})
     assert %Type{kind: :string} = ir({:binary, [], []})
-    assert %Type{kind: :string, pattern: "^.$"} = ir({:char, [], []})
+    assert %Type{kind: :string, pattern: "^[\\s\\S]$"} = ir({:char, [], []})
     assert %Type{kind: :boolean} = ir({:boolean, [], []})
     assert %Type{kind: :atom} = ir({:atom, [], []})
   end
@@ -216,6 +216,41 @@ defmodule ToolCall.TypespecTest do
   test "Keyword.t/1 keeps its value type" do
     assert %Type{kind: :object, additional: %Type{kind: :integer}} =
              ir({{:., [], [Keyword, :t]}, [], [{:integer, [], []}]})
+  end
+
+  test "validate_type!/1 rejects empty non-nullable unions and duplicate fields" do
+    assert_raise ArgumentError, ~r/variants/, fn ->
+      Typespec.validate_type!(%Type{kind: :union, variants: []})
+    end
+
+    assert %Type{kind: :union, variants: [], nullable: true} =
+             Typespec.validate_type!(%Type{kind: :union, variants: [], nullable: true})
+
+    field = %Field{name: "x", key: :x, type: %Type{kind: :string}}
+
+    assert_raise ArgumentError, ~r/duplicate field names/, fn ->
+      Typespec.validate_type!(%Type{kind: :object, fields: [field, field]})
+    end
+
+    other = %Field{name: "y", key: :x, type: %Type{kind: :string}}
+
+    assert_raise ArgumentError, ~r/duplicate field keys/, fn ->
+      Typespec.validate_type!(%Type{kind: :object, fields: [field, other]})
+    end
+  end
+
+  test "validate_tool!/1 rejects duplicate parameter names and invalid wire types" do
+    param = %ToolCall.IR.Param{name: "x", type: %Type{kind: :integer}}
+
+    assert_raise ArgumentError, ~r/duplicate parameter names/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{name: "go", params: [param, param]})
+    end
+
+    bad_wire = %ToolCall.IR.Param{name: "x", wire: :string_integer, type: %Type{kind: :string}}
+
+    assert_raise ArgumentError, ~r/wire :string_integer requires an integer/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{name: "go", params: [bad_wire]})
+    end
   end
 
   test "validate_tool!/1 rejects a non-tool" do

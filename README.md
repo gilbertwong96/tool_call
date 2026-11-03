@@ -171,7 +171,7 @@ and convert in the function.
 | `{:non_string_arguments, keys}` | `args` used atom or other non-string keys; JSON objects decode to strings |
 | `{:invalid_arguments, args}` | `args` was not a map (a provider may hand back a list or a scalar) |
 | `{:missing_argument, name}` | a required argument is absent |
-| `{:argument_gap, missing, dropped}` | an earlier optional argument was omitted while a later one was supplied; Elixir cannot pass those positionally |
+| `{:argument_gap, missing, dropped}` | a later optional argument was supplied after an omitted optional one, so Elixir would shift it into the wrong slot; a required argument after an omitted optional one is fine |
 | `{:invalid_argument, {name, reason}}` | coercion failed, e.g. `{:expected_integer, "1.5"}` |
 | `{:raised, message}` | the function raised |
 | `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |
@@ -205,10 +205,10 @@ end
   nullable it rejects `null` and booleans. Prefer `:a | :b` so the schema carries
   an `enum`.
 - Wire shapes are restored before dispatch: `%{a: integer()}` arrives with atom
-  keys, `keyword(t)` as a keyword list, `charlist()` as a charlist. Open maps and
-  `%{k() => v}` keep the string keys JSON gives them. `keyword/1` keys must
-  already exist as atoms in the VM, like `atom()`; an unknown key is
-  `{:unknown_atom, key}`.
+  keys, `keyword(t)` as a keyword list, `charlist()` as a charlist, `char()` as
+  a codepoint, and tuples as Erlang tuples. Open maps and `%{k() => v}` keep the
+  string keys JSON gives them. `keyword/1` keys must already exist as atoms in
+  the VM, like `atom()`; an unknown key is `{:unknown_atom, key}`.
 - `strict: true` makes optional arguments required and nullable; an explicit
   `null` for an optional argument or field is treated as absent, so the model can
   follow the strict schema without being rejected.

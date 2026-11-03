@@ -102,8 +102,21 @@ defmodule ToolCall.Coerce do
   defp coerce_kind(%Type{kind: :number}, value) when is_number(value), do: {:ok, value}
   defp coerce_kind(%Type{kind: :number}, value), do: {:error, {:expected_number, value}}
 
-  defp coerce_kind(%Type{kind: :string, source: :charlist}, value) when is_binary(value),
-    do: {:ok, String.to_charlist(value)}
+  defp coerce_kind(%Type{kind: :string, source: :charlist}, value) when is_binary(value) do
+    {:ok, String.to_charlist(value)}
+  rescue
+    _exception in [ArgumentError, UnicodeConversionError] ->
+      {:error, {:expected_string, value}}
+  end
+
+  defp coerce_kind(%Type{kind: :string, source: :char} = type, value) when is_binary(value) do
+    if String.valid?(value) and Regex.match?(pattern_regex(type), value) do
+      [codepoint | _rest] = String.to_charlist(value)
+      {:ok, codepoint}
+    else
+      {:error, {:pattern_mismatch, type.pattern, value}}
+    end
+  end
 
   defp coerce_kind(%Type{kind: :string, pattern: nil}, value) when is_binary(value),
     do: {:ok, value}
@@ -128,7 +141,13 @@ defmodule ToolCall.Coerce do
        do: {:ok, value}
 
   defp coerce_kind(%Type{kind: :atom}, value) when is_binary(value) do
-    {:ok, String.to_existing_atom(value)}
+    atom = String.to_existing_atom(value)
+
+    if is_boolean(atom) or is_nil(atom) do
+      {:error, {:expected_atom, value}}
+    else
+      {:ok, atom}
+    end
   rescue
     ArgumentError -> {:error, {:unknown_atom, value}}
   end
@@ -185,9 +204,10 @@ defmodule ToolCall.Coerce do
     end)
   end
 
-  defp coerce_enum(%Type{values: values}, value) do
-    values = values || []
+  defp coerce_enum(%Type{values: nil}, value), do: coerce_empty_enum(value)
+  defp coerce_enum(%Type{values: []}, value), do: coerce_empty_enum(value)
 
+  defp coerce_enum(%Type{values: values}, value) do
     cond do
       value in values ->
         {:ok, value}
@@ -210,12 +230,21 @@ defmodule ToolCall.Coerce do
     end
   end
 
+  # An empty enum renders as an unconstrained string schema; keep dispatch in
+  # sync instead of rejecting every value the schema advertises.
+  defp coerce_empty_enum(value) when is_binary(value), do: {:ok, value}
+  defp coerce_empty_enum(value), do: {:error, {:invalid_enum, value, []}}
+
   defp parse_integer(value) when is_integer(value), do: {:ok, value}
 
   defp parse_integer(value) when is_binary(value) do
-    case Integer.parse(value) do
-      {integer, ""} -> {:ok, integer}
-      _other -> {:error, {:expected_integer_string, value}}
+    if String.starts_with?(value, "+") do
+      {:error, {:expected_integer_string, value}}
+    else
+      case Integer.parse(value) do
+        {integer, ""} -> {:ok, integer}
+        _other -> {:error, {:expected_integer_string, value}}
+      end
     end
   end
 
@@ -262,7 +291,7 @@ defmodule ToolCall.Coerce do
       end
     end)
     |> case do
-      {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
+      {:ok, reversed} -> {:ok, reversed |> Enum.reverse() |> List.to_tuple()}
       error -> error
     end
   end

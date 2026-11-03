@@ -314,7 +314,7 @@ defmodule ToolCall.EmitTest do
     end
 
     test "char carries a single-character pattern", %{properties: properties} do
-      assert properties["c"] == %{"type" => "string", "pattern" => "^.$"}
+      assert properties["c"] == %{"type" => "string", "pattern" => "^[\\s\\S]$"}
     end
 
     test "atom enums render as strings", %{properties: properties} do

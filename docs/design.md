@@ -128,7 +128,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `number()` | `:number` | `{"type":"number"}` |
 | `String.t()`, `binary()`, `bitstring()` | `:string` | `{"type":"string"}` |
 | `charlist()` | `:string` | `{"type":"string"}`; the function receives a charlist |
-| `char()` | `:string` | `+ "pattern": "^.$"`, enforced at dispatch too |
+| `char()` | `:string` | `+ "pattern": "^[\\s\\S]$"`, enforced at dispatch; the function receives the codepoint |
 | `boolean()` | `:boolean` | `{"type":"boolean"}` |
 | `true`, `false` | `:enum` | `{"type":"boolean","enum":[true]}` |
 | `atom()`, `module()` | `:atom` | `{"type":"string"}` |
@@ -141,7 +141,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `%{k() => t}` | `:object` | `additionalProperties: <t>`; keys stay strings |
 | `[t]`, `list(t)` | `:array` | `{"type":"array","items":...}` |
 | `nonempty_list(t)` | `:array` | `+ "minItems": 1` |
-| `{a, b}`, `{a, b, c}` | `:tuple` | `prefixItems` + min/maxItems; strict keeps only the size |
+| `{a, b}`, `{a, b, c}` | `:tuple` | `prefixItems` + min/maxItems; strict keeps only the size; the function receives a tuple |
 | `keyword(t)`, `Keyword.t()` | `:object` | `additionalProperties: <t>`; the function receives a keyword list |
 | `Date.t()`, `DateTime.t()`, `Time.t()` | `:string` | `+ "format": "date" / "time" / "date-time"`; parsed from ISO 8601 at dispatch |
 | `NaiveDateTime.t()` | `:string` | no `format`: RFC 3339 `date-time` needs an offset; parsed at dispatch |
@@ -209,18 +209,21 @@ calls.
 
 **The value domain is restored at dispatch.** Coercion does not stop at checking
 the wire value: `%{a: integer()}` is handed over with atom keys, `keyword(t)` as a
-keyword list, `charlist()` as a charlist, `Date.t()` and friends as structs
-parsed from ISO 8601, and an integral float as an integer.
+keyword list, `charlist()` as a charlist, `char()` as a codepoint, tuples as
+Erlang tuples, `Date.t()` and friends as structs parsed from ISO 8601, and an
+integral float as an integer.
 One thing stays wire-shaped because JSON has no better form: keys the spec does
 not declare (open maps, `%{k() => v}`) keep their string form. `keyword/1` keys are
 resolved with `String.to_existing_atom/1`, the same rule as `atom()`: a key that
 is not already in the atom table yields `{:unknown_atom, key}` instead of a new
 atom per request.
 
-**Optional = has a default.** Elixir defaults are trailing-only, so `required`
-is derived from `\\`. A default that is not a compile-time literal is dropped
-from the schema (it would otherwise reach the model as a quoted AST) but the
-parameter stays optional.
+**Optional = has a default.** `required` is derived from `\\`, wherever the
+default appears in the argument list. A default that is not a compile-time
+literal is dropped from the schema (it would otherwise reach the model as a
+quoted AST) but the parameter stays optional. A reduced-arity call receives
+every required argument plus a prefix of the optional arguments, which is what
+`ToolCall.Runner` constructs.
 
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so
@@ -280,10 +283,12 @@ the function crash.
 `additionalProperties: false`, so the dispatcher enforces the same rule and
 returns an error the model can read.
 
-**Arguments that cannot be positioned are an error.** Elixir defaults are
-trailing-only, so `run(f, %{"b" => 2})` on `def f(a \\ 1, b \\ 2)` has no
-positional form. Returning `{1, 2}` would silently drop the value the model
-sent; the dispatcher returns `{:argument_gap, "a", ["b"]}` instead.
+**Arguments that cannot be positioned are an error.** Elixir fills defaults in
+declaration order, so `run(f, %{"b" => 2})` on `def f(a \\ 1, b \\ 2)` has no
+positional form: a reduced-arity call would bind `2` to `a`, not to `b`.
+Returning `{1, 2}` would silently change the call; the dispatcher returns
+`{:argument_gap, "a", ["b"]}` instead. A required argument after an omitted
+optional one is still fine: `def f(a \\ 1, b)` accepts `%{"b" => 2}`.
 
 ## Dispatch errors
 
@@ -296,7 +301,7 @@ sent; the dispatcher returns `{:argument_gap, "a", ["b"]}` instead.
 | `{:non_string_arguments, keys}` | `args` used atom or other non-string keys |
 | `{:invalid_arguments, args}` | `args` was not a map |
 | `{:missing_argument, name}` | a required argument is absent |
-| `{:argument_gap, missing, dropped}` | a later argument was supplied after an omitted one |
+| `{:argument_gap, missing, dropped}` | a later optional argument was supplied after an omitted optional one; required arguments may still follow an omitted optional |
 | `{:invalid_argument, {name, reason}}` | coercion or bounds failed |
 | `{:raised, message}` | the function raised |
 | `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |

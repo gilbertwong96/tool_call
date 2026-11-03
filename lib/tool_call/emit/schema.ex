@@ -11,8 +11,8 @@ defmodule ToolCall.Emit.Schema do
   @doc "Renders the `parameters`/`input_schema` object for a tool."
   @spec params(Tool.t(), keyword()) :: map()
   def params(%Tool{} = tool, opts \\ []) do
-    ToolCall.Typespec.validate_tool!(tool)
-    params = tool.params || []
+    tool = ToolCall.Typespec.validate_tool!(tool)
+    params = tool.params
     params = if strict?(opts), do: Enum.map(params, &force_required/1), else: params
 
     %{
@@ -99,6 +99,17 @@ defmodule ToolCall.Emit.Schema do
       schema
     else
       Map.put(schema, "default", Integer.to_string(param.default))
+    end
+  end
+
+  defp put_default(schema, %Param{type: %Type{source: :char}} = param, opts) do
+    if strict?(opts) do
+      schema
+    else
+      case char_default(param.default) do
+        nil -> schema
+        char -> Map.put(schema, "default", char)
+      end
     end
   end
 
@@ -251,6 +262,18 @@ defmodule ToolCall.Emit.Schema do
   end
 
   defp nullable(schema, %Type{}), do: schema
+
+  defp char_default(value) when is_integer(value) and value >= 0 and value <= 0x10FFFF do
+    List.to_string([value])
+  rescue
+    _ -> nil
+  end
+
+  defp char_default(value) when is_binary(value) do
+    if String.valid?(value) and String.length(value) == 1, do: value, else: nil
+  end
+
+  defp char_default(_value), do: nil
 
   defp charlist_default(value) when is_binary(value), do: value
 

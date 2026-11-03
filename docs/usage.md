@@ -198,7 +198,8 @@ end
 | `%{"city" => "Oslo"}` | `{:ok, %{city: "Oslo", days: 3, temp: 21.5}}` — trailing defaults fill in |
 | `%{}` | `{:error, {:missing_argument, "city"}}` |
 | `%{"days" => 5}` | `{:error, {:missing_argument, "city"}}` |
-| `%{"b" => 2}` on `def f(a \\ 1, b \\ 2)` | `{:error, {:argument_gap, "a", ["b"]}}` — Elixir cannot pass a later argument past a skipped one, so the value is reported instead of dropped |
+| `%{"b" => 2}` on `def f(a \\ 1, b \\ 2)` | `{:error, {:argument_gap, "a", ["b"]}}` — a reduced-arity call would bind `2` to `a`; use `%{"a" => 2, "b" => ...}` |
+| `%{"b" => 2}` on `def f(a \\ 1, b)` | `{:ok, {1, 2}}` — Elixir can omit `a` while keeping required `b` |
 | `%{"city" => "Oslo", "days" => 1.5}` | `{:error, {:invalid_argument, {"days", {:expected_integer, 1.5}}}}` |
 | `%{"city" => "Oslo", "days" => nil}` | `{:ok, ...}` — null for an optional argument means "use the default" |
 | `[1, 2]` instead of a map | `{:error, {:invalid_arguments, [1, 2]}}` |
@@ -222,9 +223,10 @@ The full error list is in the [README](../README.md#errors).
   want the raw string.
 - **Wire shapes are restored before dispatch.** `%{a: integer()}` arrives with
   atom keys at every declared level, `keyword(t)` as a keyword list,
-  `charlist()` as a charlist, and `1.0` as `1`. Open maps and `%{k() => v}` keep
-  the string keys JSON gives them. `keyword/1` keys must already exist as atoms
-  in the VM, like `atom()`: an unknown key is `{:unknown_atom, key}`.
+  `charlist()` as a charlist, `char()` as a codepoint, tuples as Erlang tuples,
+  and `1.0` as `1`. Open maps and `%{k() => v}` keep the string keys JSON gives
+  them. `keyword/1` keys must already exist as atoms in the VM, like `atom()`:
+  an unknown key is `{:unknown_atom, key}`.
 - **Do not use a bare `atom()`.** The schema allows any string while the
   dispatcher only accepts atoms that already exist in the VM. Enumerate:
   `:red | :green`.

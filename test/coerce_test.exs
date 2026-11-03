@@ -128,6 +128,12 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, true} = Coerce.coerce(type, true)
       assert {:error, {:invalid_enum, false, [true]}} = Coerce.coerce(type, false)
     end
+
+    test "an empty enum accepts strings, matching its schema" do
+      assert {:ok, "x"} = Coerce.coerce(%Type{kind: :enum, values: []}, "x")
+      assert {:ok, "x"} = Coerce.coerce(%Type{kind: :enum, values: nil}, "x")
+      assert {:error, {:invalid_enum, 1, []}} = Coerce.coerce(%Type{kind: :enum, values: []}, 1)
+    end
   end
 
   describe "objects" do
@@ -261,6 +267,11 @@ defmodule ToolCall.CoerceTest do
       assert {:ok, ~c"abc"} = Coerce.coerce(%Type{kind: :string, source: :charlist}, "abc")
     end
 
+    test "rejects invalid utf-8 charlists instead of raising" do
+      assert {:error, {:expected_string, <<255>>}} =
+               Coerce.coerce(%Type{kind: :string, source: :charlist}, <<255>>)
+    end
+
     test "requires a compiled pattern for hand-built types" do
       assert_raise ArgumentError, ~r/no compiled pattern_regex/, fn ->
         Coerce.coerce(%Type{kind: :string, pattern: "^x$"}, "x")
@@ -278,8 +289,18 @@ defmodule ToolCall.CoerceTest do
       type = ToolCall.Typespec.to_type({:char, [], []})
 
       assert %Type{pattern_regex: %Regex{}} = type
-      assert {:ok, "a"} = Coerce.coerce(type, "a")
-      assert {:error, {:pattern_mismatch, "^.$", "ab"}} = Coerce.coerce(type, "ab")
+      assert {:ok, ?a} = Coerce.coerce(type, "a")
+      assert {:error, {:pattern_mismatch, "^[\\s\\S]$", "ab"}} = Coerce.coerce(type, "ab")
+    end
+
+    test "char returns the codepoint, including newline and unicode" do
+      type = ToolCall.Typespec.to_type({:char, [], []})
+
+      assert {:ok, ?a} = Coerce.coerce(type, "a")
+      assert {:ok, ?\n} = Coerce.coerce(type, "\n")
+      assert {:ok, ?é} = Coerce.coerce(type, "é")
+      assert {:error, {:pattern_mismatch, _, "ab"}} = Coerce.coerce(type, "ab")
+      assert {:error, {:pattern_mismatch, _, <<255>>}} = Coerce.coerce(type, <<255>>)
     end
 
     test "booleans" do
@@ -300,6 +321,10 @@ defmodule ToolCall.CoerceTest do
       # spec makes them part of the domain.
       assert {:error, {:expected_atom, nil}} = Coerce.coerce(%Type{kind: :atom}, nil)
       assert {:error, {:expected_atom, true}} = Coerce.coerce(%Type{kind: :atom}, true)
+
+      assert {:error, {:expected_atom, "true"}} = Coerce.coerce(%Type{kind: :atom}, "true")
+      assert {:error, {:expected_atom, "false"}} = Coerce.coerce(%Type{kind: :atom}, "false")
+      assert {:error, {:expected_atom, "nil"}} = Coerce.coerce(%Type{kind: :atom}, "nil")
       assert {:ok, nil} = Coerce.coerce(%Type{kind: :atom, nullable: true}, nil)
     end
 
@@ -343,7 +368,7 @@ defmodule ToolCall.CoerceTest do
     test "check the size and coerce each position" do
       type = %Type{kind: :tuple, items: [%Type{kind: :integer}, %Type{kind: :string}]}
 
-      assert {:ok, [1, "a"]} = Coerce.coerce(type, [1.0, "a"])
+      assert {:ok, {1, "a"}} = Coerce.coerce(type, [1.0, "a"])
       assert {:error, {:wrong_tuple_size, 1, 2}} = Coerce.coerce(type, [1])
       assert {:error, {:expected_array, %{}}} = Coerce.coerce(type, %{})
       assert {:error, {0, {:expected_integer, "a"}}} = Coerce.coerce(type, ["a", "b"])
@@ -403,7 +428,7 @@ defmodule ToolCall.CoerceTest do
         items: %Type{kind: :tuple, items: [%Type{kind: :string}, %Type{kind: :integer}]}
       }
 
-      assert {:ok, [["a", 1], ["b", 2]]} = Coerce.coerce(type, [["a", 1.0], ["b", 2]])
+      assert {:ok, [{"a", 1}, {"b", 2}]} = Coerce.coerce(type, [["a", 1.0], ["b", 2]])
     end
 
     test "report the array index and the tuple position" do
@@ -424,6 +449,11 @@ defmodule ToolCall.CoerceTest do
 
       assert {:error, {:expected_integer_string, nil}} =
                Coerce.coerce(integer(), nil, :string_integer)
+    end
+
+    test "rejects a leading plus sign, matching the schema pattern" do
+      assert {:error, {:expected_integer_string, "+1"}} =
+               Coerce.coerce(integer(), "+1", :string_integer)
     end
 
     test "enforce bounds after parsing" do

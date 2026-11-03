@@ -1,8 +1,8 @@
 defmodule ToolCall.Patterns do
   @moduledoc false
 
-  @char "^.$"
-  @regexes %{@char => Regex.compile!(@char)}
+  @char "^[\\s\\S]$"
+  @regexes %{@char => Regex.compile!(@char, "u")}
 
   @doc false
   def char, do: @char

@@ -184,6 +184,79 @@ defmodule ToolCall.SchemaTest do
     end
   end
 
+  test "renders a char default as a string" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(c :: char()) :: char()
+        def go(c \\\\ ?a), do: c
+      end
+      """)
+
+    assert param_schema(module, "go", "c") == %{
+             "type" => "string",
+             "pattern" => "^[\\s\\S]$",
+             "default" => "a"
+           }
+  end
+
+  test "only renders char defaults that are valid characters" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec int(c :: char()) :: char()
+        def int(c \\\\ ?a), do: c
+
+        @spec bin(c :: char()) :: char()
+        def bin(c \\\\ "a"), do: c
+
+        @spec bad_bin(c :: char()) :: char()
+        def bad_bin(c \\\\ "ab"), do: c
+
+        @spec surrogate(c :: char()) :: char()
+        def surrogate(c \\\\ 0xD800), do: c
+
+        @spec negative(c :: char()) :: char()
+        def negative(c \\\\ -1), do: c
+      end
+      """)
+
+    assert param_schema(module, "int", "c")["default"] == "a"
+    assert param_schema(module, "bin", "c")["default"] == "a"
+    refute Map.has_key?(param_schema(module, "bad_bin", "c"), "default")
+    refute Map.has_key?(param_schema(module, "surrogate", "c"), "default")
+    refute Map.has_key?(param_schema(module, "negative", "c"), "default")
+  end
+
+  test "omits a char default that is not valid utf-8" do
+    tool = %Tool{
+      name: "go",
+      params: [
+        %Param{
+          name: "c",
+          type: %Type{kind: :string, source: :char, pattern: "^[\\s\\S]$"},
+          default: <<255>>
+        }
+      ]
+    }
+
+    refute Map.has_key?(Schema.params(tool)["properties"]["c"], "default")
+  end
+
+  test "rejects an empty non-nullable union before rendering" do
+    assert_raise ArgumentError, ~r/variants/, fn ->
+      Schema.type(%Type{kind: :union, variants: []})
+    end
+
+    assert Schema.type(%Type{kind: :union, variants: [], nullable: true}) == %{
+             "anyOf" => [%{"type" => "null"}]
+           }
+  end
+
   test "a default tuple of the wrong size is kept as is" do
     param = %Param{
       name: "t",

@@ -24,6 +24,112 @@ defmodule ToolCall.RunnerTest do
     assert {:ok, {5, 7}} = ToolCall.run(module, :pair, %{"a" => 5, "b" => 7})
   end
 
+  test "supports non-trailing defaults that Elixir can still position" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec f(a :: integer(), b :: integer()) :: {integer(), integer()}
+        def f(a \\\\ 1, b), do: {a, b}
+
+        @spec g(a :: integer(), b :: integer(), c :: integer()) :: {integer(), integer(), integer()}
+        def g(a, b \\\\ 2, c), do: {a, b, c}
+
+        @spec h(a :: integer(), b :: integer(), c :: integer(), d :: integer()) ::
+                {integer(), integer(), integer(), integer()}
+        def h(a, b \\\\ 2, c, d \\\\ 4), do: {a, b, c, d}
+      end
+      """)
+
+    assert {:ok, {1, 9}} = ToolCall.run(module, :f, %{"b" => 9})
+    assert {:ok, {5, 9}} = ToolCall.run(module, :f, %{"a" => 5, "b" => 9})
+    assert {:error, {:missing_argument, "b"}} = ToolCall.run(module, :f, %{})
+    assert {:error, {:missing_argument, "b"}} = ToolCall.run(module, :f, %{"a" => 5})
+
+    assert {:ok, {1, 2, 3}} = ToolCall.run(module, :g, %{"a" => 1, "c" => 3})
+    assert {:ok, {1, 7, 3}} = ToolCall.run(module, :g, %{"a" => 1, "b" => 7, "c" => 3})
+
+    assert {:ok, {1, 2, 3, 4}} = ToolCall.run(module, :h, %{"a" => 1, "c" => 3})
+    assert {:ok, {1, 7, 3, 4}} = ToolCall.run(module, :h, %{"a" => 1, "b" => 7, "c" => 3})
+
+    assert {:error, {:argument_gap, "b", ["d"]}} =
+             ToolCall.run(module, :h, %{"a" => 1, "c" => 3, "d" => 9})
+  end
+
+  test "rejects an optional gap even when a later optional is supplied" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(a :: integer(), b :: integer(), c :: integer()) :: {integer(), integer(), integer()}
+        def go(a \\\\ 1, b \\\\ 2, c \\\\ 3), do: {a, b, c}
+      end
+      """)
+
+    assert {:error, {:argument_gap, "b", ["c"]}} =
+             ToolCall.run(module, :go, %{"a" => 1, "c" => 3})
+  end
+
+  test "restores tuple arguments" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec pair(pair :: {integer(), String.t()}) :: {integer(), String.t()}
+        def pair({x, y}), do: {x, y}
+
+        @spec nested(pair :: {{integer(), integer()}, String.t()}) :: term()
+        def nested({{x, y}, z}), do: {x, y, z}
+      end
+      """)
+
+    assert {:ok, {1, "a"}} = ToolCall.run(module, :pair, %{"pair" => [1.0, "a"]})
+    assert {:ok, {1, 2, "a"}} = ToolCall.run(module, :nested, %{"pair" => [[1.0, 2], "a"]})
+  end
+
+  test "restores char arguments as codepoints" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec char(c :: char()) :: integer()
+        def char(c), do: c
+      end
+      """)
+
+    assert {:ok, ?a} = ToolCall.run(module, :char, %{"c" => "a"})
+    assert {:ok, ?\n} = ToolCall.run(module, :char, %{"c" => "\n"})
+    assert {:ok, ?é} = ToolCall.run(module, :char, %{"c" => "é"})
+    assert {:error, _reason} = ToolCall.run(module, :char, %{"c" => "ab"})
+  end
+
+  test "prepares runtime char patterns with unicode" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        def char(c), do: c
+      end
+      """)
+
+    tool = %ToolCall.IR.Tool{
+      name: "char",
+      params: [
+        %ToolCall.IR.Param{
+          name: "c",
+          type: ToolCall.Typespec.to_type({:char, [], []})
+        }
+      ],
+      module: module,
+      fun: :char
+    }
+
+    assert {:ok, ?é} = ToolCall.Runner.run(module, [tool], "char", %{"c" => "é"})
+  end
+
   test "hands calendar arguments over as structs" do
     module =
       compile!("""

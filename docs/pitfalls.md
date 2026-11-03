@@ -171,10 +171,13 @@ end
 ```
 
 `@spec f(A, B)` still has arity 2 even though callers may pass one argument.
-Defaults are trailing-only, so `ToolCall.Runner` stops at the first missing
-value and lets Elixir fill the rest.
+Defaults can appear before required arguments (`def f(a \\ 1, b)`), so the
+runner cannot assume they are trailing. It allows the reduced-arity calls
+Elixir can actually position — all required arguments plus a prefix of the
+optional arguments — and reports an `:argument_gap` only when a later optional
+would be shifted into the wrong slot.
 
-**Handled.**
+**Handled.** The runner builds exactly that argument list before `apply/3`.
 
 ## 12. `@on_definition` fires for private functions and per clause — important
 
