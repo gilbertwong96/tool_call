@@ -646,7 +646,14 @@ defmodule ToolCall.Typespec do
     raise ArgumentError, "invalid ToolCall IR: expected a type, got: #{inspect(other)}"
   end
 
-  @doc false
+  @doc """
+  Validates a runtime `ToolCall.IR.Tool` and returns a copy with prepared
+  parameters.
+
+  Parameter types are validated through `validate_type!/1`, so hand-built
+  patterns receive a compiled `pattern_regex`; tool and parameter metadata are
+  checked as well.
+  """
   @spec validate_tool!(Tool.t()) :: Tool.t()
   def validate_tool!(%Tool{name: name, description: description, params: params} = tool)
       when is_binary(name) do

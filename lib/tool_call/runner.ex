@@ -30,7 +30,12 @@ defmodule ToolCall.Runner do
 
   def run(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
 
-  @doc false
+  @doc """
+  Internal fast path for already prepared tools.
+
+  This skips runtime IR validation. Callers must pass tools prepared by
+  `ToolCall.Typespec.validate_tool!/1`; use `run/4` for arbitrary runtime tools.
+  """
   @spec run_prepared(module(), [Tool.t()], atom() | String.t(), term()) ::
           {:ok, term()} | {:error, term()}
   def run_prepared(module, tools, name, args) when is_map(args) do
