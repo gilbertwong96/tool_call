@@ -21,8 +21,7 @@ defmodule ToolCall.MixProject do
           "docs/usage.md",
           "docs/design.md",
           "docs/pitfalls.md",
-          "docs/number-handling.md",
-          "docs/naming.md"
+          "docs/number-handling.md"
         ]
       ],
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],

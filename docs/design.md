@@ -41,7 +41,7 @@ Two artefacts come out of that single declaration:
 
 ## Constraints that shaped the design
 
-These were measured on Elixir 1.20.4 / OTP 29. Reproduce with the snippets in
+These constraints shaped the design; compile-time traps are covered in
 [`pitfalls.md`](pitfalls.md).
 
 ### 1. `@spec` carries no parameter names
@@ -169,11 +169,9 @@ set `format`/`transform`; `source` is provenance except for `:charlist`, which
 still drives charlist conversion and its schema default. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
-Not handled: type variables (generics), recursive types (no `$ref`/`$defs`, so a
-recursive reference becomes `{}`), bitstrings with explicit sizes, struct
-expansion (without a provider, remote types such as `URI.t()` stay `{}`; the
-compiler's inline map form is only reachable once remote expansion exists, and it
-carries `__struct__`).
+Not handled: recursive types (no `$ref`/`$defs`, so a recursive reference
+becomes `{}`), bitstrings with explicit sizes, and struct expansion (without a
+provider, remote types such as `URI.t()` stay `{}`).
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained

@@ -69,8 +69,7 @@ compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
 chunks, so Code.Typespec.fetch_specs/1 and `Code.fetch_docs/1` fail on the
-compiled beam, and this library never calls them. See
-[`pitfalls.md`](pitfalls.md).
+compiled beam, and this library never calls them. See the README release notes.
 
 A `ToolCall.IR.Tool` — a tool built at runtime — is still rendered on demand.
 That is the only path that pays for rendering.

@@ -5,7 +5,7 @@ defmodule ToolCall.Builder do
   #
   # This runs inside `@before_compile`, never at runtime: `mix release` strips
   # the `Docs` and `Dbgi` chunks, so `Code.Typespec` / `Code.fetch_docs` are not
-  # available in production. See docs/pitfalls.md.
+  # available in production. See docs/design.md and the README release notes.
 
   alias ToolCall.{Doc, LocalTypes, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}

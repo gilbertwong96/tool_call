@@ -22,7 +22,7 @@ defmodule ToolCall do
 
   Everything is generated at compile time from module attributes. Nothing is
   read back from the compiled beam at runtime, because release builds strip the
-  `Docs` and `Dbgi` chunks. See `docs/pitfalls.md`.
+  `Docs` and `Dbgi` chunks.
 
   ## Supported typespec subset
 

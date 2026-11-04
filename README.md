@@ -54,8 +54,8 @@ truth.
 
 The library derives everything in `@before_compile`, never by reflecting on the
 compiled beam: release builds strip the `Docs` and `Dbgi` chunks, which is
-exactly where Code.Typespec and `Code.fetch_docs` read from. See
-[`docs/pitfalls.md`](docs/pitfalls.md).
+exactly where Code.Typespec and `Code.fetch_docs` read from. Release
+`strip_beams: true` is covered below.
 
 ## Releases and `strip_beams: true`
 
@@ -330,9 +330,8 @@ information without a provider envelope:
 
 - [`docs/usage.md`](docs/usage.md) — end-to-end usage, dispatch, the loop.
 - [`docs/design.md`](docs/design.md) — architecture, type mapping, provider subsets.
-- [`docs/pitfalls.md`](docs/pitfalls.md) — measured traps and what is done about each.
+- [`docs/pitfalls.md`](docs/pitfalls.md) — compile-time traps and what is done about each.
 - [`docs/number-handling.md`](docs/number-handling.md) — precision across Elixir, JSON and providers.
-- [`docs/naming.md`](docs/naming.md) — why `ToolCall`.
 
 ## Development
 
