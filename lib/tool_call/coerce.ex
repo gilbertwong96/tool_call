@@ -45,6 +45,20 @@ defmodule ToolCall.Coerce do
     end
   end
 
+  @doc false
+  @spec accepts_nil?(Type.t()) :: boolean()
+  def accepts_nil?(%Type{nullable: true}), do: true
+  def accepts_nil?(%Type{kind: :null}), do: true
+  def accepts_nil?(%Type{kind: :any}), do: true
+
+  def accepts_nil?(%Type{kind: :enum, values: values}) when is_list(values),
+    do: nil in values
+
+  def accepts_nil?(%Type{kind: :union, variants: variants}) when is_list(variants),
+    do: Enum.any?(variants, &accepts_nil?/1)
+
+  def accepts_nil?(%Type{}), do: false
+
   # Large integers carried as strings. See docs/number-handling.md.
   defp coerce_value(%Type{kind: :integer} = type, value, :string_integer) do
     with {:ok, integer} <- parse_integer(value) do
@@ -354,9 +368,16 @@ defmodule ToolCall.Coerce do
 
   defp coerce_field(%Field{} = field, value) do
     case Map.fetch(value, field.name) do
-      {:ok, nil} when not field.required -> {:ok, :missing}
-      {:ok, raw} -> coerce_field_value(field, raw)
-      :error -> missing_field(field)
+      {:ok, nil} when not field.required ->
+        if accepts_nil?(field.type),
+          do: coerce_field_value(field, nil),
+          else: {:ok, :missing}
+
+      {:ok, raw} ->
+        coerce_field_value(field, raw)
+
+      :error ->
+        missing_field(field)
     end
   end
 

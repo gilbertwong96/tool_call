@@ -157,6 +157,21 @@ defmodule ToolCall.CoerceTest do
     end
   end
 
+  describe "accepted nil domains" do
+    test "recognises domains that accept nil" do
+      enum_with_nil = %Type{kind: :enum, values: [nil, :a]}
+
+      assert Coerce.accepts_nil?(%Type{kind: :integer, nullable: true})
+      assert Coerce.accepts_nil?(%Type{kind: :null})
+      assert Coerce.accepts_nil?(%Type{kind: :any})
+      assert Coerce.accepts_nil?(enum_with_nil)
+      assert Coerce.accepts_nil?(%Type{kind: :union, variants: [enum_with_nil]})
+      refute Coerce.accepts_nil?(%Type{kind: :integer})
+      refute Coerce.accepts_nil?(%Type{kind: :enum, values: [:a]})
+      refute Coerce.accepts_nil?(%Type{kind: :union, variants: [%Type{kind: :integer}]})
+    end
+  end
+
   describe "objects" do
     test "treats an explicit null for an optional field as absent" do
       type = %Type{
@@ -169,6 +184,23 @@ defmodule ToolCall.CoerceTest do
 
       assert {:ok, %{b: 1}} = Coerce.coerce(type, %{"a" => nil, "b" => 1})
       assert {:error, _} = Coerce.coerce(type, %{"a" => nil, "b" => nil})
+    end
+
+    test "keeps explicit null for an optional nullable field" do
+      type = %Type{
+        kind: :object,
+        fields: [
+          %Field{
+            name: "a",
+            key: :a,
+            type: %Type{kind: :integer, nullable: true},
+            required: false
+          },
+          %Field{name: "b", key: :b, type: %Type{kind: :integer}}
+        ]
+      }
+
+      assert {:ok, %{a: nil, b: 1}} = Coerce.coerce(type, %{"a" => nil, "b" => 1})
     end
 
     test "coerces known fields" do

@@ -224,6 +224,21 @@ defmodule ToolCall.RunnerTest do
              })
   end
 
+  test "keeps an explicit null for an optional nullable argument" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: integer() | nil) :: integer() | nil
+        def go(x \\\\ 3), do: x
+      end
+      """)
+
+    assert {:ok, 3} = ToolCall.run(module, :go, %{})
+    assert {:ok, nil} = ToolCall.run(module, :go, %{"x" => nil})
+  end
+
   test "treats an explicit null for an optional argument as absent" do
     module = pair_tool()
 

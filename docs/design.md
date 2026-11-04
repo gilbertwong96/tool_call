@@ -251,9 +251,11 @@ schema the API will reject. The same applies to open objects with typed values
 which the build warns about too.
 
 Because strict mode forces `null` onto optional properties, the dispatcher
-treats an explicit `null` for an optional argument or field as absent. Without
-that rule the two halves would disagree: the model would be told to send
-`days: null` and the dispatcher would answer `{:expected_integer, nil}`.
+treats an explicit `null` for a **non-nullable** optional argument or field as
+absent. Without that rule the two halves would disagree: the model would be
+told to send `days: null` and the dispatcher would answer
+`{:expected_integer, nil}`. If the type itself accepts `nil`, explicit `null`
+is preserved and can override the default.
 
 Two more keywords have to go in that variant, because the API rejects them:
 `default` (dropped; nullability says the same thing) and `prefixItems` (a tuple

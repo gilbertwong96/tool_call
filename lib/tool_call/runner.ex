@@ -90,9 +90,16 @@ defmodule ToolCall.Runner do
 
   defp coerce_param(%Param{} = param, args) do
     case Map.fetch(args, param.name) do
-      {:ok, nil} when not param.required -> {:ok, :missing}
-      {:ok, raw} -> coerce_value(param, raw)
-      :error -> missing_param(param)
+      {:ok, nil} when not param.required ->
+        if Coerce.accepts_nil?(param.type),
+          do: coerce_value(param, nil),
+          else: {:ok, :missing}
+
+      {:ok, raw} ->
+        coerce_value(param, raw)
+
+      :error ->
+        missing_param(param)
     end
   end
 

@@ -51,8 +51,9 @@ tools = ToolCall.emit(A, :openai, strict: true) ++ ToolCall.emit(B, :openai, str
 
 `strict: true` adds `"strict" => true`, makes every property required (nested
 objects included), widens optional values to `["T", "null"]` and closes every
-object. The dispatcher treats an explicit `null` for an optional argument or
-field as absent, so a model that follows the strict schema is not rejected.
+object. For an optional argument or field whose type does not accept `nil`, an
+explicit `null` is treated as absent; if the type accepts `nil`, the value is
+passed through and can override a default.
 
 ### When it happens
 
@@ -202,7 +203,7 @@ end
 | `%{"b" => 2}` on `def f(a \\ 1, b)` | `{:ok, {1, 2}}` — Elixir can omit `a` while keeping required `b` |
 | `%{"city" => "Oslo", "days" => 1.5}` | `{:error, {:invalid_argument, {"days", {:expected_integer, 1.5}}}}` |
 | an invalid UTF-8 binary in any string argument | `{:error, {:invalid_argument, {name, {:invalid_utf8, value}}}}` |
-| `%{"city" => "Oslo", "days" => nil}` | `{:ok, ...}` — null for an optional argument means "use the default" |
+| `%{"city" => "Oslo", "days" => nil}` | `{:ok, %{... days: nil}}` — `days` is nullable, so explicit null is preserved |
 | `[1, 2]` instead of a map | `{:error, {:invalid_arguments, [1, 2]}}` |
 | a raising function | `{:error, {:raised, "..."}}` |
 
@@ -242,8 +243,9 @@ The full error list is in the [README](../README.md#errors).
   The build warns for those parameters (and for `term()`, which has no type at
   all). Tuples lose their element types in strict mode (`prefixItems` is
   rejected) and keep only `minItems`/`maxItems`; the build warns too. Defaults
-  are dropped in strict mode, because `default` is rejected; send `null` and the
-  dispatcher falls back to the default.
+  are dropped in strict mode, because `default` is rejected. For a
+  non-nullable optional value, `null` means "use the default"; for a nullable
+  value it is passed through as `nil`.
 - **Tool names are function names; there is no namespace.** When you concatenate
   tools from several modules, keep the names unique and route back to the right
   module. Both providers require `^[a-zA-Z0-9_-]{1,64}$`, so a function named

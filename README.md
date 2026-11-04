@@ -215,9 +215,11 @@ end
   a codepoint, and tuples as Erlang tuples. Open maps and `%{k() => v}` keep the
   string keys JSON gives them. `keyword/1` keys must already exist as atoms in
   the VM, like `atom()`; an unknown key is `{:unknown_atom, key}`.
-- `strict: true` makes optional arguments required and nullable; an explicit
-  `null` for an optional argument or field is treated as absent, so the model can
-  follow the strict schema without being rejected.
+- `strict: true` makes optional arguments required and nullable. An explicit
+  `null` for a non-nullable optional argument or field is treated as absent; if
+  the type already accepts `nil`, the value is passed through as `nil` and can
+  override a default. This lets a model follow the strict schema without being
+  rejected.
 - The return type is not checked: results are returned as plain terms and must be
   JSON-encodable.
 
