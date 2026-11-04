@@ -22,8 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # OTP 27.1's TLS stack cannot install Rebar from builds.hex.pm; the
+          # 27.3 patch is the practical CI floor for this action.
           - elixir: "1.18"
-            otp: "27.1"
+            otp: "27.3"
           - elixir: "1.20"
             otp: "29"
 
