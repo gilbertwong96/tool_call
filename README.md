@@ -57,6 +57,47 @@ compiled beam: release builds strip the `Docs` and `Dbgi` chunks, which is
 exactly where Code.Typespec and `Code.fetch_docs` read from. See
 [`docs/pitfalls.md`](docs/pitfalls.md).
 
+## Releases and `strip_beams: true`
+
+`mix release` uses `strip_beams: true` by default. ToolCall is designed for
+that: every tool definition is derived in `@before_compile`, and the generated
+`__tools__/0`, `__schemas__/0` and `__run__/2` functions are ordinary code and
+literal data. Stripping removes the `Docs`/`Dbgi` chunks, not those functions
+or the compiled schemas.
+
+That means these keep working in a stripped release:
+
+```elixir
+ToolCall.emit(MyApp.Tools.Weather, :openai)
+ToolCall.run(MyApp.Tools.Weather, :get_weather, args)
+ToolCall.tools(MyApp.Tools.Weather)
+ToolCall.describe(MyApp.Tools.Weather)
+```
+
+What stops working is runtime reflection that was never part of ToolCall:
+
+```elixir
+Code.Typespec.fetch_specs(MyApp.Tools.Weather)  #=> :error
+Code.fetch_docs(MyApp.Tools.Weather)            #=> :error
+```
+
+The library does not call either function at runtime. `@doc`, `@spec`, local
+`@type` declarations and `@tool_param` overrides are consumed at compile time;
+the resulting descriptions, types, defaults and schemas are embedded in the
+module.
+
+Two release-specific caveats:
+
+- If a `ToolCall.TypeProvider` defines `coerce/1`, that provider module must be
+  present in the release. It runs at dispatch time; do not put it in a
+  `runtime: false` dependency if the tool uses it.
+- Do not rebuild tools at runtime by reading Code.Typespec or Code.fetch_docs.
+  Use the embedded IR from `ToolCall.tools/1`, or construct
+  `ToolCall.IR.Tool` values explicitly.
+
+`mix tool_call.export` is a build-time Mix task, not a runtime requirement.
+Run it while building the release if you need a checked-in JSON file.
+
 ## What you get
 
 - `ToolCall.emit/3` — `:openai` (including `strict: true`) and `:anthropic`.
