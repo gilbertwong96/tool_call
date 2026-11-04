@@ -451,6 +451,31 @@ defmodule ToolCall.TypeProviderTest do
              ToolCall.run(Tools, "price", %{"amount" => "12.34"})
   end
 
+  test "expands aliases before resolving the provider" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TypeProviderTest.MoneyProvider]
+
+        alias ToolCall.TypeProviderTest.Money, as: Cash
+
+        @type amount :: Cash.t()
+
+        @doc "Aliased."
+        @spec go(value :: amount()) :: String.t()
+        def go(value), do: value
+      end
+      """)
+
+    assert param_schema(module, "go", "value") == %{
+             "type" => "string",
+             "pattern" => "^-?\\d+\\.\\d{2}$"
+           }
+
+    assert {:ok, %Money{amount: "12.34"}} =
+             ToolCall.run(module, "go", %{"value" => "12.34"})
+  end
+
   test "passes resolved argument types to the provider" do
     assert param_schema(Tools, "boxes", "items") == %{
              "type" => "array",
