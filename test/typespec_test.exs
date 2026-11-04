@@ -274,6 +274,43 @@ defmodule ToolCall.TypespecTest do
     end
   end
 
+  test "default_compatible?/2 covers value domains" do
+    assert Typespec.default_compatible?(%Type{kind: :float, minimum: 1.0}, 1.5)
+    refute Typespec.default_compatible?(%Type{kind: :float}, 1)
+    assert Typespec.default_compatible?(%Type{kind: :number}, 1)
+    assert Typespec.default_compatible?(%Type{kind: :null}, nil)
+    assert Typespec.default_compatible?(%Type{kind: :enum, values: [:a]}, :a)
+    refute Typespec.default_compatible?(%Type{kind: :enum, values: [:a]}, :b)
+
+    assert Typespec.default_compatible?(
+             %Type{kind: :string, transform: {SomeModule, :coerce}},
+             :anything
+           )
+
+    assert Typespec.default_compatible?(%Type{kind: :string, pattern: "^x$"}, "x")
+    refute Typespec.default_compatible?(%Type{kind: :string, pattern: "["}, "x")
+    refute Typespec.default_compatible?(%Type{kind: :string, pattern: :bad}, "x")
+    refute Typespec.default_compatible?(%Type{kind: :unsupported}, "x")
+  end
+
+  test "validate_tool!/1 rejects defaults outside the parameter domain" do
+    param = %ToolCall.IR.Param{name: "x", type: %Type{kind: :integer}, default: "x"}
+
+    assert_raise ArgumentError, ~r/default.*not compatible/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{name: "go", params: [param]})
+    end
+
+    empty = %ToolCall.IR.Param{
+      name: "b",
+      type: %Type{kind: :string, pattern: "^[\\s\\S]+$"},
+      default: ""
+    }
+
+    assert_raise ArgumentError, ~r/default.*not compatible/, fn ->
+      Typespec.validate_tool!(%ToolCall.IR.Tool{name: "go", params: [empty]})
+    end
+  end
+
   test "validate_tool!/1 rejects invalid UTF-8 names, descriptions and defaults" do
     base = %ToolCall.IR.Param{name: "x", type: %Type{kind: :string}}
 

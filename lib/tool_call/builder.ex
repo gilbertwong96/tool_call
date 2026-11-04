@@ -214,6 +214,7 @@ defmodule ToolCall.Builder do
           required: default == :none,
           source: type_ast
         }
+        |> drop_incompatible_default(context.module, location, name, arity)
         |> apply_override(name, context.overrides)
         |> validate_wire_type(context.module, location)
       end)
@@ -227,6 +228,30 @@ defmodule ToolCall.Builder do
       fun: name,
       source: spec
     }
+  end
+
+  defp drop_incompatible_default(%Param{default: nil} = param, _module, _location, _name, _arity),
+    do: param
+
+  defp drop_incompatible_default(
+         %Param{name: param_name, type: type, default: default} = param,
+         module,
+         location,
+         name,
+         arity
+       ) do
+    if Typespec.default_compatible?(type, default) do
+      param
+    else
+      warn(
+        module,
+        location,
+        "default for parameter \"#{param_name}\" of #{name}/#{arity} is not compatible " <>
+          "with its type; dropping it."
+      )
+
+      %{param | default: nil}
+    end
   end
 
   defp unique_names(params, module, location, fun, arity) do

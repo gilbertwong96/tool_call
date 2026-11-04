@@ -9,7 +9,7 @@ defmodule ToolCall.Runner do
   require Logger
 
   alias ToolCall.{Coerce, Typespec}
-  alias ToolCall.IR.{Param, Tool}
+  alias ToolCall.IR.{Param, Tool, Type}
 
   @doc """
   Runs a tool by name.
@@ -44,6 +44,7 @@ defmodule ToolCall.Runner do
 
     with {:ok, tool} <- fetch(tools, name),
          :ok <- reject_non_string_keys(args),
+         :ok <- reject_nested_non_string_keys(tool, args),
          :ok <- reject_unknown_arguments(tool, args),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
@@ -61,6 +62,81 @@ defmodule ToolCall.Runner do
       keys -> {:error, {:non_string_arguments, keys}}
     end
   end
+
+  defp reject_nested_non_string_keys(%Tool{} = tool, args) do
+    keys =
+      Enum.flat_map(tool.params, fn param ->
+        case Map.fetch(args, param.name) do
+          {:ok, value} -> nested_non_string_keys(param.type, value)
+          :error -> []
+        end
+      end)
+      |> Enum.uniq()
+
+    case keys do
+      [] -> :ok
+      keys -> {:error, {:non_string_arguments, keys}}
+    end
+  end
+
+  defp nested_non_string_keys(%Type{kind: :object, source: :keyword} = type, value)
+       when is_map(value) do
+    additional = type.additional
+
+    Enum.flat_map(value, fn {_key, item} ->
+      nested_non_string_keys(additional || %Type{kind: :any}, item)
+    end)
+  end
+
+  defp nested_non_string_keys(%Type{kind: :object} = type, value) when is_map(value) do
+    fields = type.fields || []
+    bad_keys = value |> Map.keys() |> Enum.reject(&is_binary/1)
+
+    nested =
+      Enum.flat_map(value, fn {key, item} ->
+        field = Enum.find(fields, &(&1.name == key or &1.key == key))
+        nested_type = if field, do: field.type, else: type.additional
+
+        if nested_type,
+          do: nested_non_string_keys(nested_type, item),
+          else: []
+      end)
+
+    bad_keys ++ nested
+  end
+
+  defp nested_non_string_keys(%Type{kind: :array, items: items}, value) when is_list(value) do
+    Enum.flat_map(value, &nested_non_string_keys(items || %Type{kind: :any}, &1))
+  end
+
+  defp nested_non_string_keys(%Type{kind: :tuple, items: items}, value)
+       when is_list(value) or is_tuple(value) do
+    values = if is_tuple(value), do: Tuple.to_list(value), else: value
+    items = items || []
+
+    values
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {item, index} ->
+      case Enum.at(items, index) do
+        nil -> []
+        type -> nested_non_string_keys(type, item)
+      end
+    end)
+  end
+
+  defp nested_non_string_keys(%Type{kind: :union} = type, value) do
+    variants = type.variants || []
+
+    if Enum.any?(variants, &(&1.kind in [:any, :unsupported])) do
+      []
+    else
+      variants
+      |> Enum.flat_map(&nested_non_string_keys(&1, value))
+      |> Enum.uniq()
+    end
+  end
+
+  defp nested_non_string_keys(%Type{}, _value), do: []
 
   defp fetch(tools, name) do
     case Enum.find(tools, &(&1.name == name)) do

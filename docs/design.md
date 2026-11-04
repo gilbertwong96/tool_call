@@ -137,6 +137,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `1 \| 2` | `:enum` | `{"enum":[1,2]}` |
 | `nil` in a union | `nullable: true` | `{"type":["T","null"]}`; an enum becomes `anyOf` with a null branch |
 | `map()` | `:object` open | `"additionalProperties": true` |
+| `struct()` | `:object` open | no struct reconstruction; the function receives a map; use a TypeProvider for concrete fields |
 | `%{k: t}` | `:object` | required fields; the function receives atom keys |
 | `%{optional(k) => t}` | `:object` | not in `required`; atom keys at dispatch |
 | `%{k() => t}` | `:object` | `additionalProperties: <t>`; keys stay strings |
@@ -228,9 +229,10 @@ atom per request.
 **Optional = has a default.** `required` is derived from `\\`, wherever the
 default appears in the argument list. A default that is not a compile-time
 literal is dropped from the schema (it would otherwise reach the model as a
-quoted AST) but the parameter stays optional. A reduced-arity call receives
-every required argument plus a prefix of the optional arguments, which is what
-`ToolCall.Runner` constructs.
+quoted AST) but the parameter stays optional. A literal that is valid JSON but
+outside the parameter's value domain is also dropped, with a compile-time
+warning. A reduced-arity call receives every required argument plus a prefix of
+the optional arguments, which is what `ToolCall.Runner` constructs.
 
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so

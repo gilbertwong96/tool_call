@@ -93,6 +93,38 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"text" => "x", "pattern" => "x", "chars" => <<255>>})
   end
 
+  test "rejects nested non-string keys" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(point :: %{x: integer()}, points :: list(%{x: integer()})) :: term()
+        def go(point, points), do: {point, points}
+      end
+      """)
+
+    assert {:error, {:non_string_arguments, [:x]}} =
+             ToolCall.run(module, :go, %{"point" => %{x: 1}, "points" => [%{"x" => 2}]})
+
+    assert {:error, {:non_string_arguments, [:x]}} =
+             ToolCall.run(module, :go, %{"point" => %{"x" => 1}, "points" => [%{x: 2}]})
+  end
+
+  test "accepts atom keys in nested keyword values" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(opts :: keyword(integer())) :: term()
+        def go(opts), do: opts
+      end
+      """)
+
+    assert {:ok, [a: 1]} = ToolCall.run(module, :go, %{"opts" => %{a: 1}})
+  end
+
   test "restores tuple arguments" do
     module =
       compile!("""

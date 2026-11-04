@@ -128,7 +128,8 @@ and convert in the function.
   `required` and leaves `b` out. Defaults that are not literals (such as
   `DateTime.utc_now()`) are not sent to the model; the parameter is still
   optional. Defaults JSON cannot carry (tuples, non-string map keys) are
-  dropped too. `~s`, `~c` and
+  dropped too, and a literal default that does not belong to the parameter's
+  value domain is dropped with a compile-time warning. `~s`, `~c` and
   `~w` sigil defaults are kept (a charlist default is sent as a string); sigils
   that interpolate or build non-JSON values (dates, regexes) are dropped. An
   `atom()` default is sent as its string form, including `true` and `false`.
@@ -206,6 +207,9 @@ end
   it returns `{:invalid_argument, {name, {:invalid_utf8, value}}}` instead of
   raising. This applies to `String.t()`, `binary()`, `bitstring()`, patterns,
   `charlist()`, `char()`, atoms, enums and keyword keys.
+- `struct()` is not reconstructed. It is represented as an open object; the
+  function receives a plain map. Use a concrete `%MyStruct{}` type with a
+  `ToolCall.TypeProvider` if the function needs the struct.
 - `atom()` is described as an unconstrained string. The dispatcher maps a string
   to an atom only when that atom already exists in the VM; unless the type is
   nullable it rejects `null` and booleans. Prefer `:a | :b` so the schema carries
@@ -218,8 +222,8 @@ end
 - `strict: true` makes optional arguments required and nullable. An explicit
   `null` for a non-nullable optional argument or field is treated as absent; if
   the type already accepts `nil`, the value is passed through as `nil` and can
-  override a default. This lets a model follow the strict schema without being
-  rejected.
+  override a default. For `any()`, an enum containing `nil`, or a union with
+  such a branch, explicit `null` reaches a provider `coerce/1` as a normal value.
 - The return type is not checked: results are returned as plain terms and must be
   JSON-encodable.
 

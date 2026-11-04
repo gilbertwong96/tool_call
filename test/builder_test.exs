@@ -437,6 +437,23 @@ defmodule ToolCall.BuilderTest do
     refute Map.has_key?(param_schema(module, "go", "num"), "default")
   end
 
+  test "drops defaults that do not belong to the parameter type" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: integer(), b :: nonempty_binary()) :: term()
+        def go(x \\\\ "x", b \\\\ ""), do: {x, b}
+      end
+      """)
+
+    assert warnings =~ ~s(default for parameter "x" of go/2 is not compatible)
+    assert warnings =~ ~s(default for parameter "b" of go/2 is not compatible)
+    refute Map.has_key?(param_schema(module, "go", "x"), "default")
+    refute Map.has_key?(param_schema(module, "go", "b"), "default")
+  end
+
   test "drops map defaults whose keys JSON cannot represent" do
     module =
       compile!("""

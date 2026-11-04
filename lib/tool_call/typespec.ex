@@ -770,9 +770,9 @@ defmodule ToolCall.Typespec do
        when is_binary(name) and wire in [:number, :string_integer] and is_boolean(required) do
     validate_name!(name, "parameter")
     validate_description!(description, "parameter")
-    validate_default!(default)
     type = validate_type!(type)
     validate_wire!(wire, type, name)
+    validate_default!(default, type)
     %{param | type: type}
   end
 
@@ -837,14 +837,103 @@ defmodule ToolCall.Typespec do
             "got: #{inspect(description)}"
   end
 
-  defp validate_default!(default) do
-    if json_value?(default) do
-      :ok
-    else
-      raise ArgumentError,
-            "invalid ToolCall IR: default must be JSON-encodable, got: #{inspect(default)}"
+  defp validate_default!(nil, _type), do: :ok
+
+  defp validate_default!(default, type) do
+    cond do
+      not json_value?(default) ->
+        raise ArgumentError,
+              "invalid ToolCall IR: default must be JSON-encodable, got: #{inspect(default)}"
+
+      not default_compatible?(type, default) ->
+        raise ArgumentError,
+              "invalid ToolCall IR: default #{inspect(default)} is not compatible with " <>
+                "type #{inspect(Map.get(type, :kind))}"
+
+      true ->
+        :ok
     end
   end
+
+  @doc false
+  @spec default_compatible?(Type.t(), term()) :: boolean()
+  def default_compatible?(%Type{transform: transform}, _value) when not is_nil(transform),
+    do: true
+
+  def default_compatible?(%Type{kind: :integer} = type, value) when is_integer(value),
+    do: within_bounds?(type, value)
+
+  def default_compatible?(%Type{kind: :float} = type, value) when is_float(value),
+    do: within_bounds?(type, value)
+
+  def default_compatible?(%Type{kind: :number} = type, value) when is_number(value),
+    do: within_bounds?(type, value)
+
+  def default_compatible?(%Type{kind: :string, source: :char}, value) when is_integer(value),
+    do: value >= 0 and value <= 0x10FFFF
+
+  def default_compatible?(%Type{kind: :string, source: :char}, value) when is_binary(value),
+    do: String.valid?(value) and String.length(value) == 1
+
+  def default_compatible?(%Type{kind: :string, source: :charlist}, value) when is_list(value) do
+    is_binary(List.to_string(value))
+  rescue
+    _exception -> false
+  end
+
+  def default_compatible?(%Type{kind: :string, source: :charlist}, value) when is_binary(value),
+    do: String.valid?(value)
+
+  def default_compatible?(%Type{kind: :string, source: :charlist}, _value), do: false
+
+  def default_compatible?(%Type{kind: :string} = type, value) when is_binary(value) do
+    String.valid?(value) and default_pattern?(type, value)
+  end
+
+  def default_compatible?(%Type{kind: :boolean}, value), do: is_boolean(value)
+  def default_compatible?(%Type{kind: :atom}, value), do: is_atom(value)
+  def default_compatible?(%Type{kind: :null}, nil), do: true
+
+  def default_compatible?(%Type{kind: :enum, values: values}, value) when is_list(values),
+    do: value in values
+
+  def default_compatible?(%Type{kind: :array} = type, value) when is_list(value) do
+    items = type.items || %Type{kind: :any}
+    within_bounds?(type, length(value)) and Enum.all?(value, &default_compatible?(items, &1))
+  end
+
+  def default_compatible?(%Type{kind: :tuple}, value) when is_list(value) or is_tuple(value),
+    do: true
+
+  def default_compatible?(%Type{kind: :object}, value), do: is_map(value)
+  def default_compatible?(%Type{kind: :any}, _value), do: true
+
+  def default_compatible?(%Type{kind: :union} = type, value) do
+    Enum.any?(type.variants || [], &default_compatible?(&1, value))
+  end
+
+  def default_compatible?(%Type{}, _value), do: false
+
+  defp within_bounds?(%Type{} = type, value) do
+    minimum = type.minimum
+    maximum = type.maximum
+
+    (is_nil(minimum) or value >= minimum) and (is_nil(maximum) or value <= maximum)
+  end
+
+  defp default_pattern?(%Type{pattern: nil}, _value), do: true
+
+  defp default_pattern?(%Type{pattern_regex: %Regex{} = regex}, value),
+    do: Regex.match?(regex, value)
+
+  defp default_pattern?(%Type{pattern: pattern}, value) when is_binary(pattern) do
+    case Regex.compile(pattern, "u") do
+      {:ok, regex} -> Regex.match?(regex, value)
+      {:error, _reason} -> false
+    end
+  end
+
+  defp default_pattern?(%Type{}, _value), do: false
 
   defp json_value?(value)
        when is_nil(value) or is_boolean(value) or is_atom(value) or is_number(value),

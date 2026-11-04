@@ -16,8 +16,10 @@ defmodule ToolCall.TypeProvider do
 
   Implement `coerce/1` to convert the wire-coerced value into the function's
   value domain; it runs after the built-in coercion. It is not called for an
-  absent optional value, nor for `nil` accepted by a nullable type. An explicit
-  `null` for a non-nullable optional value is absent. A raised, thrown or exited
+  absent optional value, nor for `nil` accepted by the nullable shortcut. An
+  explicit `null` for a non-nullable optional value is absent. If `nil` is
+  accepted by `any()`, an enum containing `nil`, or a union with such a branch,
+  it reaches `coerce/1` like any other value. A raised, thrown or exited
   exception becomes
   `{:error, {:invalid_transform, ...}}` like any other coercion failure. It is a
   shorthand for a provider that resolves one type: a provider that handles

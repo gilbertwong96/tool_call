@@ -86,6 +86,17 @@ defmodule ToolCall.DocTest do
            } = Doc.parse(doc)
   end
 
+  test "accepts Unicode parameter names" do
+    doc = """
+    Search.
+
+    ## Parameters
+      * `café` - a place
+    """
+
+    assert %{params: %{"café" => "a place"}} = Doc.parse(doc)
+  end
+
   test "accepts parameter names ending in ? or !" do
     doc = """
     Search.

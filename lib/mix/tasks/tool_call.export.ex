@@ -114,7 +114,9 @@ defmodule Mix.Tasks.ToolCall.Export do
   end
 
   defp tool_module?(module) do
-    Code.ensure_loaded?(module) and function_exported?(module, :__tools__, 0)
+    Code.ensure_loaded?(module) and function_exported?(module, :__tools__, 0) and
+      function_exported?(module, :__schemas__, 0) and
+      function_exported?(module, :__run__, 2)
   end
 
   defp validate!([]) do

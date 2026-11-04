@@ -18,7 +18,7 @@ defmodule ToolCall.Doc do
 
   @param_heading ~r/^#+\s*(parameters|params|options|arguments|args)\s*$/i
   @any_heading ~r/^#+\s+/
-  @bullet ~r/^\s*[*-]\s+`?([A-Za-z0-9_.?!]+)`?\s*[-–—:]\s*(.+?)\s*$/
+  @bullet ~r/^\s*[*-]\s+`?([\w.?!]+)`?\s*[-–—:]\s*(.+?)\s*$/u
 
   @type parsed :: %{description: String.t() | nil, params: %{String.t() => String.t()}}
 

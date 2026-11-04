@@ -234,6 +234,9 @@ The full error list is in the [README](../README.md#errors).
   and `1.0` as `1`. Open maps and `%{k() => v}` keep the string keys JSON gives
   them. `keyword/1` keys must already exist as atoms in the VM, like `atom()`:
   an unknown key is `{:unknown_atom, key}`.
+- **`struct()` is not reconstructed.** It is emitted as an open object and the
+  function receives a plain map. Use a concrete struct type with a type provider
+  when the function needs the struct itself.
 - **Do not use a bare `atom()`.** The schema allows any string while the
   dispatcher only accepts atoms that already exist in the VM. Enumerate:
   `:red | :green`.

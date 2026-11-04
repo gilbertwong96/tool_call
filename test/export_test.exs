@@ -1,3 +1,8 @@
+defmodule ToolCall.ExportTest.FakeTools do
+  @moduledoc false
+  def __tools__, do: []
+end
+
 defmodule ToolCall.ExportTest do
   use ExUnit.Case, async: false
 
@@ -179,6 +184,12 @@ defmodule ToolCall.ExportTest do
 
     assert_raise Mix.Error, ~r/unknown format/, fn ->
       export([inspect(module), "--format", "nope"])
+    end
+  end
+
+  test "rejects a partial ToolCall module during discovery" do
+    assert_raise Mix.Error, ~r/FakeTools does not use ToolCall/, fn ->
+      export([inspect(ToolCall.ExportTest.FakeTools)])
     end
   end
 

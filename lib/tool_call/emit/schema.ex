@@ -114,14 +114,9 @@ defmodule ToolCall.Emit.Schema do
   end
 
   defp put_default(schema, %Param{type: %Type{source: :charlist}} = param, opts) do
-    if strict?(opts) do
-      schema
-    else
-      case charlist_default(param.default) do
-        nil -> schema
-        text -> Map.put(schema, "default", text)
-      end
-    end
+    if strict?(opts),
+      do: schema,
+      else: Map.put(schema, "default", charlist_default(param.default))
   end
 
   defp put_default(schema, %Param{} = param, opts) do
@@ -276,21 +271,10 @@ defmodule ToolCall.Emit.Schema do
     _ -> nil
   end
 
-  defp char_default(value) when is_binary(value) do
-    if String.length(value) == 1, do: value, else: nil
-  end
-
-  defp char_default(_value), do: nil
+  defp char_default(value) when is_binary(value), do: value
 
   defp charlist_default(value) when is_binary(value), do: value
-
-  defp charlist_default(value) when is_list(value) do
-    List.to_string(value)
-  rescue
-    _ -> nil
-  end
-
-  defp charlist_default(_value), do: nil
+  defp charlist_default(value) when is_list(value), do: List.to_string(value)
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
