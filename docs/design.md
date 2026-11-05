@@ -327,12 +327,14 @@ the optional arguments, which is what `ToolCall.Runner` constructs.
 renders the closed set of provider variants and embeds them as literals, so
 `emit/3` on a module returns a precompiled literal and `strict` can stay a
 runtime boolean. A module whose effective typedoc key map is empty — no
-undocumented parameter references a module-local type, or docs are disabled —
-gets direct `__schemas__/0` and `__tools__/0` functions that return those
-literals. When at least one undocumented parameter does reference a
-module-local type (with docs enabled), a `@typedoc` companion may exist, so the
-accessors check it with `Code.ensure_loaded?/1` and `function_exported?/2`
-before using it, which keeps a stale companion from serving old data.
+undocumented parameter whose declared type is a module-local type, or docs are
+disabled — gets direct `__schemas__/0` and `__tools__/0` functions that return
+those literals. Only a declared type that is a module-local type, directly or
+wrapped as `<type>() | nil`, produces a typedoc key; `list(address())` and
+`%{address: address()}` stay on the direct path. When at least one such key
+exists (with docs enabled), a `@typedoc` companion may exist, so the accessors
+check it with `Code.ensure_loaded?/1` and `function_exported?/3` before using
+it, which keeps a stale companion from serving old data.
 
 Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module whose
 effective typedoc key map is empty reads the literals directly — `emit/3` costs

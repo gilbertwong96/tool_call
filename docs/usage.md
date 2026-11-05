@@ -69,14 +69,17 @@ literal, so `strict` may be a runtime boolean and no schema is rendered per
 call.
 
 The accessors are direct when the module's effective typedoc key map is empty:
-no parameter that still needs a description references a module-local type (for
-example, every local-type parameter already has a `@doc` bullet or
+no parameter that still needs a description has a module-local declared type
+(for example, every local-type parameter already has a `@doc` bullet or
 `@tool_param` description), or the compile has `docs: false`. `__schemas__/0`
-and `__tools__/0` then return the phase-one literals with no helper call. When
-at least one undocumented parameter references a module-local type and docs
-are enabled, a `@typedoc` companion may exist, so the accessors call
-`Code.ensure_loaded?/1` and `function_exported?/2` first and fall back to the
-phase-one literals when the companion is stale or missing.
+and `__tools__/0` then return the phase-one literals with no helper call. A
+parameter gains a typedoc key only when its declared type is a module-local
+type, directly or wrapped as `<type>() | nil`; `list(address())` and
+`%{address: address()}` stay on the direct path. When at least one such
+undocumented parameter exists and docs are enabled, a `@typedoc` companion may
+exist, so the accessors call `Code.ensure_loaded?/1` and
+`function_exported?/3` first and fall back to the phase-one literals when the
+companion is stale or missing.
 
 Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module with an
 empty typedoc key map takes about 0.07 µs for `emit/3`, 13 ns for

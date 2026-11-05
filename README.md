@@ -137,6 +137,10 @@ phase-one descriptions in place. A compile with `docs: false` is expected to
 have no `Docs` chunk, so it skips the fallback silently. A structurally invalid
 but term-decodable chunk is reported as corrupt, not as absent.
 
+If a local-type parameter's type has no visible `@typedoc`, give the parameter a
+`@doc` bullet or `@tool_param` description: typedoc adds nothing there, and an
+undocumented local-type parameter keeps the module on the guarded accessor path.
+
 ## What you get
 
 - `ToolCall.emit/3` — `:openai` (including `strict: true`) and `:anthropic`.
