@@ -61,6 +61,9 @@ defmodule ToolCall.GeneratedTest do
   alias ToolCall.IR.Tool
 
   @generation 73_001
+  # generation/0 packs wall-clock nanoseconds into the high bits, above the
+  # VM-local counter.
+  @generation_shift 64
 
   @fallback_tools [
     %Tool{
@@ -78,14 +81,16 @@ defmodule ToolCall.GeneratedTest do
              :"Elixir.ToolCall.GeneratedTest.MatchingFixture.__ToolCall__"
   end
 
-  test "generation/0 returns unique positive integers" do
+  test "generation/0 packs wall-clock time so tokens survive VM restarts" do
+    before = System.system_time(:nanosecond)
     first = Generated.generation()
     second = Generated.generation()
+    after_ts = System.system_time(:nanosecond)
 
     assert is_integer(first)
     assert first > 0
-    assert second > 0
     refute first == second
+    assert Bitwise.bsr(first, @generation_shift) in before..after_ts
   end
 
   test "tools/3 delegates the enriched tools when the generation token matches" do

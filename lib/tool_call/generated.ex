@@ -5,15 +5,23 @@ defmodule ToolCall.Generated do
   # literals and the compile-generation token. The token is not a hash of the
   # enriched content: it changes on every phase-one compile, so a typedoc-only
   # change still invalidates a stale or partially written companion and falls
-  # back to the phase-one data.
+  # back to the phase-one data. The token combines wall-clock nanoseconds with
+  # a VM-local counter, so it is unique across VM restarts (each `mix compile`
+  # starts a fresh VM), not merely unique within one VM.
 
   alias ToolCall.IR.Tool
+
+  @generation_shift 64
 
   @spec companion(module()) :: module()
   def companion(module), do: Module.concat(module, "__ToolCall__")
 
   @spec generation() :: pos_integer()
-  def generation, do: :erlang.unique_integer([:positive])
+  def generation do
+    timestamp = System.system_time(:nanosecond)
+    unique = :erlang.unique_integer([:positive])
+    Bitwise.bsl(timestamp, @generation_shift) + unique
+  end
 
   @spec tools(module(), pos_integer(), [Tool.t()]) :: [Tool.t()]
   def tools(companion, generation, fallback) do
