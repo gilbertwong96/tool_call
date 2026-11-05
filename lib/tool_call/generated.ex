@@ -39,24 +39,51 @@ defmodule ToolCall.Generated do
 
   @spec create(Macro.Env.t(), module(), [Tool.t()], map(), pos_integer()) :: :ok | :error
   def create(env, companion, tools, schemas, generation) do
-    remove(env, companion)
+    case companion_status(env, companion) do
+      :foreign ->
+        warn_collision(env, companion)
+        :error
 
-    case beam_path(env, companion) do
-      :memory ->
-        create_module(env, companion, tools, schemas, generation)
+      _absent_or_ours ->
+        purge(companion)
+        delete_beam(env, companion)
+        create_after_removal(env, companion, tools, schemas, generation)
+    end
+  end
+
+  @spec remove(Macro.Env.t(), module()) :: :ok
+  def remove(env, companion) do
+    case companion_status(env, companion) do
+      :foreign ->
         :ok
 
-      {:ok, path} ->
-        {:module, _companion, binary, _term} =
-          create_module(env, companion, tools, schemas, generation)
+      _absent_or_ours ->
+        purge(companion)
+        delete_beam(env, companion)
+    end
 
-        case write_atomic(path, binary) do
-          :ok ->
+    :ok
+  end
+
+  defp create_after_removal(env, companion, tools, schemas, generation) do
+    case beam_path(env, companion) do
+      :memory ->
+        case create_module(env, companion, tools, schemas, generation) do
+          {:ok, _binary} ->
             :ok
 
           {:error, reason} ->
-            purge(companion)
-            warn_write_failure(env, companion, reason)
+            warn_create_failure(env, companion, reason)
+            :error
+        end
+
+      {:ok, path} ->
+        case create_module(env, companion, tools, schemas, generation) do
+          {:ok, binary} ->
+            write_companion(env, companion, path, binary)
+
+          {:error, reason} ->
+            warn_create_failure(env, companion, reason)
             :error
         end
 
@@ -66,23 +93,35 @@ defmodule ToolCall.Generated do
     end
   end
 
-  @spec remove(Macro.Env.t(), module()) :: :ok
-  def remove(env, companion) do
-    purge(companion)
-    delete_beam(env, companion)
-    :ok
+  defp write_companion(env, companion, path, binary) do
+    case write_atomic(path, binary) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        purge(companion)
+        warn_write_failure(env, companion, reason)
+        :error
+    end
   end
 
   defp create_module(env, companion, tools, schemas, generation) do
     quoted =
       quote do
         @moduledoc false
+        @doc false
+        def __tool_call_companion__, do: true
         def __tools__, do: unquote(Macro.escape(tools))
         def __schemas__, do: unquote(Macro.escape(schemas))
         def __generation__, do: unquote(generation)
       end
 
-    Module.create(companion, quoted, file: env.file, line: env.line)
+    {:module, ^companion, binary, _term} =
+      Module.create(companion, quoted, file: env.file, line: env.line)
+
+    {:ok, binary}
+  rescue
+    exception -> {:error, exception}
   end
 
   defp beam_path(%{file: "nofile"}, _companion), do: :memory
@@ -135,6 +174,59 @@ defmodule ToolCall.Generated do
     :ok
   end
 
+  # A companion is ours only when the marker function is present and true. A
+  # user module named `__ToolCall__` must survive recompilation untouched, so
+  # ownership is checked before every purge or beam deletion.
+  defp companion_status(env, companion) do
+    case {loaded_status(companion), beam_status(env, companion)} do
+      {:foreign, _beam} -> :foreign
+      {_loaded, :foreign} -> :foreign
+      {:ours, _beam} -> :ours
+      {_loaded, :ours} -> :ours
+      {:absent, :absent} -> :absent
+    end
+  end
+
+  defp loaded_status(companion) do
+    if :code.is_loaded(companion) == false do
+      :absent
+    else
+      ours? =
+        function_exported?(companion, :__tool_call_companion__, 0) and
+          companion.__tool_call_companion__() == true
+
+      if ours?, do: :ours, else: :foreign
+    end
+  rescue
+    _exception -> :foreign
+  end
+
+  defp beam_status(%{file: "nofile"}, _companion), do: :absent
+
+  defp beam_status(_env, companion) do
+    case compile_path() do
+      {:ok, path} -> beam_status_at(Path.join(path, beam_name(companion)))
+      :error -> :absent
+    end
+  end
+
+  defp beam_status_at(beam) do
+    with true <- File.regular?(beam),
+         {:ok, exports} <- beam_exports(beam) do
+      if {:__tool_call_companion__, 0} in exports, do: :ours, else: :foreign
+    else
+      false -> :absent
+      :error -> :foreign
+    end
+  end
+
+  defp beam_exports(beam) do
+    case :beam_lib.chunks(String.to_charlist(beam), [:exports]) do
+      {:ok, {_module, [exports: exports]}} -> {:ok, exports}
+      _other -> :error
+    end
+  end
+
   defp warn_write_failure(env, companion, reason) do
     IO.warn(
       "#{inspect(companion)}: could not write the typedoc companion beam " <>
@@ -148,6 +240,24 @@ defmodule ToolCall.Generated do
     IO.warn(
       "#{inspect(companion)}: Mix.Project.compile_path/0 is unavailable; " <>
         "typedoc descriptions are skipped for this build",
+      file: env.file,
+      line: env.line
+    )
+  end
+
+  defp warn_collision(env, companion) do
+    IO.warn(
+      "#{inspect(companion)}: a module with that name already exists and was not " <>
+        "generated by ToolCall; keeping it and using phase-one descriptions",
+      file: env.file,
+      line: env.line
+    )
+  end
+
+  defp warn_create_failure(env, companion, reason) do
+    IO.warn(
+      "#{inspect(companion)}: could not create the typedoc companion " <>
+        "(#{Exception.message(reason)}); using phase-one descriptions",
       file: env.file,
       line: env.line
     )

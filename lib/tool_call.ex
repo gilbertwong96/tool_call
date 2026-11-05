@@ -139,7 +139,9 @@ defmodule ToolCall do
   end
 
   # Phase two: recover visible typedocs from the just-compiled bytecode and
-  # publish a companion only when at least one description changed.
+  # publish a companion only when at least one description changed. The
+  # callback is deliberately total: a failed enhancement warns and leaves the
+  # phase-one literals in place rather than failing the user's compile.
   @doc false
   @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
   def __after_compile__(env, bytecode) do
@@ -147,18 +149,81 @@ defmodule ToolCall do
 
     case Module.get_attribute(module, :tool_call_after_compile) do
       %{tools: tools, typedoc_keys: typedoc_keys, generation: generation} ->
-        enriched = Typedoc.apply(tools, typedoc_keys, Typedoc.from_bytecode(bytecode))
-        companion = Generated.companion(module)
+        if map_size(typedoc_keys) == 0 do
+          Generated.remove(env, Generated.companion(module))
+        else
+          enrich(env, bytecode, tools, typedoc_keys, generation)
+        end
+
+      _other ->
+        :ok
+    end
+
+    :ok
+  end
+
+  defp enrich(env, bytecode, tools, typedoc_keys, generation) do
+    companion = Generated.companion(env.module)
+
+    case Typedoc.from_bytecode_result(bytecode) do
+      {:ok, typedocs} ->
+        enriched = Typedoc.apply(tools, typedoc_keys, typedocs)
 
         if enriched == tools do
           Generated.remove(env, companion)
         else
-          Generated.create(env, companion, enriched, Emit.precompile(enriched), generation)
+          Generated.create(
+            env,
+            companion,
+            enriched,
+            Emit.precompile(enriched),
+            generation
+          )
         end
 
-      nil ->
-        :ok
+      {:error, reason} ->
+        Generated.remove(env, companion)
+        warn_docs_failure(env, reason)
     end
+
+    :ok
+  rescue
+    exception ->
+      IO.warn(
+        "#{inspect(env.module)}: typedoc enrichment failed " <>
+          "(#{Exception.message(exception)}); using phase-one descriptions",
+        file: env.file,
+        line: env.line
+      )
+
+      :ok
+  end
+
+  defp warn_docs_failure(env, :missing_docs_chunk) do
+    IO.warn(
+      "#{inspect(env.module)}: the Docs chunk is missing, so @typedoc descriptions " <>
+        "were skipped (docs may be disabled); using phase-one descriptions",
+      file: env.file,
+      line: env.line
+    )
+  end
+
+  defp warn_docs_failure(env, :corrupt_docs_chunk) do
+    IO.warn(
+      "#{inspect(env.module)}: the Docs chunk could not be decoded, so @typedoc " <>
+        "descriptions were skipped; using phase-one descriptions",
+      file: env.file,
+      line: env.line
+    )
+  end
+
+  defp warn_docs_failure(env, :unreadable_beam) do
+    IO.warn(
+      "#{inspect(env.module)}: the compiled beam could not be read, so @typedoc " <>
+        "descriptions were skipped; using phase-one descriptions",
+      file: env.file,
+      line: env.line
+    )
   end
 
   @doc """

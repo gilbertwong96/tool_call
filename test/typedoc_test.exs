@@ -109,6 +109,44 @@ defmodule ToolCall.TypedocTest do
     assert Typedoc.from_bytecode(corrupt_docs_chunk(bytecode)) == %{}
   end
 
+  test "from_bytecode_result/1 distinguishes missing and corrupt Docs chunks" do
+    module = "TypedocStatusFixture#{System.unique_integer([:positive])}"
+    no_docs_module = "TypedocStatusNoDocsFixture#{System.unique_integer([:positive])}"
+
+    [{_module, bytecode}] =
+      compile_fixture(
+        """
+        defmodule #{module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: true
+      )
+
+    [{_module, no_docs_bytecode}] =
+      compile_fixture(
+        """
+        defmodule #{no_docs_module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: false
+      )
+
+    assert Typedoc.from_bytecode_result(bytecode) ==
+             {:ok, %{{:address, 0} => "Postal address"}}
+
+    assert Typedoc.from_bytecode_result(no_docs_bytecode) == {:error, :missing_docs_chunk}
+
+    assert Typedoc.from_bytecode_result(corrupt_docs_chunk(bytecode)) ==
+             {:error, :corrupt_docs_chunk}
+
+    assert Typedoc.from_bytecode_result(:erlang.term_to_binary(:not_a_beam)) ==
+             {:error, :unreadable_beam}
+  end
+
   test "key/2 returns the local type key for a direct reference" do
     assert Typedoc.key({:address, [], []}, definitions()) == {:address, 0}
     assert Typedoc.key({:pair, [], [{:integer, [], []}]}, definitions()) == {:pair, 1}

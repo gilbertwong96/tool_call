@@ -13,12 +13,25 @@ defmodule ToolCall.Typedoc do
   @type type_key :: {atom(), non_neg_integer()}
   @type typedocs :: %{type_key() => String.t()}
   @type typedoc_keys :: %{{term(), term()} => type_key()}
+  @type bytecode_error :: :missing_docs_chunk | :corrupt_docs_chunk | :unreadable_beam
 
   @spec from_bytecode(binary()) :: typedocs()
   def from_bytecode(bytecode) when is_binary(bytecode) do
+    case from_bytecode_result(bytecode) do
+      {:ok, typedocs} -> typedocs
+      {:error, _reason} -> %{}
+    end
+  end
+
+  # Phase two distinguishes an absent Docs chunk from a chunk that cannot be
+  # trusted: no docs is expected when the compiler option is disabled, while a
+  # corrupt chunk means the beam should not be reused.
+  @spec from_bytecode_result(binary()) :: {:ok, typedocs()} | {:error, bytecode_error()}
+  def from_bytecode_result(bytecode) when is_binary(bytecode) do
     case :beam_lib.chunks(bytecode, [~c"Docs"]) do
       {:ok, {_module, [{~c"Docs", chunk}]}} -> decode(chunk)
-      _other -> %{}
+      {:error, :beam_lib, {:missing_chunk, _file, ~c"Docs"}} -> {:error, :missing_docs_chunk}
+      _other -> {:error, :unreadable_beam}
     end
   end
 
@@ -58,11 +71,9 @@ defmodule ToolCall.Typedoc do
   end
 
   defp decode(chunk) do
-    chunk
-    |> :erlang.binary_to_term()
-    |> from_docs()
+    {:ok, chunk |> :erlang.binary_to_term() |> from_docs()}
   rescue
-    ArgumentError -> %{}
+    _exception -> {:error, :corrupt_docs_chunk}
   end
 
   defp doc_text(%{"en" => text}) when is_binary(text), do: text
