@@ -1,5 +1,7 @@
 defmodule ToolCall.TypedocTest do
-  use ExUnit.Case, async: true
+  # Bytecode fixture tests toggle the global compiler `docs` option, so this
+  # module must not run concurrently with other tests.
+  use ExUnit.Case, async: false
 
   alias ToolCall.IR.{Param, Tool}
   alias ToolCall.Typedoc
@@ -56,14 +58,34 @@ defmodule ToolCall.TypedocTest do
     module = "TypedocBytecodeFixture#{System.unique_integer([:positive])}"
 
     [{_module, bytecode}] =
-      compile_with_docs("""
-      defmodule #{module} do
-        @typedoc "Postal address"
-        @type address :: String.t()
-      end
-      """)
+      compile_fixture(
+        """
+        defmodule #{module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: true
+      )
 
     assert Typedoc.from_bytecode(bytecode) == %{{:address, 0} => "Postal address"}
+  end
+
+  test "from_bytecode/1 returns an empty map when the Docs chunk is absent" do
+    module = "TypedocNoDocsFixture#{System.unique_integer([:positive])}"
+
+    [{_module, bytecode}] =
+      compile_fixture(
+        """
+        defmodule #{module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: false
+      )
+
+    assert Typedoc.from_bytecode(bytecode) == %{}
   end
 
   test "from_bytecode/1 returns an empty map when the beam is unreadable" do
@@ -74,12 +96,15 @@ defmodule ToolCall.TypedocTest do
     module = "TypedocCorruptFixture#{System.unique_integer([:positive])}"
 
     [{_module, bytecode}] =
-      compile_with_docs("""
-      defmodule #{module} do
-        @typedoc "Postal address"
-        @type address :: String.t()
-      end
-      """)
+      compile_fixture(
+        """
+        defmodule #{module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: true
+      )
 
     assert Typedoc.from_bytecode(corrupt_docs_chunk(bytecode)) == %{}
   end
@@ -147,15 +172,16 @@ defmodule ToolCall.TypedocTest do
     assert Typedoc.apply([tool], %{}, docs) == [tool]
   end
 
-  # `mix test` disables docs chunks; compile fixtures with them enabled.
-  defp compile_with_docs(source) do
-    docs = Code.compiler_options()[:docs]
-    Code.compiler_options(docs: true)
+  # `mix test` disables docs chunks by default; set the global option
+  # explicitly for each fixture and restore it afterwards.
+  defp compile_fixture(source, docs: enabled?) do
+    previous = Code.compiler_options()[:docs]
+    Code.compiler_options(docs: enabled?)
 
     try do
       Code.compile_string(source)
     after
-      Code.compiler_options(docs: docs)
+      Code.compiler_options(docs: previous)
     end
   end
 

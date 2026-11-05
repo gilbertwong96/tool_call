@@ -2,7 +2,8 @@ defmodule ToolCall.Typedoc do
   @moduledoc false
   # Recovers docs-visible `@typedoc` text from the EEP-48 `Docs` chunk after
   # the defining module has closed, then uses it as a fallback parameter
-  # description. `@typep` typedocs are hidden in the chunk, so they never match.
+  # description. Elixir discards `@typep` typedocs at definition time, so they
+  # never appear in the chunk and never match.
 
   # `apply/3` is part of this module's interface, so it shadows Kernel.apply/3.
   import Kernel, except: [apply: 3]
