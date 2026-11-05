@@ -9,6 +9,8 @@ end
 defmodule :"Elixir.ToolCall.GeneratedTest.MatchingFixture.__ToolCall__" do
   @moduledoc false
 
+  @generation 73_001
+
   @tools [
     %ToolCall.IR.Tool{
       name: "companion",
@@ -22,13 +24,13 @@ defmodule :"Elixir.ToolCall.GeneratedTest.MatchingFixture.__ToolCall__" do
 
   def __tools__, do: @tools
   def __schemas__, do: @schemas
-  def __fingerprint__, do: :erlang.phash2({@tools, @schemas})
+  def __generation__, do: @generation
 end
 
-defmodule ToolCall.GeneratedTest.UnfingerprintedCompanion do
+defmodule ToolCall.GeneratedTest.UnstampedCompanion do
   @moduledoc false
 
-  @tools [%ToolCall.IR.Tool{name: "unfingerprinted"}]
+  @tools [%ToolCall.IR.Tool{name: "unstamped"}]
 
   def __tools__, do: @tools
   def __schemas__, do: %{}
@@ -40,7 +42,7 @@ defmodule ToolCall.GeneratedTest.ToolsOnlyCompanion do
   @tools [%ToolCall.IR.Tool{name: "tools_only"}]
 
   def __tools__, do: @tools
-  def __fingerprint__, do: 7
+  def __generation__, do: 7
 end
 
 defmodule ToolCall.GeneratedTest.SchemasOnlyCompanion do
@@ -49,7 +51,7 @@ defmodule ToolCall.GeneratedTest.SchemasOnlyCompanion do
   @schemas %{{:openai, false} => [%{"type" => "function", "name" => "schemas_only"}]}
 
   def __schemas__, do: @schemas
-  def __fingerprint__, do: 11
+  def __generation__, do: 11
 end
 
 defmodule ToolCall.GeneratedTest do
@@ -57,6 +59,8 @@ defmodule ToolCall.GeneratedTest do
 
   alias ToolCall.Generated
   alias ToolCall.IR.Tool
+
+  @generation 73_001
 
   @fallback_tools [
     %Tool{
@@ -74,37 +78,36 @@ defmodule ToolCall.GeneratedTest do
              :"Elixir.ToolCall.GeneratedTest.MatchingFixture.__ToolCall__"
   end
 
-  test "fingerprint/2 hashes the tools and schemas pair" do
-    fingerprint = Generated.fingerprint(@fallback_tools, @fallback_schemas)
+  test "generation/0 returns unique positive integers" do
+    first = Generated.generation()
+    second = Generated.generation()
 
-    assert fingerprint == :erlang.phash2({@fallback_tools, @fallback_schemas})
-    assert fingerprint >= 0
-
-    refute fingerprint == Generated.fingerprint(@fallback_tools, %{})
-    refute fingerprint == Generated.fingerprint([], @fallback_schemas)
+    assert is_integer(first)
+    assert first > 0
+    assert second > 0
+    refute first == second
   end
 
-  test "tools/3 delegates to a companion with a matching fingerprint" do
+  test "tools/3 delegates the enriched tools when the generation token matches" do
     companion = Generated.companion(ToolCall.GeneratedTest.MatchingFixture)
     tools = companion.__tools__()
-    fingerprint = Generated.fingerprint(tools, companion.__schemas__())
 
-    assert Generated.tools(companion, fingerprint, @fallback_tools) == tools
+    assert companion.__generation__() == @generation
+    refute tools == @fallback_tools
+    assert Generated.tools(companion, @generation, @fallback_tools) == tools
   end
 
-  test "schemas/3 delegates to a companion with a matching fingerprint" do
+  test "schemas/3 delegates the enriched schemas when the generation token matches" do
     companion = Generated.companion(ToolCall.GeneratedTest.MatchingFixture)
     schemas = companion.__schemas__()
-    fingerprint = Generated.fingerprint(companion.__tools__(), schemas)
 
-    assert Generated.schemas(companion, fingerprint, @fallback_schemas) == schemas
+    refute schemas == @fallback_schemas
+    assert Generated.schemas(companion, @generation, @fallback_schemas) == schemas
   end
 
-  test "tools/3 and schemas/3 return the fallback when the fingerprint differs" do
+  test "tools/3 and schemas/3 return the fallback when the generation token differs" do
     companion = Generated.companion(ToolCall.GeneratedTest.MatchingFixture)
-    stale = Generated.fingerprint(@fallback_tools, @fallback_schemas)
-
-    refute stale == Generated.fingerprint(companion.__tools__(), companion.__schemas__())
+    stale = @generation + 1
 
     assert Generated.tools(companion, stale, @fallback_tools) == @fallback_tools
     assert Generated.schemas(companion, stale, @fallback_schemas) == @fallback_schemas
@@ -115,15 +118,15 @@ defmodule ToolCall.GeneratedTest do
 
     refute Code.ensure_loaded?(companion)
 
-    assert Generated.tools(companion, 0, @fallback_tools) == @fallback_tools
-    assert Generated.schemas(companion, 0, @fallback_schemas) == @fallback_schemas
+    assert Generated.tools(companion, 1, @fallback_tools) == @fallback_tools
+    assert Generated.schemas(companion, 1, @fallback_schemas) == @fallback_schemas
   end
 
-  test "tools/3 and schemas/3 return the fallback when the companion has no fingerprint" do
-    companion = ToolCall.GeneratedTest.UnfingerprintedCompanion
+  test "tools/3 and schemas/3 return the fallback when the companion has no generation token" do
+    companion = ToolCall.GeneratedTest.UnstampedCompanion
 
-    assert Generated.tools(companion, 0, @fallback_tools) == @fallback_tools
-    assert Generated.schemas(companion, 0, @fallback_schemas) == @fallback_schemas
+    assert Generated.tools(companion, 1, @fallback_tools) == @fallback_tools
+    assert Generated.schemas(companion, 1, @fallback_schemas) == @fallback_schemas
   end
 
   test "tools/3 and schemas/3 fall back per function when the companion omits it" do
