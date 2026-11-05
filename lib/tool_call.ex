@@ -92,7 +92,10 @@ defmodule ToolCall do
     overrides = module |> Module.get_attribute(:tool_param) |> List.wrap()
 
     providers = Module.get_attribute(module, :tool_call_type_providers) || []
-    tools = ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
+
+    %{tools: tools} =
+      ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
+
     schemas = ToolCall.Emit.precompile(tools)
     embedded = Enum.map(tools, &drop_provenance/1)
 

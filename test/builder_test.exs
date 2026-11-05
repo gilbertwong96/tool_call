@@ -12,6 +12,31 @@ defmodule ToolCall.BuilderNilDescription do
   def go(x), do: x
 end
 
+defmodule ToolCall.BuilderTest.Capture do
+  @moduledoc false
+  # Exposes the Builder result from inside a fixture's compilation without
+  # adding it to ToolCall's public API.
+
+  defmacro __before_compile__(env) do
+    module = env.module
+
+    result =
+      ToolCall.Builder.build(
+        module,
+        module |> Module.get_attribute(:tool_call_defs) |> List.wrap(),
+        module |> Module.get_attribute(:spec) |> List.wrap(),
+        module |> Module.get_attribute(:tool_param) |> List.wrap(),
+        env,
+        Module.get_attribute(module, :tool_call_type_providers) || []
+      )
+
+    quote do
+      @doc false
+      def __build_result__, do: unquote(Macro.escape(result))
+    end
+  end
+end
+
 defmodule ToolCall.BuilderTest do
   use ExUnit.Case, async: true
 
@@ -303,6 +328,27 @@ defmodule ToolCall.BuilderTest do
       end
       """)
     end
+  end
+
+  defp build_fixture!(body) do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @before_compile ToolCall.BuilderTest.Capture
+
+      #{body}
+      end
+      """)
+
+    module.__build_result__()
+  end
+
+  defp strip_meta(ast) do
+    Macro.prewalk(ast, fn
+      {name, _meta, args} -> {name, [], args}
+      other -> other
+    end)
   end
 
   defp json_safe?(term) when is_map(term) do
@@ -840,6 +886,41 @@ defmodule ToolCall.BuilderTest do
       """)
 
     assert warnings =~ "expected @tool_param %{fun: :function, name: ...}"
+  end
+
+  test "records typedoc keys from the normalized pre-inlining type" do
+    result =
+      build_fixture!("""
+      @type address :: String.t()
+
+      @spec go(value :: address()) :: String.t()
+      def go(value), do: value
+
+      @spec nullable(value :: address() | nil) :: String.t()
+      def nullable(value), do: value
+
+      @spec constrained(value) :: String.t() when value: address()
+      def constrained(value), do: value
+
+      @spec qualified(value :: __MODULE__.address()) :: String.t()
+      def qualified(value), do: value
+
+      @spec listed(value :: list(address())) :: String.t()
+      def listed(value), do: value
+      """)
+
+    assert result.typedoc_keys == %{
+             {"go", "value"} => {:address, 0},
+             {"nullable", "value"} => {:address, 0},
+             {"constrained", "value"} => {:address, 0},
+             {"qualified", "value"} => {:address, 0}
+           }
+
+    refute Map.has_key?(result.typedoc_keys, {"listed", "value"})
+
+    go = Enum.find(result.tools, &(&1.name == "go"))
+    assert [param] = go.params
+    assert strip_meta(param.source) == {:address, [], []}
   end
 
   test "a default keeps the parameter optional even when it cannot be emitted" do

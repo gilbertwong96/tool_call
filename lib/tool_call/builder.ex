@@ -7,14 +7,15 @@ defmodule ToolCall.Builder do
   # the `Docs` and `Dbgi` chunks, so `Code.Typespec` / `Code.fetch_docs` are not
   # available in production. See docs/design.md and the README release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
 
   @wire_formats [:number, :string_integer]
   @override_keys [:fun, :name, :wire, :description]
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
-  @spec build(module(), list(), list(), list(), Macro.Env.t(), [module()]) :: [Tool.t()]
+  @spec build(module(), list(), list(), list(), Macro.Env.t(), [module()]) ::
+          %{tools: [Tool.t()], typedoc_keys: map()}
   def build(module, defs, specs, overrides, env, providers) do
     overrides = normalize_overrides(module, overrides)
 
@@ -38,7 +39,17 @@ defmodule ToolCall.Builder do
 
     validate_overrides(module, overrides, tools)
     validate_names(module, entries)
-    tools
+
+    %{tools: tools, typedoc_keys: typedoc_keys(tools, context.definitions)}
+  end
+
+  defp typedoc_keys(tools, definitions) do
+    for %Tool{name: tool_name, params: params} <- tools,
+        %Param{name: param_name, source: source} <- params,
+        type_key = Typedoc.key(source, definitions),
+        into: %{} do
+      {{tool_name, param_name}, type_key}
+    end
   end
 
   defp unique_tool_names(entries, module) do
@@ -177,9 +188,8 @@ defmodule ToolCall.Builder do
       |> Enum.with_index(1)
       |> Enum.map(fn {arg_ast, index} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
-        type_ast = substitute_vars(type_ast, bindings)
-        type_ast = localize_module_types(type_ast)
-        {type_ast, truncated?} = LocalTypes.expand(type_ast, context.definitions)
+        source_ast = type_ast |> substitute_vars(bindings) |> localize_module_types()
+        {type_ast, truncated?} = LocalTypes.expand(source_ast, context.definitions)
         type_ast = expand_aliases(type_ast, context.env)
 
         if not named? do
@@ -212,7 +222,7 @@ defmodule ToolCall.Builder do
           description: Map.get(doc_info.params, param_name),
           default: default_value(default, context.env),
           required: default == :none,
-          source: type_ast
+          source: source_ast
         }
         |> drop_incompatible_default(context.module, location, name, arity)
         |> apply_override(name, context.overrides)
