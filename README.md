@@ -140,8 +140,9 @@ but term-decodable chunk is reported as corrupt, not as absent.
 ## What you get
 
 - `ToolCall.emit/3` — `:openai` (including `strict: true`) and `:anthropic`.
-  For a module the schemas are rendered at compile time, so this is a lookup
-  behind the companion guard.
+  For a module the schemas are rendered at compile time: a direct literal
+  lookup when the module has no local-type keys, behind the companion guard
+  otherwise.
 - `ToolCall.run/3` — required/unknown argument checks, coercion, exception
   wrapping.
 - `ToolCall.tools/1` — the IR, if you want to build your own emitter.

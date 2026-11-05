@@ -113,24 +113,41 @@ defmodule ToolCall do
       generation: generation
     })
 
-    quote do
-      @doc false
-      def __tools__,
-        do:
+    # A module with no local-type keys can never gain a companion, so its
+    # accessors return the phase-one literals directly. Only modules that may
+    # receive a companion pay for the generation guard at runtime.
+    tools_body =
+      if map_size(typedoc_keys) == 0 do
+        Macro.escape(embedded)
+      else
+        quote do
           ToolCall.Generated.tools(
             unquote(companion),
             unquote(generation),
             unquote(Macro.escape(embedded))
           )
+        end
+      end
 
-      @doc false
-      def __schemas__,
-        do:
+    schemas_body =
+      if map_size(typedoc_keys) == 0 do
+        Macro.escape(schemas)
+      else
+        quote do
           ToolCall.Generated.schemas(
             unquote(companion),
             unquote(generation),
             unquote(Macro.escape(schemas))
           )
+        end
+      end
+
+    quote do
+      @doc false
+      def __tools__, do: unquote(tools_body)
+
+      @doc false
+      def __schemas__, do: unquote(schemas_body)
 
       @doc false
       def __tool__(name), do: Enum.find(__tools__(), &(&1.name == to_string(name)))
@@ -281,10 +298,10 @@ defmodule ToolCall do
   Emits schemas for `target` (`:openai` or `:anthropic`).
 
   For a module the supported variants are rendered at **compile time** and
-  embedded as a literal, so this is a guarded map lookup and `strict` may be a
-  runtime boolean. A module returns a list with one schema per tool; a single
-  `ToolCall.IR.Tool` returns one schema map and a list of them a list, rendered
-  on demand, which is what dynamically built tools need. Runtime IR is
+  embedded as a literal, so this is a direct or guarded map lookup and `strict`
+  may be a runtime boolean. A module returns a list with one schema per tool; a
+  single `ToolCall.IR.Tool` returns one schema map and a list of them a list,
+  rendered on demand, which is what dynamically built tools need. Runtime IR is
   validated before rendering; invalid types raise `ArgumentError`.
 
   ## Options

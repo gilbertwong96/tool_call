@@ -68,17 +68,21 @@ delegates to it. `ToolCall.emit/3` on a module still returns a precompiled
 literal, so `strict` may be a runtime boolean and no schema is rendered per
 call.
 
-The lookup is guarded: the generated `__schemas__/0` and `__tools__/0` call
-`Code.ensure_loaded?/1` and `function_exported?/2` on the companion before
-using it, so a stale or missing companion falls back to the phase-one literals.
+The accessors are direct when the module has no module-local type referenced
+from a parameter: `__schemas__/0` and `__tools__/0` return the phase-one
+literals with no helper call. When a parameter references a module-local type, a
+`@typedoc` companion may exist, so the accessors call `Code.ensure_loaded?/1`
+and `function_exported?/2` first and fall back to the phase-one literals when
+the companion is stale or missing.
 
-Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with a typedoc
-companion present, `emit/3` takes about 0.13 µs and `run/3` about 0.6 µs.
-Without a companion, each call takes roughly 13–25 µs because the failed
-`Code.ensure_loaded?/1` searches the code path; the exact cost depends on how
-long the code path is. A fresh render of a runtime `ToolCall.IR.Tool` costs
-about 15–25 µs. The embedded schemas add roughly 35 KB to the beam and 9 ms to
-compilation.
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module with no
+local-type keys takes about 0.07 µs for `emit/3`, 13 ns for `__schemas__/0` and
+0.55 µs for `run/3`. With a typedoc companion present, `emit/3` takes about
+0.14 µs and `run/3` about 0.6 µs. A module with local-type keys but no matching
+visible `@typedoc` still pays the guard — roughly 18–26 µs per call because the
+failed `Code.ensure_loaded?/1` searches the code path, which depends on the code
+path length. A fresh render of a runtime `ToolCall.IR.Tool` costs about 0.5 µs.
+The embedded schemas add roughly 35 KB to the beam and 9 ms to compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
 chunks, so Code.Typespec.fetch_specs/1 and `Code.fetch_docs/1` fail on the

@@ -413,6 +413,33 @@ defmodule ToolCall.TypedocIntegrationTest do
     assert ToolCall.emit(module, :anthropic) == ToolCall.emit(control, :anthropic)
   end
 
+  test "a module without local-type keys embeds direct accessor literals" do
+    {module, binary} =
+      compile_with_docs_and_bytecode!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Send a parcel."
+        @spec send(to :: String.t()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    refute Code.ensure_loaded?(Generated.companion(module))
+    assert direct_literal?(binary, :__tools__)
+    assert direct_literal?(binary, :__schemas__)
+  end
+
+  test "a module with typedoc keys calls the guarded companion helper" do
+    {module, binary} = compile_with_docs_and_bytecode!(@typedoc_source)
+    on_exit(fn -> unload(module) end)
+
+    assert guarded_call?(binary, :__tools__, :tools)
+    assert guarded_call?(binary, :__schemas__, :schemas)
+  end
+
   test "Code.compile_string creates only an in-memory companion" do
     module = compile_with_docs!(@typedoc_source)
     companion = Generated.companion(module)
@@ -619,6 +646,73 @@ defmodule ToolCall.TypedocIntegrationTest do
     {module, _diagnostics} = compile_with_docs_and_diagnostics!(source, enabled?)
     module
   end
+
+  defp compile_with_docs_and_bytecode!(source) do
+    previous_docs = Code.compiler_options()[:docs]
+    previous_debug_info = Code.compiler_options()[:debug_info]
+    Code.compiler_options(docs: true, debug_info: true)
+
+    try do
+      name = "Fixture#{System.unique_integer([:positive])}"
+
+      {[{module, binary} | _], _diagnostics} =
+        Code.with_diagnostics(fn ->
+          Code.compile_string(String.replace(source, "FIXTURE", name))
+        end)
+
+      {module, binary}
+    after
+      Code.compiler_options(docs: previous_docs, debug_info: previous_debug_info)
+    end
+  end
+
+  defp direct_literal?(binary, function) do
+    body = function_body(binary, function)
+    not contains_call?(body)
+  end
+
+  defp guarded_call?(binary, function, helper) do
+    body = function_body(binary, function)
+    contains_remote_call?(body, Generated, helper)
+  end
+
+  defp function_body(binary, function) do
+    {:ok, {_module, [abstract_code: {:raw_abstract_v1, forms}]}} =
+      :beam_lib.chunks(binary, [:abstract_code])
+
+    {:function, _line, ^function, 0, [{:clause, _meta, [], [], [body]}]} =
+      Enum.find(forms, &match?({:function, _, ^function, 0, _}, &1))
+
+    body
+  end
+
+  defp contains_call?({:call, _line, _callee, _args}), do: true
+
+  defp contains_call?(tuple) when is_tuple(tuple),
+    do: tuple |> Tuple.to_list() |> Enum.any?(&contains_call?/1)
+
+  defp contains_call?(list) when is_list(list), do: Enum.any?(list, &contains_call?/1)
+  defp contains_call?(_other), do: false
+
+  defp contains_remote_call?(
+         {:call, _line,
+          {:remote, _remote_line, {:atom, _, called_module}, {:atom, _, called_helper}}, _args},
+         module,
+         helper
+       )
+       when called_module == module and called_helper == helper,
+       do: true
+
+  defp contains_remote_call?(tuple, module, helper) when is_tuple(tuple),
+    do:
+      tuple
+      |> Tuple.to_list()
+      |> Enum.any?(&contains_remote_call?(&1, module, helper))
+
+  defp contains_remote_call?(list, module, helper) when is_list(list),
+    do: Enum.any?(list, &contains_remote_call?(&1, module, helper))
+
+  defp contains_remote_call?(_other, _module, _helper), do: false
 
   defp compile_with_after_compile_probe!(transform, source, enabled? \\ true) do
     key = {ToolCall.TypedocIntegrationTest.AfterCompileProbe, :transform}

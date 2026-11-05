@@ -1,8 +1,10 @@
 defmodule ToolCall.Generated do
   @moduledoc false
-  # Phase-one modules call these helpers from their generated `__tools__/0` and
-  # `__schemas__/0`. The phase-two companion carries the typedoc-enriched
-  # literals and the compile-generation token. The token is not a hash of the
+  # Modules that may gain a typedoc companion call these helpers from their
+  # generated `__tools__/0` and `__schemas__/0`; modules with no local-type keys
+  # embed the phase-one literals directly and never reach this module. The
+  # phase-two companion carries the typedoc-enriched literals and the
+  # compile-generation token. The token is not a hash of the
   # enriched content: it changes on every phase-one compile, so a typedoc-only
   # change still invalidates a stale or partially written companion and falls
   # back to the phase-one data. The token combines wall-clock nanoseconds with

@@ -147,8 +147,9 @@ creates `Module.concat(module, "__ToolCall__")`, and writes its beam to
 and IEx (`nofile`) modules keep the companion in memory only. When no typedoc
 applies, no companion is created and a stale one is removed.
 
-The original module's `__tools__/0` and `__schemas__/0` delegate only when the
-companion exports a matching compile-generation token. The token changes on
+For a module with local-type keys, the original module's `__tools__/0` and
+`__schemas__/0` delegate only when the companion exports a matching
+compile-generation token. The token changes on
 every phase-one compile, so a failed or skipped write, a partially written beam,
 or an old companion can never serve stale data; the module falls back to the
 phase-one literals. Companion creation/writing failures warn and keep the
@@ -322,18 +323,25 @@ the optional arguments, which is what `ToolCall.Runner` constructs.
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so
 `emit/3` on a module returns a precompiled literal and `strict` can stay a
-runtime boolean. The lookup is guarded: the generated `__schemas__/0` and
-`__tools__/0` check the companion with `Code.ensure_loaded?/1` and
+runtime boolean. A module with no module-local type referenced from a parameter
+gets direct `__schemas__/0` and `__tools__/0` functions that return those
+literals. When a parameter references a module-local type, a `@typedoc`
+companion may exist, so the accessors check it with `Code.ensure_loaded?/1` and
 `function_exported?/2` before using it, which keeps a stale companion from
 serving old data.
 
-Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with the typedoc
-companion present, `emit/3` costs about 0.13 µs per call and `run/3` about
-0.6 µs; without a companion, both cost roughly 13–25 µs because the failed
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module with no
+local-type keys reads the literals directly — `emit/3` costs about 0.07 µs per
+call, `__schemas__/0` about 13 ns and `run/3` about 0.55 µs. With a typedoc
+companion present, `emit/3` costs about 0.14 µs and `run/3` about 0.6 µs. A
+module with local-type keys but no matching visible `@typedoc` still takes the
+guarded path and pays roughly 18–26 µs per call because the failed
 `Code.ensure_loaded?/1` searches the code path (the exact cost depends on the
-code path length). A fresh render costs about 15–25 µs per call. The embedded
-schemas add about 35 KB to the beam and 9 ms to compilation. A module built at
-runtime (`ToolCall.IR.Tool`) is rendered on demand instead.
+code path length); the companion is removed, but the accessor cannot know that
+without the lookup. A fresh render of a runtime `ToolCall.IR.Tool` costs about
+0.5 µs per call. The embedded schemas add about 35 KB to the beam and 9 ms to
+compilation. A module built at runtime (`ToolCall.IR.Tool`) is rendered on
+demand instead.
 
 **Strict mode is an emitter concern.** `strict: true` sets the tool flag,
 rewrites optional properties to `["T","null"]`, moves every property (nested
