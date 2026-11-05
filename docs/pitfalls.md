@@ -30,16 +30,6 @@ name survives compilation. Unannotated arguments fall back to `arg1`, `arg2`,
 The library filters by `{name, arity}` and warns when a function has several
 specs; overloads cannot be represented as one JSON Schema.
 
-## Aliases are not expanded in the attribute
-
-An alias such as `Money.t()` arrives as an alias AST. The compiler does not
-expand it in the stored `@spec` attribute, so a naive mapper would turn it into
-`{}` instead of asking the type provider.
-
-**Handled.** `ToolCall.Builder.expand_aliases/2` walks the type AST with
-`Macro.expand/2` against the `@before_compile` environment, including aliases
-with `as:` and aliases nested inside local `@type` definitions.
-
 ## `@typedoc` is consumed before `@before_compile`
 
 `@typedoc` is consumed by the following `@type`; it is gone by the time
