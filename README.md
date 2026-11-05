@@ -141,7 +141,8 @@ but term-decodable chunk is reported as corrupt, not as absent.
 
 - `ToolCall.emit/3` — `:openai` (including `strict: true`) and `:anthropic`.
   For a module the schemas are rendered at compile time: a direct literal
-  lookup when the module has no local-type keys, behind the companion guard
+  lookup when the effective typedoc key map is empty (no undocumented
+  local-type parameter, or docs disabled), behind the companion guard
   otherwise.
 - `ToolCall.run/3` — required/unknown argument checks, coercion, exception
   wrapping.

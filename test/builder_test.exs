@@ -896,6 +896,23 @@ defmodule ToolCall.BuilderTest do
       @spec go(value :: address()) :: String.t()
       def go(value), do: value
 
+      @doc \"\"\"
+      Documented.
+
+      ## Parameters
+        * `value` - documented parameter
+      \"\"\"
+      @spec documented(value :: address()) :: String.t()
+      def documented(value), do: value
+
+      @tool_param %{fun: :overridden, name: "value", description: "override"}
+      @spec overridden(value :: address()) :: String.t()
+      def overridden(value), do: value
+
+      @tool_param %{fun: :cleared, name: "value", description: ""}
+      @spec cleared(value :: address()) :: String.t()
+      def cleared(value), do: value
+
       @spec nullable(value :: address() | nil) :: String.t()
       def nullable(value), do: value
 
@@ -917,6 +934,9 @@ defmodule ToolCall.BuilderTest do
            }
 
     refute Map.has_key?(result.typedoc_keys, {"listed", "value"})
+    refute Map.has_key?(result.typedoc_keys, {"documented", "value"})
+    refute Map.has_key?(result.typedoc_keys, {"overridden", "value"})
+    refute Map.has_key?(result.typedoc_keys, {"cleared", "value"})
 
     go = Enum.find(result.tools, &(&1.name == "go"))
     assert [param] = go.params

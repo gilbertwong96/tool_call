@@ -101,6 +101,16 @@ defmodule ToolCall do
     %{tools: tools, typedoc_keys: typedoc_keys} =
       ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
 
+    # Phase two only fills parameters that have no description yet. A compile
+    # with `docs: false` writes no Docs chunk, so there is nothing to recover
+    # and the effective key map is empty.
+    typedoc_keys =
+      if Code.compiler_options()[:docs] == false do
+        %{}
+      else
+        typedoc_keys
+      end
+
     generation = Generated.generation()
     companion = Generated.companion(module)
     schemas = Emit.precompile(tools)
@@ -113,9 +123,9 @@ defmodule ToolCall do
       generation: generation
     })
 
-    # A module with no local-type keys can never gain a companion, so its
-    # accessors return the phase-one literals directly. Only modules that may
-    # receive a companion pay for the generation guard at runtime.
+    # A module with an empty effective key map can never gain a companion, so
+    # its accessors return the phase-one literals directly. Only modules that
+    # may receive a companion pay for the generation guard at runtime.
     tools_body =
       if map_size(typedoc_keys) == 0 do
         Macro.escape(embedded)

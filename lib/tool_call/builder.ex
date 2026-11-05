@@ -46,8 +46,11 @@ defmodule ToolCall.Builder do
   end
 
   defp typedoc_keys(tools, definitions) do
+    # `Typedoc.apply/3` only fills nil descriptions, so a parameter that is
+    # already documented by `@doc`, `@tool_param` or an explicit "" needs no
+    # key and must not drag its module onto the guarded accessor path.
     for %Tool{name: tool_name, params: params} <- tools,
-        %Param{name: param_name, source: source} <- params,
+        %Param{name: param_name, description: nil, source: source} <- params,
         type_key = Typedoc.key(source, definitions),
         into: %{} do
       {{tool_name, param_name}, type_key}

@@ -121,8 +121,8 @@ defmodule ToolCall.TypedocIntegrationTest do
   end
 
   test "@typedoc false is hidden and creates no companion" do
-    module =
-      compile_with_docs!("""
+    {module, binary} =
+      compile_with_docs_and_bytecode!("""
       defmodule FIXTURE do
         use ToolCall
 
@@ -139,6 +139,10 @@ defmodule ToolCall.TypedocIntegrationTest do
 
     assert param_description(module, "send", "to") == nil
     refute Code.ensure_loaded?(Generated.companion(module))
+    # Phase one cannot know that the type's docs are hidden, so the key exists
+    # and the accessor stays guarded.
+    assert guarded_call?(binary, :__tools__, :tools)
+    assert guarded_call?(binary, :__schemas__, :schemas)
   end
 
   test "a docs-disabled compile skips typedoc without warning" do
@@ -432,6 +436,42 @@ defmodule ToolCall.TypedocIntegrationTest do
     assert direct_literal?(binary, :__schemas__)
   end
 
+  test "a documented local-type parameter embeds direct accessor literals" do
+    {module, binary} =
+      compile_with_docs_and_bytecode!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @doc \"\"\"
+        Send a parcel.
+
+        ## Parameters
+          * `to` - where it goes
+        \"\"\"
+        @spec send(to :: address()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    refute Code.ensure_loaded?(Generated.companion(module))
+    assert direct_literal?(binary, :__tools__)
+    assert direct_literal?(binary, :__schemas__)
+  end
+
+  test "a docs-disabled build embeds direct accessor literals" do
+    {module, binary} = compile_with_docs_and_bytecode!(@typedoc_source, false)
+    on_exit(fn -> unload(module) end)
+
+    refute Code.ensure_loaded?(Generated.companion(module))
+    assert direct_literal?(binary, :__tools__)
+    assert direct_literal?(binary, :__schemas__)
+  end
+
   test "a module with typedoc keys calls the guarded companion helper" do
     {module, binary} = compile_with_docs_and_bytecode!(@typedoc_source)
     on_exit(fn -> unload(module) end)
@@ -647,10 +687,10 @@ defmodule ToolCall.TypedocIntegrationTest do
     module
   end
 
-  defp compile_with_docs_and_bytecode!(source) do
+  defp compile_with_docs_and_bytecode!(source, enabled? \\ true) do
     previous_docs = Code.compiler_options()[:docs]
     previous_debug_info = Code.compiler_options()[:debug_info]
-    Code.compiler_options(docs: true, debug_info: true)
+    Code.compiler_options(docs: enabled?, debug_info: true)
 
     try do
       name = "Fixture#{System.unique_integer([:positive])}"
