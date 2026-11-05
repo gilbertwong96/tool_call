@@ -170,8 +170,10 @@ still drives charlist conversion and its schema default. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
 Not handled: recursive types (no `$ref`/`$defs`, so a recursive reference
-becomes `{}`), bitstrings with explicit sizes, and struct expansion (without a
-provider, remote types such as `URI.t()` stay `{}`).
+becomes `{}`), bitstrings with explicit sizes, struct expansion (without a
+provider, remote types such as `URI.t()` stay `{}`), and `@typedoc` capture.
+`@typedoc` is consumed by `@type` before `@before_compile`, so use `@doc`
+parameter bullets or `@tool_param` descriptions for tool-facing text.
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained

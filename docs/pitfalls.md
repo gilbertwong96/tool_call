@@ -30,12 +30,6 @@ name survives compilation. Unannotated arguments fall back to `arg1`, `arg2`,
 The library filters by `{name, arity}` and warns when a function has several
 specs; overloads cannot be represented as one JSON Schema.
 
-## `@typedoc` is consumed before `@before_compile`
-
-`@typedoc` is consumed by the following `@type`; it is gone by the time
-`@before_compile` runs. Type-level docs cannot currently be captured. Use
-`@doc` parameter bullets or `@tool_param` descriptions instead.
-
 ## `@doc` is single-valued and consumed immediately
 
 `@doc` is not an accumulating attribute. Reading it later can attach the last
