@@ -38,6 +38,7 @@ defmodule ToolCall do
     raise "ToolCall requires Erlang/OTP 27.1+ (json:format/1 is unavailable)"
   end
 
+  alias ToolCall.{Emit, Generated, Typedoc}
   alias ToolCall.IR.Tool
 
   @doc false
@@ -56,6 +57,7 @@ defmodule ToolCall do
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
       @on_definition ToolCall
       @before_compile ToolCall
+      @after_compile ToolCall
       unquote_splicing(for provider <- providers, do: quote(do: require(unquote(provider))))
     end
   end
@@ -93,18 +95,39 @@ defmodule ToolCall do
 
     providers = Module.get_attribute(module, :tool_call_type_providers) || []
 
-    %{tools: tools} =
+    %{tools: tools, typedoc_keys: typedoc_keys} =
       ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
 
-    schemas = ToolCall.Emit.precompile(tools)
+    generation = Generated.generation()
+    companion = Generated.companion(module)
+    schemas = Emit.precompile(tools)
     embedded = Enum.map(tools, &drop_provenance/1)
+
+    # Phase two runs after the module closes, when the Docs chunk is available.
+    Module.put_attribute(module, :tool_call_after_compile, %{
+      tools: embedded,
+      typedoc_keys: typedoc_keys,
+      generation: generation
+    })
 
     quote do
       @doc false
-      def __tools__, do: unquote(Macro.escape(embedded))
+      def __tools__,
+        do:
+          ToolCall.Generated.tools(
+            unquote(companion),
+            unquote(generation),
+            unquote(Macro.escape(embedded))
+          )
 
       @doc false
-      def __schemas__, do: unquote(Macro.escape(schemas))
+      def __schemas__,
+        do:
+          ToolCall.Generated.schemas(
+            unquote(companion),
+            unquote(generation),
+            unquote(Macro.escape(schemas))
+          )
 
       @doc false
       def __tool__(name), do: Enum.find(__tools__(), &(&1.name == to_string(name)))
@@ -112,6 +135,29 @@ defmodule ToolCall do
       @doc false
       def __run__(name, args),
         do: ToolCall.Runner.run_prepared(__MODULE__, __tools__(), name, args)
+    end
+  end
+
+  # Phase two: recover visible typedocs from the just-compiled bytecode and
+  # publish a companion only when at least one description changed.
+  @doc false
+  @spec __after_compile__(Macro.Env.t(), binary()) :: :ok
+  def __after_compile__(env, bytecode) do
+    module = env.module
+
+    case Module.get_attribute(module, :tool_call_after_compile) do
+      %{tools: tools, typedoc_keys: typedoc_keys, generation: generation} ->
+        enriched = Typedoc.apply(tools, typedoc_keys, Typedoc.from_bytecode(bytecode))
+        companion = Generated.companion(module)
+
+        if enriched == tools do
+          Generated.remove(env, companion)
+        else
+          Generated.create(env, companion, enriched, Emit.precompile(enriched), generation)
+        end
+
+      nil ->
+        :ok
     end
   end
 

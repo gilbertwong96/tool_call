@@ -1,0 +1,383 @@
+defmodule ToolCall.TypedocIntegrationTest.NoAppProject do
+  @moduledoc false
+  def project, do: [version: "0.0.0"]
+end
+
+defmodule ToolCall.TypedocIntegrationTest do
+  # These tests toggle the global :docs compiler option and one writes into the
+  # project compile path, so they must not run concurrently with other modules.
+  use ExUnit.Case, async: false
+
+  @moduletag capture_log: true
+
+  import ToolCall.TestModule, only: [compile!: 1]
+
+  alias ToolCall.Generated
+  alias ToolCall.IR.{Param, Tool}
+
+  @typedoc_source """
+  defmodule FIXTURE do
+    use ToolCall
+
+    @typedoc "Postal address"
+    @type address :: String.t()
+
+    @doc "Send a parcel."
+    @spec send(to :: address()) :: :ok
+    def send(_to), do: :ok
+  end
+  """
+
+  @plain_source """
+  defmodule FIXTURE do
+    use ToolCall
+
+    @type address :: String.t()
+
+    @doc "Send a parcel."
+    @spec send(to :: address()) :: :ok
+    def send(_to), do: :ok
+  end
+  """
+
+  test "a local @typedoc fills unannotated parameter descriptions everywhere" do
+    module = compile_with_docs!(@typedoc_source)
+    on_exit(fn -> unload(module) end)
+
+    assert [%Tool{name: "send", params: [%Param{name: "to", description: "Postal address"}]}] =
+             ToolCall.tools(module)
+
+    assert [%{name: "send", parameters: parameters}] = ToolCall.describe(module)
+    assert parameters["properties"]["to"]["description"] == "Postal address"
+
+    assert schema_value(module, :openai, ["parameters", "properties", "to", "description"]) ==
+             "Postal address"
+
+    assert schema_value(module, :anthropic, ["properties", "to", "description"]) ==
+             "Postal address"
+  end
+
+  test "@doc parameter bullets and @tool_param descriptions override typedoc" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @doc \"\"\"
+        Send a parcel.
+
+        ## Parameters
+          * `to` - from the doc
+        \"\"\"
+        @spec send(to :: address()) :: :ok
+        def send(_to), do: :ok
+
+        @tool_param %{fun: :ship, name: "to", description: "from the override"}
+        @spec ship(to :: address()) :: :ok
+        def ship(_to), do: :ok
+
+        @tool_param %{fun: :clear, name: "to", description: ""}
+        @spec clear(to :: address()) :: :ok
+        def clear(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "from the doc"
+    assert param_description(module, "ship", "to") == "from the override"
+    assert param_description(module, "clear", "to") == ""
+  end
+
+  test "nullable local types take their typedoc, list local types do not" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @doc "Send a parcel."
+        @spec send(to :: address() | nil, all :: list(address())) :: :ok
+        def send(_to, _all), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+    assert param_description(module, "send", "all") == nil
+  end
+
+  test "parameterized local types take their typedoc" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Pair of values"
+        @type pair(a) :: {a, a}
+
+        @doc "Send a pair."
+        @spec send(value :: pair(integer())) :: :ok
+        def send(_value), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "value") == "Pair of values"
+  end
+
+  test "@typep typedoc is ignored" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Hidden"
+        @typep secret :: String.t()
+
+        @doc "Reveal it."
+        @spec reveal(value :: secret()) :: String.t()
+        def reveal(value), do: value
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "reveal", "value") == nil
+    refute Code.ensure_loaded?(Generated.companion(module))
+  end
+
+  test "a module without typedoc has no companion and unchanged output" do
+    module = compile_with_docs!(@plain_source)
+    control = compile_with_docs!(@plain_source, false)
+    on_exit(fn -> unload(module) end)
+    on_exit(fn -> unload(control) end)
+
+    refute Code.ensure_loaded?(Generated.companion(module))
+    assert param_description(module, "send", "to") == nil
+
+    assert ToolCall.emit(module, :openai) == ToolCall.emit(control, :openai)
+    assert ToolCall.emit(module, :anthropic) == ToolCall.emit(control, :anthropic)
+  end
+
+  test "Code.compile_string creates only an in-memory companion" do
+    module = compile_with_docs!(@typedoc_source)
+    companion = Generated.companion(module)
+    on_exit(fn -> unload(module) end)
+
+    assert Code.ensure_loaded?(companion)
+    assert param_description(module, "send", "to") == "Postal address"
+    refute File.exists?(companion_beam(module))
+  end
+
+  test "a stale companion generation token falls back to phase-one data" do
+    module = compile_with_docs!(@typedoc_source)
+    companion = Generated.companion(module)
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+
+    purge(companion)
+    fallback_tools = module.__tools__()
+    fallback_schemas = module.__schemas__()
+    assert tools_param_description(fallback_tools, "send", "to") == nil
+
+    stale_tools = [
+      %Tool{
+        name: "send",
+        description: "stale",
+        module: module,
+        fun: :send,
+        params: [%Param{name: "to", description: "stale"}]
+      }
+    ]
+
+    create_stale_companion(companion, stale_tools, %{})
+
+    assert module.__tools__() == fallback_tools
+    assert module.__schemas__() == fallback_schemas
+  end
+
+  test "a source-file module persists its companion until typedoc stops applying" do
+    path = write_temp_source!(@typedoc_source)
+    on_exit(fn -> File.rm(path) end)
+
+    module = compile_file_with_docs!(path)
+    on_exit(fn -> unload(module) end)
+
+    companion = Generated.companion(module)
+    beam = companion_beam(module)
+
+    assert File.exists?(beam)
+    assert param_description(module, "send", "to") == "Postal address"
+
+    purge(companion)
+    assert Code.ensure_loaded?(companion)
+    assert param_description(module, "send", "to") == "Postal address"
+
+    File.write!(path, String.replace(@plain_source, "FIXTURE", inspect(module)))
+    assert compile_file_with_docs!(path) == module
+
+    refute File.exists?(beam)
+    refute Code.ensure_loaded?(companion)
+    assert param_description(module, "send", "to") == nil
+  end
+
+  test "a failed companion write warns and leaves phase-one data in place" do
+    companion = synthetic_companion("WriteFailure")
+    # A directory at the beam path makes the atomic rename fail like a
+    # permission or filesystem error, without changing the compile path.
+    beam = beam_path(companion)
+    File.mkdir_p!(beam)
+
+    on_exit(fn ->
+      File.rm_rf(beam)
+      purge(companion)
+    end)
+
+    warning =
+      ExUnit.CaptureIO.capture_io(:stderr, fn ->
+        assert Generated.create(env("lib/write_failure.ex"), companion, [], %{}, 1) == :error
+      end)
+
+    assert warning =~ "could not write the typedoc companion beam"
+    assert :code.is_loaded(companion) == false
+  end
+
+  test "a missing Mix compile path warns and skips the companion" do
+    # No project and a project without an :app both make compile_path/0
+    # unavailable; the second takes the compile_path/0 rescue branch.
+    project = Mix.Project.pop()
+    no_project = synthetic_companion("NoProject")
+    no_app = synthetic_companion("NoApp")
+
+    try do
+      warning =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          assert Generated.create(env("lib/no_project.ex"), no_project, [], %{}, 1) == :error
+        end)
+
+      assert warning =~ "Mix.Project.compile_path/0 is unavailable"
+
+      :ok = Mix.Project.push(ToolCall.TypedocIntegrationTest.NoAppProject)
+
+      warning =
+        ExUnit.CaptureIO.capture_io(:stderr, fn ->
+          assert Generated.create(env("lib/no_app.ex"), no_app, [], %{}, 1) == :error
+        end)
+
+      assert warning =~ "Mix.Project.compile_path/0 is unavailable"
+    after
+      _ = Mix.Project.pop()
+      :ok = Mix.Project.push(project.name, project[:file], project[:app])
+    end
+
+    refute Code.ensure_loaded?(no_project)
+    refute Code.ensure_loaded?(no_app)
+  end
+
+  test "__after_compile__/2 ignores a module that does not use ToolCall" do
+    module = synthetic_companion("NoSnapshot")
+
+    {:module, ^module, _binary, _term} =
+      Module.create(module, quote(do: @after_compile(ToolCall)), file: "nofile", line: 1)
+
+    on_exit(fn -> purge(module) end)
+  end
+
+  defp synthetic_companion(label) do
+    Module.concat([__MODULE__, "#{label}#{System.unique_integer([:positive])}"])
+  end
+
+  defp env(file), do: %{file: file, line: 1}
+
+  defp compile_with_docs!(source, enabled? \\ true) do
+    previous = Code.compiler_options()[:docs]
+    Code.compiler_options(docs: enabled?)
+
+    try do
+      compile!(source)
+    after
+      Code.compiler_options(docs: previous)
+    end
+  end
+
+  defp compile_file_with_docs!(path) do
+    previous = Code.compiler_options()[:docs]
+    Code.compiler_options(docs: true)
+
+    try do
+      {[{module, _binary} | _], _diagnostics} =
+        Code.with_diagnostics(fn -> Code.compile_file(path) end)
+
+      module
+    after
+      Code.compiler_options(docs: previous)
+    end
+  end
+
+  defp write_temp_source!(source) do
+    name = "ToolCallTypedocFileFixture#{System.unique_integer([:positive])}"
+    path = Path.join(System.tmp_dir!(), "#{name}.ex")
+    File.write!(path, String.replace(source, "FIXTURE", name))
+    path
+  end
+
+  defp schema_value(module, :openai, path) do
+    module |> ToolCall.emit(:openai) |> hd() |> get_in(["function" | path])
+  end
+
+  defp schema_value(module, :anthropic, path) do
+    module |> ToolCall.emit(:anthropic) |> hd() |> get_in(["input_schema" | path])
+  end
+
+  defp param_description(module, tool_name, param_name) do
+    module |> ToolCall.tools() |> tools_param_description(tool_name, param_name)
+  end
+
+  defp tools_param_description(tools, tool_name, param_name) do
+    tool = Enum.find(tools, &(&1.name == tool_name))
+    Enum.find(tool.params, &(&1.name == param_name)).description
+  end
+
+  defp companion_beam(module), do: module |> Generated.companion() |> beam_path()
+
+  defp beam_path(companion) do
+    Path.join(Mix.Project.compile_path(), Atom.to_string(companion) <> ".beam")
+  end
+
+  defp unload(module) do
+    companion = Generated.companion(module)
+    purge(companion)
+    File.rm(companion_beam(module))
+    :ok
+  end
+
+  defp purge(module) do
+    :code.purge(module)
+    :code.delete(module)
+    :ok
+  end
+
+  defp create_stale_companion(companion, tools, schemas) do
+    quoted =
+      quote do
+        @moduledoc false
+        def __tools__, do: unquote(Macro.escape(tools))
+        def __schemas__, do: unquote(Macro.escape(schemas))
+        def __generation__, do: 0
+      end
+
+    {:module, ^companion, _binary, _term} =
+      Module.create(companion, quoted, file: "nofile", line: 1)
+
+    :ok
+  end
+end

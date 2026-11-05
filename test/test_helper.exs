@@ -5,7 +5,9 @@ defmodule ToolCall.TestModule do
 
   @doc "Compiles `source`, replacing `FIXTURE` with a unique module name."
   def compile!(source) do
-    {[{module, _binary}], _diagnostics} = compile_source(source)
+    # A typedoc fixture also compiles its in-memory companion, so the fixture
+    # module is not necessarily the only module returned.
+    {[{module, _binary} | _], _diagnostics} = compile_source(source)
     module
   end
 
@@ -17,7 +19,7 @@ defmodule ToolCall.TestModule do
 
   @doc "Compiles `source` and returns `{module, diagnostics}` with locations."
   def compile_with_diagnostics!(source) do
-    {[{module, _binary}], diagnostics} = compile_source(source)
+    {[{module, _binary} | _], diagnostics} = compile_source(source)
     {module, diagnostics}
   end
 
