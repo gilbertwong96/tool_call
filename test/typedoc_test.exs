@@ -1,0 +1,179 @@
+defmodule ToolCall.TypedocTest do
+  use ExUnit.Case, async: true
+
+  alias ToolCall.IR.{Param, Tool}
+  alias ToolCall.Typedoc
+
+  test "from_docs/1 extracts visible type docs and ignores other entries" do
+    docs =
+      {:docs_v1, 0, :elixir, "text/markdown", :none, %{},
+       [
+         {{:type, :address, 0}, 0, [], %{"en" => "Postal address"}, %{}},
+         {{:type, :opaque_t, 0}, 0, [], %{"en" => "Opaque"}, %{opaque: true}},
+         {{:type, :hidden_t, 0}, 0, [], :hidden, %{}},
+         {{:function, :go, 1}, 0, [], %{"en" => "Function"}, %{}}
+       ]}
+
+    assert Typedoc.from_docs(docs) == %{
+             {:address, 0} => "Postal address",
+             {:opaque_t, 0} => "Opaque"
+           }
+  end
+
+  test "from_docs/1 prefers English and falls back to another language" do
+    docs =
+      {:docs_v1, 0, :elixir, "text/markdown", :none, %{},
+       [
+         {{:type, :address, 0}, 0, [], %{"fr" => "Adresse", "en" => "Address"}, %{}},
+         {{:type, :only_fr, 0}, 0, [], %{"fr" => "Adresse seulement"}, %{}},
+         {{:type, :mixed, 0}, 0, [], %{"en" => :hidden, "fr" => "Adresse mixte"}, %{}},
+         {{:type, :binary_doc, 0}, 0, [], "Raw doc", %{}}
+       ]}
+
+    assert Typedoc.from_docs(docs) == %{
+             {:address, 0} => "Address",
+             {:only_fr, 0} => "Adresse seulement",
+             {:mixed, 0} => "Adresse mixte",
+             {:binary_doc, 0} => "Raw doc"
+           }
+  end
+
+  test "from_docs/1 ignores malformed entries and terms" do
+    docs =
+      {:docs_v1, 0, :elixir, "text/markdown", :none, %{},
+       [
+         {{:type, "name", 0}, 0, [], "Bad name", %{}},
+         {{:type, :negative, -1}, 0, [], "Bad arity", %{}},
+         {{:type, :no_doc, 0}, 0, [], %{}, %{}},
+         :junk
+       ]}
+
+    assert Typedoc.from_docs(docs) == %{}
+    assert Typedoc.from_docs(:not_docs) == %{}
+  end
+
+  test "from_bytecode/1 reads typedoc text from the Docs chunk" do
+    module = "TypedocBytecodeFixture#{System.unique_integer([:positive])}"
+
+    [{_module, bytecode}] =
+      compile_with_docs("""
+      defmodule #{module} do
+        @typedoc "Postal address"
+        @type address :: String.t()
+      end
+      """)
+
+    assert Typedoc.from_bytecode(bytecode) == %{{:address, 0} => "Postal address"}
+  end
+
+  test "from_bytecode/1 returns an empty map when the beam is unreadable" do
+    assert Typedoc.from_bytecode(:erlang.term_to_binary(:not_a_beam)) == %{}
+  end
+
+  test "from_bytecode/1 returns an empty map when the Docs chunk is corrupt" do
+    module = "TypedocCorruptFixture#{System.unique_integer([:positive])}"
+
+    [{_module, bytecode}] =
+      compile_with_docs("""
+      defmodule #{module} do
+        @typedoc "Postal address"
+        @type address :: String.t()
+      end
+      """)
+
+    assert Typedoc.from_bytecode(corrupt_docs_chunk(bytecode)) == %{}
+  end
+
+  test "key/2 returns the local type key for a direct reference" do
+    assert Typedoc.key({:address, [], []}, definitions()) == {:address, 0}
+    assert Typedoc.key({:pair, [], [{:integer, [], []}]}, definitions()) == {:pair, 1}
+  end
+
+  test "key/2 unwraps a nullable local type on either side" do
+    address_ast = {:address, [], []}
+
+    assert Typedoc.key({:|, [], [address_ast, nil]}, definitions()) == {:address, 0}
+    assert Typedoc.key({:|, [], [nil, address_ast]}, definitions()) == {:address, 0}
+  end
+
+  test "key/2 does not unwrap a list, an arbitrary union, a remote type or an unknown type" do
+    address_ast = {:address, [], []}
+    remote_ast = {{:., [], [{:__aliases, [], [:URI]}, :t]}, [], []}
+
+    assert Typedoc.key({:list, [], [address_ast]}, definitions()) == nil
+    assert Typedoc.key({:|, [], [address_ast, {:integer, [], []}]}, definitions()) == nil
+    assert Typedoc.key(remote_ast, definitions()) == nil
+    assert Typedoc.key({:missing, [], []}, definitions()) == nil
+  end
+
+  test "apply/3 fills only nil descriptions with typedoc text" do
+    tool = %Tool{
+      name: "create",
+      params: [
+        %Param{name: "address"},
+        %Param{name: "note", description: "doc wins"},
+        %Param{name: "untyped"}
+      ]
+    }
+
+    keys = %{
+      {"create", "address"} => {:address, 0},
+      {"create", "note"} => {:address, 0}
+    }
+
+    docs = %{{:address, 0} => "Postal address"}
+
+    assert [%Tool{params: [address, note, untyped]}] = Typedoc.apply([tool], keys, docs)
+    assert address.description == "Postal address"
+    assert note.description == "doc wins"
+    assert untyped.description == nil
+  end
+
+  test "apply/3 preserves an explicit empty-string description" do
+    tool = %Tool{name: "create", params: [%Param{name: "address", description: ""}]}
+    keys = %{{"create", "address"} => {:address, 0}}
+    docs = %{{:address, 0} => "Postal address"}
+
+    assert [%Tool{params: [%Param{description: ""}]}] = Typedoc.apply([tool], keys, docs)
+  end
+
+  test "apply/3 leaves tools unchanged when there is no text or no key" do
+    tool = %Tool{name: "create", params: [%Param{name: "address"}]}
+    keys = %{{"create", "address"} => {:address, 0}}
+    docs = %{{:address, 0} => "Postal address"}
+
+    assert Typedoc.apply([tool], keys, %{{:address, 0} => ""}) == [tool]
+    assert Typedoc.apply([tool], keys, %{}) == [tool]
+    assert Typedoc.apply([tool], %{}, docs) == [tool]
+  end
+
+  # `mix test` disables docs chunks; compile fixtures with them enabled.
+  defp compile_with_docs(source) do
+    docs = Code.compiler_options()[:docs]
+    Code.compiler_options(docs: true)
+
+    try do
+      Code.compile_string(source)
+    after
+      Code.compiler_options(docs: docs)
+    end
+  end
+
+  # Replace the first byte of the Docs chunk payload with an invalid external
+  # term marker; `:beam_lib.chunks/2` still returns the chunk, but decoding it
+  # raises.
+  defp corrupt_docs_chunk(beam) do
+    {offset, 4} = beam |> :binary.matches("Docs") |> List.last()
+    size = byte_size(beam)
+
+    <<binary_part(beam, 0, offset + 8)::binary, 0,
+      binary_part(beam, offset + 9, size - offset - 9)::binary>>
+  end
+
+  defp definitions do
+    %{
+      {:address, 0} => {[], {:string, [], []}},
+      {:pair, 1} => {[{:a, [], nil}], {:tuple, [], []}}
+    }
+  end
+end
