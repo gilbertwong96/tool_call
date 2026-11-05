@@ -55,9 +55,11 @@ truth.
 The library derives everything at compile time. The IR and provider schemas are
 built in `@before_compile`; a second compile phase in `@after_compile` reads the
 just-compiled `Docs` chunk to pick up `@typedoc` text and embeds the result as
-ordinary literals. Nothing reads the beam at runtime: release builds strip the
-`Docs` and `Dbgi` chunks, which is exactly where Code.Typespec and
-`Code.fetch_docs` read from. Release `strip_beams: true` is covered below.
+ordinary literals. No runtime path reads the `Docs` or `Dbgi` chunks: release
+builds strip those chunks, which is exactly where Code.Typespec and
+`Code.fetch_docs` read from. The typedoc companion is ordinary compiled code,
+loaded on first use like any other module. Release `strip_beams: true` is
+covered below.
 
 ## Releases and `strip_beams: true`
 
@@ -138,7 +140,8 @@ but term-decodable chunk is reported as corrupt, not as absent.
 ## What you get
 
 - `ToolCall.emit/3` — `:openai` (including `strict: true`) and `:anthropic`.
-  For a module the schemas are rendered at compile time, so this is a lookup.
+  For a module the schemas are rendered at compile time, so this is a lookup
+  behind the companion guard.
 - `ToolCall.run/3` — required/unknown argument checks, coercion, exception
   wrapping.
 - `ToolCall.tools/1` — the IR, if you want to build your own emitter.

@@ -72,7 +72,9 @@ Code.fetch_docs(M)            #=> {:error, :chunk_not_found}
 Therefore phase one derives everything in `@before_compile` from module
 attributes. The one piece unavailable at that point is `@typedoc`; phase two
 reads it from the `Docs` chunk in `@after_compile`, at compile time, and embeds
-the result as literals. Nothing reads the beam back at runtime.
+the result as literals. No runtime path reads the `Docs` or `Dbgi` chunks or
+reflects on the compiled beam; the typedoc companion is ordinary compiled code
+loaded on first use.
 
 ### 3. Typespecs express more than JSON Schema can
 
@@ -167,9 +169,25 @@ Release assembly copies the companion beam from the application's ebin, so a
 The test suite reproduces the stripped-release shape: it compiles a fixture and
 its companion, strips `Docs`/`Dbgi` with `:beam_lib`, loads both from an
 isolated code path, and calls `ToolCall.emit/3` and `ToolCall.run/3`. It does
-not assemble a full `mix release`; a manual default `mix release` probe verified
-that the companion beam is copied and the typedoc description works from the
-release.
+not assemble a full `mix release`.
+
+The full path has a manual, checked-in probe: `test/manual_release_probe.sh`
+builds a temporary Mix project with a path dependency on this checkout, runs
+`MIX_ENV=prod mix release`, and evaluates the public API from the assembled
+release. It is not part of `mix test` or `mix ci`, because assembling a release
+inside the suite would be slow and environment-dependent. On Elixir 1.20.5 /
+OTP 29 it prints:
+
+```
+companion beam: _build/prod/rel/typedoc_probe/lib/typedoc_probe-0.1.0/ebin/Elixir.TypedocProbe.__ToolCall__.beam
+description: "Postal address"
+run: {:ok, :ok}
+docs: {:error, :chunk_not_found}
+specs: :error
+```
+
+The `docs` and `specs` lines show that the release stripped the chunks, while
+the companion beam is present and both API calls use the typedoc description.
 
 ## Type mapping
 
@@ -303,11 +321,19 @@ the optional arguments, which is what `ToolCall.Runner` constructs.
 
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so
-`emit/3` on a module is a lookup and `strict` can stay a runtime boolean.
-Measured on a 20-tool module: a fresh render costs 47 µs per call, the lookup
-0.2 µs; the embedded schemas add about 35 KB to the beam and 9 ms to
-compilation. A module built at runtime (`ToolCall.IR.Tool`) is rendered on
-demand instead.
+`emit/3` on a module returns a precompiled literal and `strict` can stay a
+runtime boolean. The lookup is guarded: the generated `__schemas__/0` and
+`__tools__/0` check the companion with `Code.ensure_loaded?/1` and
+`function_exported?/2` before using it, which keeps a stale companion from
+serving old data.
+
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with the typedoc
+companion present, `emit/3` costs about 0.13 µs per call and `run/3` about
+0.6 µs; without a companion, both cost roughly 13–25 µs because the failed
+`Code.ensure_loaded?/1` searches the code path (the exact cost depends on the
+code path length). A fresh render costs about 15–25 µs per call. The embedded
+schemas add about 35 KB to the beam and 9 ms to compilation. A module built at
+runtime (`ToolCall.IR.Tool`) is rendered on demand instead.
 
 **Strict mode is an emitter concern.** `strict: true` sets the tool flag,
 rewrites optional properties to `["T","null"]`, moves every property (nested

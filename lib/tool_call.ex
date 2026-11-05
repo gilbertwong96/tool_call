@@ -20,11 +20,12 @@ defmodule ToolCall do
       ToolCall.emit(MyApp.Tools.Weather, :openai)
       ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Shanghai"})
 
-  Everything is generated at compile time from module attributes. Nothing is
-  read back from the compiled beam at runtime, because release builds strip the
-  `Docs` and `Dbgi` chunks. Visible local `@typedoc` text is recovered in a
-  second compile phase (`@after_compile`) and embedded in a generated companion
-  module; runtime code never calls `Code.fetch_docs/1`.
+  Everything is generated at compile time from module attributes. No runtime
+  path reads the `Docs` or `Dbgi` chunks, because release builds strip them.
+  Visible local `@typedoc` text is recovered in a second compile phase
+  (`@after_compile`) and embedded in a generated companion module; runtime code
+  never calls `Code.fetch_docs/1`. The companion is ordinary compiled code,
+  loaded on first use like any other module.
 
   ## Supported typespec subset
 
@@ -216,8 +217,9 @@ defmodule ToolCall do
 
   defp warn_docs_failure(env, :corrupt_docs_chunk) do
     IO.warn(
-      "#{inspect(env.module)}: the Docs chunk could not be decoded, so @typedoc " <>
-        "descriptions were skipped; using phase-one descriptions",
+      "#{inspect(env.module)}: the Docs chunk could not be decoded or has an " <>
+        "unexpected structure, so @typedoc descriptions were skipped; using " <>
+        "phase-one descriptions",
       file: env.file,
       line: env.line
     )
@@ -279,8 +281,8 @@ defmodule ToolCall do
   Emits schemas for `target` (`:openai` or `:anthropic`).
 
   For a module the supported variants are rendered at **compile time** and
-  embedded as a literal, so this is a map lookup and `strict` may be a runtime
-  boolean. A module returns a list with one schema per tool; a single
+  embedded as a literal, so this is a guarded map lookup and `strict` may be a
+  runtime boolean. A module returns a list with one schema per tool; a single
   `ToolCall.IR.Tool` returns one schema map and a list of them a list, rendered
   on demand, which is what dynamically built tools need. Runtime IR is
   validated before rendering; invalid types raise `ArgumentError`.

@@ -4,8 +4,8 @@ defmodule ToolCall.ReleaseSmokeTest do
   # source file through the Mix project, strips the same chunks from the module
   # and its typedoc companion, loads both from an isolated code path, and
   # exercises the public API. It does not assemble an OTP release; see the
-  # release notes in README.md for the manual `mix release` check and its
-  # remaining limits.
+  # release notes in docs/design.md and test/manual_release_probe.sh for the
+  # manual `mix release` check and its remaining limits.
   use ExUnit.Case, async: false
 
   @moduletag capture_log: true

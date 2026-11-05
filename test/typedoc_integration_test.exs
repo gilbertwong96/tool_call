@@ -163,7 +163,7 @@ defmodule ToolCall.TypedocIntegrationTest do
     assert Enum.map_join(diagnostics, "\n", & &1.message) =~ "the Docs chunk is missing"
   end
 
-  test "a structurally invalid Docs chunk warns as undecodable" do
+  test "a structurally invalid Docs chunk warns as corrupt" do
     invalid = {:docs_v1, 0, :elixir, "text/markdown", :none, %{}, :not_a_list}
 
     {module, diagnostics} =
@@ -174,10 +174,11 @@ defmodule ToolCall.TypedocIntegrationTest do
 
     on_exit(fn -> unload(module) end)
 
-    assert Enum.map_join(diagnostics, "\n", & &1.message) =~ "could not be decoded"
+    assert Enum.map_join(diagnostics, "\n", & &1.message) =~
+             "could not be decoded or has an unexpected structure"
   end
 
-  test "an unreadable beam warns and falls back" do
+  test "an unreadable beam warns" do
     {module, diagnostics} =
       compile_with_after_compile_probe!(fn _bytecode -> <<1, 2, 3>> end, @typedoc_source)
 

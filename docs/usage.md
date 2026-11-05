@@ -64,11 +64,20 @@ and renders the three supported variants — `{:openai, false}`,
 `__schemas__/0`. A second compile phase (`@after_compile`) reads the
 just-compiled `Docs` chunk for `@typedoc` fallback descriptions; if any apply,
 the enriched literals live in a generated companion module and `__schemas__/0`
-delegates to it. `ToolCall.emit/3` on a module is still a map lookup, so
-`strict` may be a runtime boolean and there is nothing to cache.
+delegates to it. `ToolCall.emit/3` on a module still returns a precompiled
+literal, so `strict` may be a runtime boolean and no schema is rendered per
+call.
 
-Measured on a 20-tool module: `emit/3` costs about 0.2 µs, a fresh render costs
-about 47 µs, and the embedded schemas add roughly 35 KB to the beam and 9 ms to
+The lookup is guarded: the generated `__schemas__/0` and `__tools__/0` call
+`Code.ensure_loaded?/1` and `function_exported?/2` on the companion before
+using it, so a stale or missing companion falls back to the phase-one literals.
+
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with a typedoc
+companion present, `emit/3` takes about 0.13 µs and `run/3` about 0.6 µs.
+Without a companion, each call takes roughly 13–25 µs because the failed
+`Code.ensure_loaded?/1` searches the code path; the exact cost depends on how
+long the code path is. A fresh render of a runtime `ToolCall.IR.Tool` costs
+about 15–25 µs. The embedded schemas add roughly 35 KB to the beam and 9 ms to
 compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
