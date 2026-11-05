@@ -69,8 +69,10 @@ Code.Typespec.fetch_types(M)  #=> :error
 Code.fetch_docs(M)            #=> {:error, :chunk_not_found}
 ```
 
-Therefore everything is derived in `@before_compile` from module attributes.
-Nothing reads the beam back at runtime.
+Therefore phase one derives everything in `@before_compile` from module
+attributes. The one piece unavailable at that point is `@typedoc`; phase two
+reads it from the `Docs` chunk in `@after_compile`, at compile time, and embeds
+the result as literals. Nothing reads the beam back at runtime.
 
 ### 3. Typespecs express more than JSON Schema can
 
@@ -101,6 +103,73 @@ def f(a :: T, b)            @on_definition
 callback can pair a definition with its `@doc` (the attribute is single-valued
 and is consumed immediately) and with `\\` defaults (which live in the function
 head, not in the spec).
+
+## Typedoc fallback descriptions
+
+`@typedoc` describes a local type, not a function. It is used only as a fallback
+description for a parameter whose declared type is that local type, directly or
+wrapped as `address() | nil`. It does not apply to `list(address())`, map fields,
+aliases from another module or provider types, and it never changes the tool
+description (`@doc` owns that). Precedence:
+
+1. `@tool_param` description
+2. `@doc` `## Parameters` bullet
+3. `@typedoc` of the parameter's local type
+4. no description
+
+An empty-string `@tool_param` description clears the description and suppresses
+the fallback. `@typedoc false` contributes nothing. `@typep` has no entry to
+recover: Elixir discards its typedoc at definition time, so the type still
+participates in local-type inlining but never provides a description.
+
+`@typedoc` is consumed by the following `@type` before `@before_compile`, so
+phase one cannot see it. Phase two (`@after_compile`) reads the just-compiled
+EEP-48 `Docs` chunk, matches only `{{:type, name, arity}, ...}` entries, and
+applies text to parameters whose typedoc key was recorded after variable
+substitution and `__MODULE__` localization but before local-type inlining. A
+parameterized local type such as `pair(integer())` matches `pair/1`; a `when`
+constraint and `__MODULE__.address()` both match `address/0`.
+
+Phase two distinguishes a missing `Docs` chunk from an undecodable or
+structurally invalid one. With docs enabled, a missing chunk warns; a compile
+with `docs: false` silently skips the fallback because the absent chunk is
+expected. A corrupt chunk warns, removes any stale companion and falls back to
+the phase-one descriptions. A structurally invalid but term-decodable chunk is
+reported as corrupt, not as absent.
+
+### Companion lifecycle and releases
+
+When a description changed, phase two builds the enriched tools and schemas,
+creates `Module.concat(module, "__ToolCall__")`, and writes its beam to
+`Mix.Project.compile_path/0` for source-file modules. `Code.compile_string/1`
+and IEx (`nofile`) modules keep the companion in memory only. When no typedoc
+applies, no companion is created and a stale one is removed.
+
+The original module's `__tools__/0` and `__schemas__/0` delegate only when the
+companion exports a matching compile-generation token. The token changes on
+every phase-one compile, so a failed or skipped write, a partially written beam,
+or an old companion can never serve stale data; the module falls back to the
+phase-one literals. Companion creation/writing failures warn and keep the
+phase-one literals rather than raising; `--warnings-as-errors` still treats that
+warning as a build failure. A loaded module or existing beam without the
+`__tool_call_companion__/0` marker is treated as a user module: it is never
+purged, overwritten or deleted, and the build warns and uses phase-one
+descriptions. Treat `<Module>.__ToolCall__` as reserved.
+
+The companion beam is not in Mix's compile manifest. `mix clean` removes it;
+deleting a source module can leave it in ebin until clean (harmless because of
+the generation token, though a release may copy the unused beam). A build that
+predates the marker leaves foreign companion beams behind until `mix clean`.
+Release assembly copies the companion beam from the application's ebin, so a
+`strip_beams: true` release still has the enriched literals; the `Docs` and
+`Dbgi` chunks are stripped, but the companion's literal functions are not.
+
+The test suite reproduces the stripped-release shape: it compiles a fixture and
+its companion, strips `Docs`/`Dbgi` with `:beam_lib`, loads both from an
+isolated code path, and calls `ToolCall.emit/3` and `ToolCall.run/3`. It does
+not assemble a full `mix release`; a manual default `mix release` probe verified
+that the companion beam is copied and the typedoc description works from the
+release.
 
 ## Type mapping
 
@@ -170,10 +239,8 @@ still drives charlist conversion and its schema default. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
 Not handled: recursive types (no `$ref`/`$defs`, so a recursive reference
-becomes `{}`), bitstrings with explicit sizes, struct expansion (without a
-provider, remote types such as `URI.t()` stay `{}`), and `@typedoc` capture.
-`@typedoc` is consumed by `@type` before `@before_compile`, so use `@doc`
-parameter bullets or `@tool_param` descriptions for tool-facing text.
+becomes `{}`), bitstrings with explicit sizes, and struct expansion (without a
+provider, remote types such as `URI.t()` stay `{}`).
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained
@@ -327,7 +394,7 @@ never lets it propagate.
 
 | Stage | Work |
 |---|---|
-| 0.1 (current) | compile-time derivation, local `@type` resolution, custom type providers, OpenAI (strict included) + Anthropic emitters, coercion, dispatcher |
-| 0.2 | `@typedoc` capture via `@after_compile`, `$ref`/`$defs` for recursive types, struct field extraction with `@enforce_keys` |
+| 0.1 (current) | compile-time derivation, local `@type` resolution, `@typedoc` fallback descriptions, custom type providers, OpenAI (strict included) + Anthropic emitters, coercion, dispatcher |
+| 0.2 | `$ref`/`$defs` for recursive types, struct field extraction with `@enforce_keys` |
 | 0.3 | result encoding (the return type comes back into the IR), Gemini + MCP `emit/3` targets (MCP export exists), streaming `tool_calls` delta aggregation helpers |
 | 0.4 | approval/human-in-the-loop hooks, per-tool timeouts, audit log |

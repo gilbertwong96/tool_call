@@ -52,18 +52,23 @@ stores both as structured data at compile time. Tool definitions are the same
 information in another format, so there is no reason for a second source of
 truth.
 
-The library derives everything in `@before_compile`, never by reflecting on the
-compiled beam: release builds strip the `Docs` and `Dbgi` chunks, which is
-exactly where Code.Typespec and `Code.fetch_docs` read from. Release
-`strip_beams: true` is covered below.
+The library derives everything at compile time. The IR and provider schemas are
+built in `@before_compile`; a second compile phase in `@after_compile` reads the
+just-compiled `Docs` chunk to pick up `@typedoc` text and embeds the result as
+ordinary literals. Nothing reads the beam at runtime: release builds strip the
+`Docs` and `Dbgi` chunks, which is exactly where Code.Typespec and
+`Code.fetch_docs` read from. Release `strip_beams: true` is covered below.
 
 ## Releases and `strip_beams: true`
 
 `mix release` uses `strip_beams: true` by default. ToolCall is designed for
-that: every tool definition is derived in `@before_compile`, and the generated
+that: every tool definition is derived at compile time, and the generated
 `__tools__/0`, `__schemas__/0` and `__run__/2` functions are ordinary code and
-literal data. Stripping removes the `Docs`/`Dbgi` chunks, not those functions
-or the compiled schemas.
+literal data. When `@typedoc` applies, the enriched literals live in a generated
+companion module (`MyApp.Tools.Weather.__ToolCall__`) whose beam is written to
+the application's compile path and copied into the release like any other beam.
+Stripping removes the `Docs`/`Dbgi` chunks, not the generated functions, the
+companion literals or the compiled schemas.
 
 That means these keep working in a stripped release:
 
@@ -78,13 +83,14 @@ What stops working is runtime reflection that was never part of ToolCall:
 
 ```elixir
 Code.Typespec.fetch_specs(MyApp.Tools.Weather)  #=> :error
-Code.fetch_docs(MyApp.Tools.Weather)            #=> :error
+Code.fetch_docs(MyApp.Tools.Weather)            #=> {:error, :chunk_not_found}
 ```
 
 The library does not call either function at runtime. `@doc`, `@spec`, local
 `@type` declarations and `@tool_param` overrides are consumed at compile time;
-the resulting descriptions, types, defaults and schemas are embedded in the
-module.
+`@typedoc` is recovered in the compile-time `@after_compile` phase; the
+resulting descriptions, types, defaults and schemas are embedded in the module
+or its companion.
 
 Two release-specific caveats:
 
@@ -97,6 +103,37 @@ Two release-specific caveats:
 
 `mix tool_call.export` is a build-time Mix task, not a runtime requirement.
 Run it while building the release if you need a checked-in JSON file.
+
+### Typedoc companion lifecycle
+
+`@typedoc` text lives in the `Docs` chunk, which is only readable after the
+module closes. Phase two creates the companion only when at least one
+parameter description changed, and removes it when typedoc no longer applies.
+The companion carries a compile-generation token; `__tools__/0` and
+`__schemas__/0` use it only when the token matches the module's current
+generation. A stale, partially written or failed companion therefore falls back
+to the phase-one descriptions instead of serving old data.
+
+Source-file modules persist the companion beam under
+`Mix.Project.compile_path/0`; `Code.compile_string/1` and IEx (`nofile`)
+modules keep it in memory only. The beam is not registered in Mix's compile
+manifest:
+
+- `mix clean` removes it with the build directory.
+- Deleting a source module can leave its companion beam until the next
+  `mix clean`. The generation token makes it harmless, and the unused beam may
+  still be copied into a release.
+- Upgrading from a ToolCall build that predates the companion marker requires
+  one `mix clean`: such a beam is treated as foreign, so ToolCall warns and
+  keeps phase-one descriptions rather than overwriting it.
+- A user module named `<Module>.__ToolCall__` is never overwritten; ToolCall
+  warns and keeps phase-one descriptions. Treat that name as reserved.
+
+Phase two is best-effort. A missing `Docs` chunk warns when docs are enabled;
+an undecodable chunk or a failed companion write also warns and leaves the
+phase-one descriptions in place. A compile with `docs: false` is expected to
+have no `Docs` chunk, so it skips the fallback silently. A structurally invalid
+but term-decodable chunk is reported as corrupt, not as absent.
 
 ## What you get
 
@@ -189,6 +226,16 @@ and convert in the function.
 - **`@type` declarations in the same module are resolved**, including `@typep`
   and `@opaque`, with parameters (`@type pair(a) :: {a, a}`). Recursive
   definitions stop at the first re-entry and that reference becomes `{}`.
+- **`@typedoc` is a fallback parameter description.** A parameter declared as a
+  local `@type` or `@opaque`, directly or wrapped as `<type>() | nil`, uses the
+  type's typedoc when the parameter has no description. Parameterized local
+  types work too: `pair(integer())` uses the typedoc of `pair/1`. Precedence is
+  `@tool_param` description, then a `@doc` `## Parameters` bullet, then
+  `@typedoc`, then no description; an empty-string `@tool_param` suppresses the
+  fallback. Nested and wrapped uses such as `list(address())` or
+  `%{address: address()}` do not inherit typedoc. `@typep` is unsupported for
+  descriptions because Elixir discards its typedoc at definition time; the
+  private type is still resolved for the schema. `@typedoc false` is hidden too.
 - **Large integers travel as strings.** Opt in per argument:
 
   ```elixir
@@ -270,15 +317,16 @@ end
 
 ## Status
 
-`0.1.0-dev`. Working: compile-time derivation, local `@type` resolution, the
-type subset in [`docs/design.md`](docs/design.md), OpenAI (with `strict: true`)
-and Anthropic emitters, custom type providers, coercion, dispatcher, compile-time warnings for
+`0.1.0-dev`. Working: compile-time derivation, local `@type` resolution, typedoc
+fallback parameter descriptions, the type subset in
+[`docs/design.md`](docs/design.md), OpenAI (with `strict: true`) and Anthropic
+emitters, custom type providers, coercion, dispatcher, compile-time warnings for
 unnamed arguments, missing `@spec`, unrepresentable types and stray
 `@tool_param` entries.
 
 Not implemented yet: recursive types (`$ref`/`$defs`), struct field extraction
-with `@enforce_keys`, `@typedoc` capture, result encoding, Gemini/MCP `emit/3`
-targets (MCP export exists), streaming deltas, approval hooks, timeouts.
+with `@enforce_keys`, result encoding, Gemini/MCP `emit/3` targets (MCP export
+exists), streaming deltas, approval hooks, timeouts.
 
 ## Installation
 

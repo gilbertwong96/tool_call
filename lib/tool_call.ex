@@ -22,7 +22,9 @@ defmodule ToolCall do
 
   Everything is generated at compile time from module attributes. Nothing is
   read back from the compiled beam at runtime, because release builds strip the
-  `Docs` and `Dbgi` chunks.
+  `Docs` and `Dbgi` chunks. Visible local `@typedoc` text is recovered in a
+  second compile phase (`@after_compile`) and embedded in a generated companion
+  module; runtime code never calls `Code.fetch_docs/1`.
 
   ## Supported typespec subset
 
@@ -200,12 +202,16 @@ defmodule ToolCall do
   end
 
   defp warn_docs_failure(env, :missing_docs_chunk) do
-    IO.warn(
-      "#{inspect(env.module)}: the Docs chunk is missing, so @typedoc descriptions " <>
-        "were skipped (docs may be disabled); using phase-one descriptions",
-      file: env.file,
-      line: env.line
-    )
+    # `docs: false` is a deliberate compile option, not a broken beam; the
+    # missing chunk is expected and the typedoc fallback is simply skipped.
+    if Code.compiler_options()[:docs] != false do
+      IO.warn(
+        "#{inspect(env.module)}: the Docs chunk is missing, so @typedoc descriptions " <>
+          "were skipped; using phase-one descriptions",
+        file: env.file,
+        line: env.line
+      )
+    end
   end
 
   defp warn_docs_failure(env, :corrupt_docs_chunk) do

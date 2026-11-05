@@ -109,6 +109,28 @@ defmodule ToolCall.TypedocTest do
     assert Typedoc.from_bytecode(corrupt_docs_chunk(bytecode)) == %{}
   end
 
+  test "from_bytecode/1 reports a decodable but structurally invalid Docs chunk as corrupt" do
+    module = "TypedocStructureFixture#{System.unique_integer([:positive])}"
+
+    [{_module, bytecode}] =
+      compile_fixture(
+        """
+        defmodule #{module} do
+          @typedoc "Postal address"
+          @type address :: String.t()
+        end
+        """,
+        docs: true
+      )
+
+    invalid = {:docs_v1, 0, :elixir, "text/markdown", :none, %{}, :not_a_list}
+
+    assert Typedoc.from_bytecode(replace_docs_chunk(bytecode, invalid)) == %{}
+
+    assert Typedoc.from_bytecode_result(replace_docs_chunk(bytecode, invalid)) ==
+             {:error, :corrupt_docs_chunk}
+  end
+
   test "from_bytecode_result/1 distinguishes missing and corrupt Docs chunks" do
     module = "TypedocStatusFixture#{System.unique_integer([:positive])}"
     no_docs_module = "TypedocStatusNoDocsFixture#{System.unique_integer([:positive])}"
@@ -232,6 +254,19 @@ defmodule ToolCall.TypedocTest do
 
     <<binary_part(beam, 0, offset + 8)::binary, 0,
       binary_part(beam, offset + 9, size - offset - 9)::binary>>
+  end
+
+  defp replace_docs_chunk(beam, docs) do
+    {:ok, _module, chunks} = :beam_lib.all_chunks(beam)
+
+    chunks =
+      Enum.map(chunks, fn
+        {~c"Docs", _data} -> {~c"Docs", :erlang.term_to_binary(docs)}
+        other -> other
+      end)
+
+    {:ok, binary} = :beam_lib.build_module(chunks)
+    binary
   end
 
   defp definitions do

@@ -71,7 +71,14 @@ defmodule ToolCall.Typedoc do
   end
 
   defp decode(chunk) do
-    {:ok, chunk |> :erlang.binary_to_term() |> from_docs()}
+    case :erlang.binary_to_term(chunk) do
+      {:docs_v1, _annotation, _language, _format, _module_doc, _metadata, docs} = term
+      when is_list(docs) ->
+        {:ok, from_docs(term)}
+
+      _other ->
+        {:error, :corrupt_docs_chunk}
+    end
   rescue
     _exception -> {:error, :corrupt_docs_chunk}
   end

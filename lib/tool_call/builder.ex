@@ -5,7 +5,9 @@ defmodule ToolCall.Builder do
   #
   # This runs inside `@before_compile`, never at runtime: `mix release` strips
   # the `Docs` and `Dbgi` chunks, so `Code.Typespec` / `Code.fetch_docs` are not
-  # available in production. See docs/design.md and the README release notes.
+  # available in production. Typedoc enrichment happens after this module
+  # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
+  # README release notes.
 
   alias ToolCall.{Doc, LocalTypes, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
@@ -15,7 +17,7 @@ defmodule ToolCall.Builder do
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
   @spec build(module(), list(), list(), list(), Macro.Env.t(), [module()]) ::
-          %{tools: [Tool.t()], typedoc_keys: map()}
+          %{tools: [Tool.t()], typedoc_keys: Typedoc.typedoc_keys()}
   def build(module, defs, specs, overrides, env, providers) do
     overrides = normalize_overrides(module, overrides)
 

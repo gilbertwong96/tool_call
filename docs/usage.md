@@ -34,6 +34,7 @@ Everything else is derived. What the library reads:
 | `@doc false` | the function is not a tool |
 | no `@spec` | the function is skipped with a warning |
 | `@type` in the same module | inlined; a remote type without a provider stays `{}` |
+| `@typedoc` on a local `@type` or `@opaque` | fallback parameter description when no `@doc` bullet or `@tool_param` description exists; `@typep` is unsupported |
 | `use ToolCall, types: [MyProvider]` | resolves custom remote types through `ToolCall.TypeProvider` |
 | a duplicate name, e.g. `f(city :: String.t(), city :: integer())` | the second becomes `city_2`, with a warning |
 | `_ :: String.t()` | the head variable name, or `argN` if that is `_` too |
@@ -60,8 +61,11 @@ passed through and can override a default.
 Everything is compile time. Inside `@before_compile` the library derives the IR
 and renders the three supported variants — `{:openai, false}`,
 `{:openai, true}` and `{:anthropic, false}` — into literals stored in
-`__schemas__/0`. `ToolCall.emit/3` on a module is a map lookup, so `strict` may
-be a runtime boolean and there is nothing to cache.
+`__schemas__/0`. A second compile phase (`@after_compile`) reads the
+just-compiled `Docs` chunk for `@typedoc` fallback descriptions; if any apply,
+the enriched literals live in a generated companion module and `__schemas__/0`
+delegates to it. `ToolCall.emit/3` on a module is still a map lookup, so
+`strict` may be a runtime boolean and there is nothing to cache.
 
 Measured on a 20-tool module: `emit/3` costs about 0.2 µs, a fresh render costs
 about 47 µs, and the embedded schemas add roughly 35 KB to the beam and 9 ms to

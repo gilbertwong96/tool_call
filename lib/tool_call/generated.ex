@@ -6,8 +6,8 @@ defmodule ToolCall.Generated do
   # enriched content: it changes on every phase-one compile, so a typedoc-only
   # change still invalidates a stale or partially written companion and falls
   # back to the phase-one data. The token combines wall-clock nanoseconds with
-  # a VM-local counter, so it is unique across VM restarts (each `mix compile`
-  # starts a fresh VM), not merely unique within one VM.
+  # a VM-local counter, so it is practically distinct across VM restarts (each
+  # `mix compile` starts a fresh VM), not merely unique within one VM.
   #
   # `create/5` and `remove/2` own the companion lifecycle: `:nofile` modules
   # keep the companion in memory, while source-file modules persist it under
@@ -191,10 +191,8 @@ defmodule ToolCall.Generated do
     if :code.is_loaded(companion) == false do
       :absent
     else
-      ours? =
-        function_exported?(companion, :__tool_call_companion__, 0) and
-          companion.__tool_call_companion__() == true
-
+      marker_exported? = function_exported?(companion, :__tool_call_companion__, 0)
+      ours? = marker_exported? and companion.__tool_call_companion__() == true
       if ours?, do: :ours, else: :foreign
     end
   rescue
