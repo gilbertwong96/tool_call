@@ -28,5 +28,9 @@ tool_call-*.tar
 # Local agent session state.
 /.pi/
 
+
+# Local git worktrees
+/.worktrees/
+
 # Local design/plan artifacts
 /docs/superpowers/
