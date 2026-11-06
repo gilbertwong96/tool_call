@@ -516,6 +516,26 @@ defmodule ToolCall.TypeProviderTest do
     assert param_schema(Tools, "string_type", "value") == %{"type" => "string"}
   end
 
+  test "resolves %Struct{} syntax through a provider" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TypeProviderTest.MoneyProvider]
+
+        @doc "Struct syntax."
+        @spec go(value :: %ToolCall.TypeProviderTest.Money{}) :: String.t()
+        def go(value), do: value
+      end
+      """)
+
+    assert param_schema(module, "go", "value") == %{
+             "type" => "string",
+             "pattern" => "^-?\\d+\\.\\d{2}$"
+           }
+
+    assert {:ok, %Money{amount: "12.34"}} = ToolCall.run(module, "go", %{"value" => "12.34"})
+  end
+
   test "a struct without a provider falls back to any" do
     module =
       compile!("""

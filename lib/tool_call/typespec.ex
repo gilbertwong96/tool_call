@@ -72,6 +72,10 @@ defmodule ToolCall.Typespec do
     end
   end
 
+  def to_type({:%, _, [module, {:%{}, _, _fields}]}, providers) when is_atom(module) do
+    remote(module, :t, [], providers)
+  end
+
   def to_type({:%{}, _, pairs}, providers), do: build_object(pairs, providers)
 
   def to_type({:{}, _, elements}, providers) do
@@ -860,6 +864,8 @@ defmodule ToolCall.Typespec do
   def default_compatible?(%Type{transform: transform}, _value) when not is_nil(transform),
     do: true
 
+  def default_compatible?(%Type{nullable: true}, nil), do: true
+
   def default_compatible?(%Type{kind: :integer} = type, value) when is_integer(value),
     do: within_bounds?(type, value)
 
@@ -902,10 +908,28 @@ defmodule ToolCall.Typespec do
     within_bounds?(type, length(value)) and Enum.all?(value, &default_compatible?(items, &1))
   end
 
-  def default_compatible?(%Type{kind: :tuple}, value) when is_list(value) or is_tuple(value),
-    do: true
+  def default_compatible?(%Type{kind: :tuple, items: nil}, value)
+      when is_list(value) or is_tuple(value),
+      do: true
 
-  def default_compatible?(%Type{kind: :object}, value), do: is_map(value)
+  def default_compatible?(%Type{kind: :tuple, items: items}, value)
+      when is_list(value) or is_tuple(value) do
+    values = if is_tuple(value), do: Tuple.to_list(value), else: value
+
+    is_list(items) and
+      length(values) == length(items) and
+      items
+      |> Enum.zip(values)
+      |> Enum.all?(fn {type, item} -> default_compatible?(type, item) end)
+  end
+
+  def default_compatible?(%Type{kind: :object} = type, value) when is_map(value) do
+    fields = type.fields || []
+
+    Enum.all?(fields, &default_field_compatible?(&1, value)) and
+      default_extra_compatible?(type, fields, value)
+  end
+
   def default_compatible?(%Type{kind: :any}, _value), do: true
 
   def default_compatible?(%Type{kind: :union} = type, value) do
@@ -913,6 +937,38 @@ defmodule ToolCall.Typespec do
   end
 
   def default_compatible?(%Type{}, _value), do: false
+
+  defp default_field_compatible?(%Field{required: required, type: type} = field, value) do
+    case default_field_value(value, field) do
+      {:ok, field_value} -> default_compatible?(type, field_value)
+      :error -> not required
+    end
+  end
+
+  defp default_field_value(value, %Field{key: key, name: name}) do
+    cond do
+      not is_nil(key) and Map.has_key?(value, key) -> {:ok, Map.fetch!(value, key)}
+      Map.has_key?(value, name) -> {:ok, Map.fetch!(value, name)}
+      true -> :error
+    end
+  end
+
+  defp default_extra_compatible?(%Type{additional: nil}, fields, value) do
+    Enum.all?(value, fn {key, _value} -> Enum.any?(fields, &default_field_key?(&1, key)) end)
+  end
+
+  defp default_extra_compatible?(%Type{additional: %Type{} = additional}, fields, value) do
+    value
+    |> Enum.reject(fn {key, _value} -> Enum.any?(fields, &default_field_key?(&1, key)) end)
+    |> Enum.all?(fn {_key, extra} -> default_compatible?(additional, extra) end)
+  end
+
+  defp default_extra_compatible?(%Type{}, _fields, _value), do: false
+
+  defp default_field_key?(%Field{key: nil, name: name}, key), do: key == name
+
+  defp default_field_key?(%Field{key: field_key, name: name}, key),
+    do: key == field_key or key == name
 
   defp within_bounds?(%Type{} = type, value) do
     minimum = type.minimum

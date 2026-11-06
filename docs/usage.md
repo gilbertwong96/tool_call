@@ -279,7 +279,7 @@ The full error list is in the [README](../README.md#errors).
   module. Both providers require `^[a-zA-Z0-9_-]{1,64}$`, so a function named
   `find?` warns. Two arities of one function share a name; only the first is
   exposed, with a warning.
-- **`use ToolCall` takes no options.** `use ToolCall, emit: [...]` raises; the
+- **`use ToolCall` only accepts `:types`.** `use ToolCall, emit: [...]` raises; the
   three provider variants are always rendered.
 - **`@tool_param` needs `fun:`**:
   `@tool_param %{fun: :transfer, name: "user_id", wire: :string_integer}`.

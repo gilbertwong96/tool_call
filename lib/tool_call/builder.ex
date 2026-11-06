@@ -193,9 +193,19 @@ defmodule ToolCall.Builder do
       |> Enum.with_index(1)
       |> Enum.map(fn {arg_ast, index} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
-        source_ast = type_ast |> substitute_vars(bindings) |> localize_module_types()
+
+        source_ast =
+          type_ast
+          |> substitute_vars(bindings)
+          |> expand_aliases(context.env)
+          |> localize_module_types(context.module)
+
         {type_ast, truncated?} = LocalTypes.expand(source_ast, context.definitions)
-        type_ast = expand_aliases(type_ast, context.env)
+
+        type_ast =
+          type_ast
+          |> expand_aliases(context.env)
+          |> localize_module_types(context.module)
 
         if not named? do
           warn(
@@ -224,16 +234,19 @@ defmodule ToolCall.Builder do
         %Param{
           name: param_name,
           type: type,
-          description: Map.get(doc_info.params, param_name),
           default: default_value(default, context.env),
           required: default == :none,
           source: source_ast
         }
-        |> drop_incompatible_default(context.module, location, name, arity)
-        |> apply_override(name, context.overrides)
-        |> validate_wire_type(context.module, location)
       end)
       |> unique_names(context.module, location, name, arity)
+      |> Enum.map(fn param ->
+        param
+        |> apply_doc_description(doc_info)
+        |> apply_override(name, context.overrides)
+        |> validate_wire_type(context.module, location)
+        |> drop_incompatible_default(context.module, location, name, arity)
+      end)
 
     %Tool{
       name: Atom.to_string(name),
@@ -355,6 +368,13 @@ defmodule ToolCall.Builder do
 
       true ->
         :ok
+    end
+  end
+
+  defp apply_doc_description(%Param{} = param, doc_info) do
+    case Map.fetch(doc_info.params, param.name) do
+      {:ok, description} -> %{param | description: description}
+      :error -> param
     end
   end
 
@@ -628,11 +648,13 @@ defmodule ToolCall.Builder do
   defp doc_value(nil), do: nil
   defp doc_value({_line, value}), do: value
 
-  # `__MODULE__.t()` is a remote reference to the current module; treat it as
-  # the local call `t()` so LocalTypes can inline it like `t()`.
-  defp localize_module_types(ast) do
+  # `__MODULE__.t()` and `ThisModule.t()` are remote references to the current
+  # module; treat them as the local call `t()` so LocalTypes can inline them.
+  # Aliases are expanded first, so `alias __MODULE__, as: Self` works too.
+  defp localize_module_types(ast, module) do
     Macro.prewalk(ast, fn
-      {{:., _, [{:__MODULE__, _, _}, fun]}, meta, args} when is_atom(fun) and is_list(args) ->
+      {{:., _, [remote, fun]}, meta, args}
+      when is_atom(fun) and is_list(args) and remote == module ->
         {fun, meta, args}
 
       node ->

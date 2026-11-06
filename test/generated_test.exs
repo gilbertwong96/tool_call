@@ -25,6 +25,26 @@ defmodule :"Elixir.ToolCall.GeneratedTest.MatchingFixture.__ToolCall__" do
   def __tools__, do: @tools
   def __schemas__, do: @schemas
   def __generation__, do: @generation
+  def __tool_call_companion__, do: true
+end
+
+defmodule ToolCall.GeneratedTest.ForeignCompanion do
+  @moduledoc false
+
+  @tools [%ToolCall.IR.Tool{name: "foreign"}]
+
+  def __tools__, do: @tools
+  def __schemas__, do: %{{:openai, false} => [%{"type" => "function", "name" => "foreign"}]}
+  def __generation__, do: 99
+end
+
+defmodule ToolCall.GeneratedTest.RaisingMarkerCompanion do
+  @moduledoc false
+
+  def __tools__, do: [%ToolCall.IR.Tool{name: "raising_marker"}]
+  def __schemas__, do: %{}
+  def __generation__, do: 100
+  def __tool_call_companion__, do: raise("marker boom")
 end
 
 defmodule ToolCall.GeneratedTest.UnstampedCompanion do
@@ -43,6 +63,7 @@ defmodule ToolCall.GeneratedTest.ToolsOnlyCompanion do
 
   def __tools__, do: @tools
   def __generation__, do: 7
+  def __tool_call_companion__, do: true
 end
 
 defmodule ToolCall.GeneratedTest.SchemasOnlyCompanion do
@@ -52,6 +73,7 @@ defmodule ToolCall.GeneratedTest.SchemasOnlyCompanion do
 
   def __schemas__, do: @schemas
   def __generation__, do: 11
+  def __tool_call_companion__, do: true
 end
 
 defmodule ToolCall.GeneratedTest do
@@ -91,6 +113,20 @@ defmodule ToolCall.GeneratedTest do
     assert first > 0
     refute first == second
     assert Bitwise.bsr(first, @generation_shift) in before..after_ts
+  end
+
+  test "does not delegate to a companion without the ToolCall marker" do
+    companion = ToolCall.GeneratedTest.ForeignCompanion
+
+    assert Generated.tools(companion, 99, @fallback_tools) == @fallback_tools
+    assert Generated.schemas(companion, 99, @fallback_schemas) == @fallback_schemas
+  end
+
+  test "does not delegate to a companion whose marker raises" do
+    companion = ToolCall.GeneratedTest.RaisingMarkerCompanion
+
+    assert Generated.tools(companion, 100, @fallback_tools) == @fallback_tools
+    assert Generated.schemas(companion, 100, @fallback_schemas) == @fallback_schemas
   end
 
   test "tools/3 delegates the enriched tools when the generation token matches" do

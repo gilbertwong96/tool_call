@@ -128,9 +128,11 @@ participates in local-type inlining but never provides a description.
 phase one cannot see it. Phase two (`@after_compile`) reads the just-compiled
 EEP-48 `Docs` chunk, matches only `{{:type, name, arity}, ...}` entries, and
 applies text to parameters whose typedoc key was recorded after variable
-substitution and `__MODULE__` localization but before local-type inlining. A
-parameterized local type such as `pair(integer())` matches `pair/1`; a `when`
-constraint and `__MODULE__.address()` both match `address/0`.
+substitution, alias expansion and current-module localization but before
+local-type inlining. A parameterized local type such as `pair(integer())`
+matches `pair/1`; a `when` constraint and `__MODULE__.address()` both match
+`address/0`. The same applies to `MyModule.address()` and to an alias of the
+current module, such as `Self.address()`.
 
 Phase two distinguishes a missing `Docs` chunk from an undecodable or
 structurally invalid one. With docs enabled, a missing chunk warns; a compile

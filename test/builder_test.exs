@@ -79,6 +79,38 @@ defmodule ToolCall.BuilderTest do
              ToolCall.run(module, :go, %{"city" => "x", "city_2" => 2})
   end
 
+  test "applies @tool_param to a renamed duplicate parameter" do
+    {module, _warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @tool_param %{fun: :go, name: "city_2", description: "second city only"}
+        @spec go(city :: String.t(), city :: integer()) :: String.t()
+        def go(city, count), do: city <> Integer.to_string(count)
+      end
+      """)
+
+    assert param_schema(module, "go", "city")["description"] == nil
+    assert param_schema(module, "go", "city_2")["description"] == "second city only"
+  end
+
+  test "applies @doc parameter bullets to a renamed duplicate parameter" do
+    {module, _warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Duplicate names.\n\n## Parameters\n  * `city_2` - second city only"
+        @spec go(city :: String.t(), city :: integer()) :: String.t()
+        def go(city, count), do: city <> Integer.to_string(count)
+      end
+      """)
+
+    assert param_schema(module, "go", "city")["description"] == nil
+    assert param_schema(module, "go", "city_2")["description"] == "second city only"
+  end
+
   test "unnamed parameters fall back to positional names" do
     {module, warnings} =
       compile_with_warnings!("""
@@ -498,6 +530,34 @@ defmodule ToolCall.BuilderTest do
     assert warnings =~ ~s(default for parameter "b" of go/2 is not compatible)
     refute Map.has_key?(param_schema(module, "go", "x"), "default")
     refute Map.has_key?(param_schema(module, "go", "b"), "default")
+  end
+
+  test "drops object defaults outside the parameter domain" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                missing :: %{a: integer(), b: integer()},
+                wrong :: %{a: integer()},
+                extra :: %{a: integer()}
+              ) :: term()
+        def go(
+              missing \\\\ %{a: 1},
+              wrong \\\\ %{a: "bad"},
+              extra \\\\ %{a: 1, b: 2}
+            ),
+            do: {missing, wrong, extra}
+      end
+      """)
+
+    assert warnings =~ ~s(default for parameter "missing" of go/3 is not compatible)
+    assert warnings =~ ~s(default for parameter "wrong" of go/3 is not compatible)
+    assert warnings =~ ~s(default for parameter "extra" of go/3 is not compatible)
+    refute Map.has_key?(param_schema(module, "go", "missing"), "default")
+    refute Map.has_key?(param_schema(module, "go", "wrong"), "default")
+    refute Map.has_key?(param_schema(module, "go", "extra"), "default")
   end
 
   test "drops map defaults whose keys JSON cannot represent" do

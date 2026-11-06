@@ -293,6 +293,64 @@ defmodule ToolCall.TypespecTest do
     refute Typespec.default_compatible?(%Type{kind: :unsupported}, "x")
   end
 
+  test "default_compatible?/2 validates tuple shape and object fields" do
+    tuple = %Type{kind: :tuple, items: [%Type{kind: :integer}, %Type{kind: :integer}]}
+
+    assert Typespec.default_compatible?(tuple, [1, 2])
+    refute Typespec.default_compatible?(tuple, [1])
+    refute Typespec.default_compatible?(tuple, [1, "x"])
+    assert Typespec.default_compatible?(%Type{kind: :tuple, items: nil}, [1, 2])
+    refute Typespec.default_compatible?(%Type{kind: :tuple, items: :not_a_list}, [1])
+
+    object = %Type{
+      kind: :object,
+      fields: [
+        %Field{name: "a", key: :a, type: %Type{kind: :integer}},
+        %Field{name: "b", key: :b, type: %Type{kind: :integer}}
+      ],
+      additional: nil
+    }
+
+    assert Typespec.default_compatible?(object, %{a: 1, b: 2})
+    refute Typespec.default_compatible?(object, %{a: 1})
+    refute Typespec.default_compatible?(object, %{a: 1, b: "x"})
+    refute Typespec.default_compatible?(object, %{a: 1, b: 2, c: 3})
+
+    assert Typespec.default_compatible?(
+             %Type{
+               kind: :object,
+               fields: [%Field{name: "a", key: nil, type: %Type{kind: :integer}}],
+               additional: nil
+             },
+             %{"a" => 1}
+           )
+
+    refute Typespec.default_compatible?(
+             %Type{kind: :object, fields: [], additional: :invalid},
+             %{}
+           )
+  end
+
+  test "default_compatible?/2 accepts nil for nullable values" do
+    nullable_integer = %Type{kind: :integer, nullable: true}
+
+    assert Typespec.default_compatible?(nullable_integer, nil)
+
+    assert Typespec.default_compatible?(
+             %Type{kind: :array, items: nullable_integer},
+             [nil, 1]
+           )
+
+    assert Typespec.default_compatible?(
+             %Type{
+               kind: :object,
+               fields: [%Field{name: "a", key: :a, type: nullable_integer}],
+               additional: nil
+             },
+             %{a: nil}
+           )
+  end
+
   test "validate_tool!/1 rejects defaults outside the parameter domain" do
     param = %ToolCall.IR.Param{name: "x", type: %Type{kind: :integer}, default: "x"}
 

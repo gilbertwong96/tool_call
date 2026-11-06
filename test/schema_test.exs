@@ -321,7 +321,7 @@ defmodule ToolCall.SchemaTest do
            |> get_in(["function", "parameters", "properties", "x"]) == %{"type" => "null"}
   end
 
-  test "a default tuple of the wrong size is kept as is" do
+  test "rejects a default tuple of the wrong size" do
     param = %Param{
       name: "t",
       type: %Type{kind: :tuple, items: [%Type{kind: :atom}, %Type{kind: :atom}]},
@@ -330,7 +330,26 @@ defmodule ToolCall.SchemaTest do
     }
 
     tool = %Tool{name: "go", description: "Go.", params: [param]}
-    assert Schema.params(tool)["properties"]["t"]["default"] == [true]
+
+    assert_raise ArgumentError, ~r/default \[true\] is not compatible/, fn ->
+      Schema.params(tool)
+    end
+  end
+
+  test "keeps an unvalidated tuple default shape when a transform bypasses compatibility" do
+    param = %Param{
+      name: "t",
+      type: %Type{
+        kind: :tuple,
+        items: [%Type{kind: :atom}],
+        transform: {SomeModule, :coerce}
+      },
+      default: [true, false],
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["t"]["default"] == [true, false]
   end
 
   test "emitters default their options" do

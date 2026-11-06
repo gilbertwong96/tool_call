@@ -267,11 +267,19 @@ defmodule ToolCall.Generated do
     loaded? = Code.ensure_loaded?(companion)
     exported? = function_exported?(companion, function, 0)
     stamped? = function_exported?(companion, :__generation__, 0)
+    marked? = companion_marked?(companion)
 
-    if loaded? and exported? and stamped? do
+    if loaded? and exported? and stamped? and marked? do
       companion.__generation__() == generation
     else
       false
     end
+  end
+
+  defp companion_marked?(companion) do
+    function_exported?(companion, :__tool_call_companion__, 0) and
+      companion.__tool_call_companion__() == true
+  rescue
+    _exception -> false
   end
 end

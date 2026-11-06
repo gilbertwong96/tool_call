@@ -120,6 +120,48 @@ defmodule ToolCall.TypedocIntegrationTest do
     assert param_description(module, "send", "to") == "Postal address"
   end
 
+  test "fully qualified current-module local types take their typedoc" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @doc "Send a parcel."
+        @spec send(to :: FIXTURE.address()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+  end
+
+  test "aliases to the current module keep local typedoc" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        alias FIXTURE, as: Self
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @doc "Send a parcel."
+        @spec send(to :: Self.address()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+  end
+
   test "@typedoc false is hidden and creates no companion" do
     {module, binary} =
       compile_with_docs_and_bytecode!("""
