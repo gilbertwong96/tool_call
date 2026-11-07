@@ -110,9 +110,12 @@ head, not in the spec).
 
 `@typedoc` describes a local type, not a function. It is used only as a fallback
 description for a parameter whose declared type is that local type, directly or
-wrapped as `address() | nil`. It does not apply to `list(address())`, map fields,
-aliases from another module or provider types, and it never changes the tool
-description (`@doc` owns that). Precedence:
+wrapped as `address() | nil`. A local alias chain such as
+`@type location :: address()` is followed until a documented type is found; the
+nearest key with a typedoc wins. Current-module `__MODULE__` and alias
+references inside alias bodies are resolved before traversal. It does not apply
+to `list(address())`, map fields, aliases from another module or provider types,
+and it never changes the tool description (`@doc` owns that). Precedence:
 
 1. `@tool_param` description
 2. `@doc` `## Parameters` bullet
@@ -162,10 +165,17 @@ warning as a build failure. A loaded module or existing beam without the
 purged, overwritten or deleted, and the build warns and uses phase-one
 descriptions. Treat `<Module>.__ToolCall__` as reserved.
 
-The companion beam is not in Mix's compile manifest. `mix clean` removes it;
-deleting a source module can leave it in ebin until clean (harmless because of
-the generation token, though a release may copy the unused beam). A build that
-predates the marker leaves foreign companion beams behind until `mix clean`.
+The companion beam is not in Mix's compile manifest. `mix clean` removes it.
+A source-file companion has a `.source` sidecar pointing at its source path;
+every ToolCall compile prunes companions whose source file is gone, and
+`mix tool_call.clean` performs the same cleanup without a compile. The task also
+scans companion beams directly: a missing parent beam removes an owned
+companion, and a live source from either the `.source` sidecar or the beam's
+`compile_info.source` keeps it. A stripped `compile_info` leaves only the
+parent-beam check. A remaining stale beam is harmless because of the generation
+token,
+though a release may copy it. A build that predates the marker leaves foreign
+companion beams behind until `mix clean`.
 Release assembly copies the companion beam from the application's ebin, so a
 `strip_beams: true` release still has the enriched literals; the `Docs` and
 `Dbgi` chunks are stripped, but the companion's literal functions are not.
@@ -320,10 +330,17 @@ atom per request.
 **Optional = has a default.** `required` is derived from `\\`, wherever the
 default appears in the argument list. A default that is not a compile-time
 literal is dropped from the schema (it would otherwise reach the model as a
-quoted AST) but the parameter stays optional. A literal that is valid JSON but
-outside the parameter's value domain is also dropped, with a compile-time
-warning. A reduced-arity call receives every required argument plus a prefix of
-the optional arguments, which is what `ToolCall.Runner` constructs.
+quoted AST) but the parameter stays optional. Module attribute defaults are
+expanded to their value first when that value is a JSON literal; structs remain
+non-literal. A literal that is valid JSON but outside the parameter's value
+domain is also dropped, with a compile-time warning. Defaults are parsed against
+the declared type recursively: nested `keyword(t)`, object/list fields and union
+branches retain their values, and `char()`/`charlist()` values are rendered in
+wire form. Boolean and nil `atom()` defaults are omitted; booleans are rejected
+by the atom wire domain, and nil is omitted even when the type is nullable. A
+reduced-arity call receives every required
+argument plus a prefix
+of the optional arguments, which is what `ToolCall.Runner` constructs.
 
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so
@@ -345,10 +362,12 @@ That includes a module whose local-type parameter is already documented by a
 `@doc` bullet or `@tool_param` description. With a typedoc companion present,
 `emit/3` costs about 0.14 µs and `run/3` about 0.6 µs. A module with an
 undocumented local-type parameter whose type has no visible `@typedoc` still
-takes the guarded path and pays roughly 16–26 µs per call because the failed
-`Code.ensure_loaded?/1` searches the code path (the exact cost depends on the
-code path length); the companion is removed, but the accessor cannot know that
-without the lookup. A fresh render of a runtime `ToolCall.IR.Tool` costs about
+takes the guarded path. The first `__tools__/0` or `__schemas__/0` call pays
+roughly 16–26 µs because the failed `Code.ensure_loaded?/1` searches the code
+path (the exact cost depends on the code path length); the per-companion,
+per-function absence is cached for that generation, so later calls return the
+phase-one literal without repeating the lookup. A fresh render of a runtime
+`ToolCall.IR.Tool` costs about
 0.5 µs per call. The embedded schemas add about 35 KB to the beam and 9 ms to
 compilation. A module built at runtime (`ToolCall.IR.Tool`) is rendered on
 demand instead.
@@ -436,9 +455,22 @@ never lets it propagate.
 
 ## Roadmap
 
-| Stage | Work |
-|---|---|
-| 0.1 (current) | compile-time derivation, local `@type` resolution, `@typedoc` fallback descriptions, custom type providers, OpenAI (strict included) + Anthropic emitters, coercion, dispatcher |
-| 0.2 | `$ref`/`$defs` for recursive types, struct field extraction with `@enforce_keys` |
-| 0.3 | result encoding (the return type comes back into the IR), Gemini + MCP `emit/3` targets (MCP export exists), streaming `tool_calls` delta aggregation helpers |
-| 0.4 | approval/human-in-the-loop hooks, per-tool timeouts, audit log |
+See [`roadmap.md`](roadmap.md) for the planned `0.2` / `0.3` / `0.4` stages,
+release readiness work and current status.
+
+## Design boundaries
+
+These are intentional limits rather than missing implementation:
+
+- `@typedoc` applies only to the parameter's directly declared local type,
+  including local alias chains. It is not inherited by `list(address())`, map
+  fields, remote types or provider types. `@typep` typedocs are discarded by
+  Elixir before the Docs chunk exists.
+- One tool is one schema: overloaded specs and two arities of the same function
+  cannot both be exposed under the same name.
+- Defaults that JSON cannot carry, notably tuples, are omitted. JSON numbers
+  outside Erlang's finite float range fail in the decoder before the library
+  sees them.
+- `@doc` metadata-only entries have no description text. `@on_definition` is an
+  accumulating hook shared with other libraries.
+- Type providers resolve types, not typedoc descriptions.

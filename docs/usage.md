@@ -27,17 +27,19 @@ Everything else is derived. What the library reads:
 
 | You write | It reads |
 |---|---|
-| `@spec f(city :: String.t())` | parameter name `city` and its type. Without `city ::` the name falls back to the head variable (or `argN`) and a warning is printed; a bare type variable in a `when` constraint counts as unnamed |
-| `def f(city, days \\ 3)` | `days` is optional, `3` is emitted as `default` |
-| first `@doc` paragraph | tool `description` |
-| `* name - text` under `## Parameters` | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored) |
+| `@spec f(city :: String.t())` | parameter name `city` and its type. Without `city ::` the name is taken by position from a `@doc` bullet when available, then falls back to the head variable (or `argN`) with a warning; a bare type variable in a `when` constraint counts as unnamed |
+| `def f(city, days \\ 3)` | `days` is optional, `3` is emitted as `default`; a module attribute value is expanded when it is a JSON literal |
+| first `@doc` paragraph | tool `description`; a leading `# Title` is stripped and a leading level-2+ section heading is omitted in favor of its body |
+| `* name - text` (also `+` and `-`; optional `(Type.t())`) under `## Parameters` (a trailing `:` and up to three spaces of heading indentation are accepted) | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored) |
 | `@doc false` | the function is not a tool |
 | no `@spec` | the function is skipped with a warning |
 | `@type` in the same module | inlined; a remote type without a provider stays `{}` |
-| `@typedoc` on a local `@type` or `@opaque` | fallback parameter description when no `@doc` bullet or `@tool_param` description exists; `@typep` is unsupported |
+| `@typedoc` on a local `@type` or `@opaque` | fallback parameter description when no `@doc` bullet or `@tool_param` description exists; local alias chains are followed to the nearest documented type; `@typep` is unsupported |
 | `use ToolCall, types: [MyProvider]` | resolves custom remote types through `ToolCall.TypeProvider` |
 | a duplicate name, e.g. `f(city :: String.t(), city :: integer())` | the second becomes `city_2`, with a warning |
 | `_ :: String.t()` | the head variable name, or `argN` if that is `_` too |
+
+Boolean and nil `atom()` defaults are omitted, including nullable `atom() | nil`.
 
 ## 2. Emit a schema
 
@@ -88,10 +90,12 @@ documented by `@doc` or `@tool_param` takes that same direct path, because
 `Typedoc.apply/3` would not touch it. With a typedoc companion present,
 `emit/3` takes about 0.14 µs and `run/3` about 0.6 µs. A module with an
 undocumented local-type parameter whose type has no visible `@typedoc` still
-pays the guard — roughly 16–26 µs per call because the failed
+pays the guard on the first accessor call — roughly 16–26 µs because the failed
 `Code.ensure_loaded?/1` searches the code path, which depends on the code path
-length. A fresh render of a runtime `ToolCall.IR.Tool` costs about 0.5 µs. The
-embedded schemas add roughly 35 KB to the beam and 9 ms to compilation.
+length. The absence is cached per companion, function and generation, so later
+calls use the phase-one literal directly. A fresh render of a runtime
+`ToolCall.IR.Tool` costs about 0.5 µs. The embedded schemas add roughly 35 KB to
+the beam and 9 ms to compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
 chunks, so Code.Typespec.fetch_specs/1 and `Code.fetch_docs/1` fail on the
@@ -179,6 +183,7 @@ mix tool_call.export                              # OpenAI function objects
 mix tool_call.export --format anthropic           # Anthropic tool definitions
 mix tool_call.export --format mcp --out priv/tools.json
 mix tool_call.export --strict
+mix tool_call.clean                               # remove orphaned typedoc companions
 ```
 
 `--format` is `openai` (default), `anthropic` or `mcp`; `--strict` renders the

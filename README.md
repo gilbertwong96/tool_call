@@ -122,9 +122,14 @@ modules keep it in memory only. The beam is not registered in Mix's compile
 manifest:
 
 - `mix clean` removes it with the build directory.
-- Deleting a source module can leave its companion beam until the next
-  `mix clean`. The generation token makes it harmless, and the unused beam may
-  still be copied into a release.
+- A source-file companion has a `.source` sidecar pointing at the source file.
+  Every ToolCall compile prunes companions whose source file is gone.
+- If no ToolCall module compiles after deleting a source file, run
+  `mix tool_call.clean` before inspecting or releasing the build. The task
+  checks both the `.source` sidecar and `compile_info.source`; a live source
+  from either keeps the companion, and a stripped `compile_info` leaves only
+  the parent-beam check. The generation token still makes any remaining beam
+  harmless.
 - Upgrading from a ToolCall build that predates the companion marker requires
   one `mix clean`: such a beam is treated as foreign, so ToolCall warns and
   keeps phase-one descriptions rather than overwriting it.
@@ -140,6 +145,9 @@ but term-decodable chunk is reported as corrupt, not as absent.
 If a local-type parameter's type has no visible `@typedoc`, give the parameter a
 `@doc` bullet or `@tool_param` description: typedoc adds nothing there, and an
 undocumented local-type parameter keeps the module on the guarded accessor path.
+The first guarded call pays the failed companion lookup; the absence is cached
+per companion, function and generation, so later calls return the phase-one
+literal directly.
 
 ## What you get
 
@@ -157,6 +165,9 @@ undocumented local-type parameter keeps the module on the guarded accessor path.
   `use ToolCall, types: [...]`.
 - `mix tool_call.export` — the same schemas as JSON (`openai`, `anthropic` or
   `mcp`).
+- `mix tool_call.clean` — removes orphaned typedoc companions whose source
+  file or parent module beam is gone, including legacy companions without a
+  sidecar when their beam still records the source path.
 
 Both `emit/3` and `run/3` accept the module or, for `emit/3`, the IR directly:
 
@@ -207,30 +218,41 @@ and convert in the function.
 ## Conventions
 
 - **Annotate arguments to name them.** `@spec f(city :: String.t())`, not
-  `@spec f(String.t())`. Unnamed parameters fall back to the head variable (or
+  `@spec f(String.t())`. Unnamed parameters can be named by position from
+  `@doc` parameter bullets; otherwise they fall back to the head variable (or
   `argN` when the head is `_`) with a warning. A bare type variable in a `when`
   spec counts as unnamed too: write
   `@spec id(value :: x) :: x when x: integer()`.
 - **A default makes a parameter optional.** `def f(a, b \\ 1)` puts `a` in
   `required` and leaves `b` out. Defaults that are not literals (such as
   `DateTime.utc_now()`) are not sent to the model; the parameter is still
-  optional. Defaults JSON cannot carry (tuples, non-string map keys) are
-  dropped too, and a literal default that does not belong to the parameter's
-  value domain is dropped with a compile-time warning. `~s`, `~c` and
-  `~w` sigil defaults are kept (a charlist default is sent as a string); sigils
-  that interpolate or build non-JSON values (dates, regexes) are dropped. An
-  `atom()` default is sent as its string form, including `true` and `false`.
+  optional. A module attribute default (`def f(x \\ @default)`) is expanded
+  when its value is a JSON literal; struct values are still dropped. Defaults
+  JSON cannot carry (tuples, non-string map keys) are dropped too, and a literal
+  default that does not belong to the parameter's value domain is dropped with
+  a compile-time warning. `~s`, `~c` and `~w` sigil defaults are kept (a
+  charlist default is sent as a string); sigils that interpolate or build
+  non-JSON values (dates, regexes) are dropped. A non-boolean `atom()` default
+  is sent as its string form; `true`, `false` and `nil` defaults are omitted.
+  The atom wire domain rejects booleans, and nil defaults are kept out even for
+  nullable atom types. Defaults are parsed
+  against the declared type at any depth: nested `keyword(t)`, object/list
+  fields and union branches keep their values, and nested `char()`/`charlist()`
+  values become strings in the schema.
 - **Names must be unique and provider-safe.** A duplicate argument name is
   exposed as `name_2` with a warning; an unnamed `_` argument falls back to the
   head variable or `argN`. Provider tool names must match
   `^[a-zA-Z0-9_-]{1,64}$`: a function named `find?` warns, and the export task
   refuses to write it. Two arities of the same function share one tool name, so
   only the first is exposed.
-- **`@doc` first paragraph is the description.** Bullets inside a `## Parameters`
-  heading become per-parameter descriptions: `* city - city name` (backticks
-  around the name are optional). Indented continuation lines are appended;
-  a blank line ends the current bullet's continuation, and nested bullets (and
-  their continuations) are not parameters.
+- **`@doc` first paragraph is the description.** A leading `# Title` is
+  stripped; a leading level-2+ section heading is omitted and its body is used.
+  Bullets inside a `## Parameters` heading become per-parameter descriptions:
+  `* city - city name`, `+ city - city name` or `- city - city name`
+  (backticks around the name are optional; an optional type annotation such as
+  `(String.t())` is ignored). Indented continuation lines are appended; a blank
+  line ends the current bullet's continuation, and nested bullets (and their
+  continuations) are not parameters.
 - **`@doc false` opts a function out** of the tool list.
 - **`@type` declarations in the same module are resolved**, including `@typep`
   and `@opaque`, with parameters (`@type pair(a) :: {a, a}`). Recursive
@@ -238,7 +260,10 @@ and convert in the function.
 - **`@typedoc` is a fallback parameter description.** A parameter declared as a
   local `@type` or `@opaque`, directly or wrapped as `<type>() | nil`, uses the
   type's typedoc when the parameter has no description. Parameterized local
-  types work too: `pair(integer())` uses the typedoc of `pair/1`. Precedence is
+  types work too: `pair(integer())` uses the typedoc of `pair/1`; a local alias
+  chain such as `@type location :: address()` follows to `address()` when
+  `location` has no typedoc, including current-module `__MODULE__` or alias
+  references in the alias body. Precedence is
   `@tool_param` description, then a `@doc` `## Parameters` bullet, then
   `@typedoc`, then no description; an empty-string `@tool_param` suppresses the
   fallback. Nested and wrapped uses such as `list(address())` or
@@ -324,6 +349,20 @@ end
 - The return type is not checked: results are returned as plain terms and must be
   JSON-encodable.
 
+## Design boundaries
+
+- `@typedoc` is not inherited by `list(address())`, map fields, remote types or
+  provider types. `@typep` typedocs are discarded by Elixir, so they cannot be
+  recovered.
+- Overloaded `@spec` clauses and two arities of one function cannot share one
+  JSON Schema; the first matching spec/arity is exposed.
+- Tuple defaults are not emitted because JSON cannot carry tuples. JSON numbers
+  outside Erlang's finite float range fail in the decoder before ToolCall sees
+  them.
+- `@doc` metadata-only entries have no description text. `@on_definition` is an
+  accumulating Elixir hook; other libraries' callbacks continue to run.
+- Type providers can resolve remote types but do not carry typedoc descriptions.
+
 ## Status
 
 `0.1.0-dev`. Working: compile-time derivation, local `@type` resolution, typedoc
@@ -335,7 +374,8 @@ unnamed arguments, missing `@spec`, unrepresentable types and stray
 
 Not implemented yet: recursive types (`$ref`/`$defs`), struct field extraction
 with `@enforce_keys`, result encoding, Gemini/MCP `emit/3` targets (MCP export
-exists), streaming deltas, approval hooks, timeouts.
+exists), streaming deltas, approval hooks, timeouts. See
+[`docs/roadmap.md`](docs/roadmap.md) for the staged plan.
 
 ## Installation
 
@@ -387,6 +427,7 @@ information without a provider envelope:
 
 - [`docs/usage.md`](docs/usage.md) — end-to-end usage, dispatch, the loop.
 - [`docs/design.md`](docs/design.md) — architecture, type mapping, provider subsets.
+- [`docs/roadmap.md`](docs/roadmap.md) — current status and planned `0.2` / `0.3` / `0.4` stages.
 - [`docs/pitfalls.md`](docs/pitfalls.md) — compile-time traps and what is done about each.
 - [`docs/number-handling.md`](docs/number-handling.md) — precision across Elixir, JSON and providers.
 

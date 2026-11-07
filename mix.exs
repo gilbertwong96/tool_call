@@ -20,6 +20,7 @@ defmodule ToolCall.MixProject do
           "README.md",
           "docs/usage.md",
           "docs/design.md",
+          "docs/roadmap.md",
           "docs/pitfalls.md",
           "docs/number-handling.md"
         ]
