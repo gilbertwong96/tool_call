@@ -185,8 +185,8 @@ defmodule Mix.Tasks.ToolCall.Export do
     }
   end
 
-  # TODO: use JSON.format/1 once Elixir's JSON ships a pretty printer, which
-  # would remove the json:format/1 dependency.
+  # Use JSON.format/1 once Elixir's JSON ships a pretty printer; that would
+  # remove the json:format/1 dependency.
   defp encode(term) do
     term
     |> otp_json()
