@@ -341,7 +341,7 @@ defmodule ToolCall.SchemaTest do
       name: "t",
       type: %Type{
         kind: :tuple,
-        items: [%Type{kind: :atom}],
+        items: [%Type{kind: :string}],
         transform: {SomeModule, :coerce}
       },
       default: [true, false],
@@ -350,6 +350,229 @@ defmodule ToolCall.SchemaTest do
 
     tool = %Tool{name: "go", description: "Go.", params: [param]}
     assert Schema.params(tool)["properties"]["t"]["default"] == [true, false]
+  end
+
+  test "omits atom booleans from a mismatched tuple default under a transform" do
+    param = %Param{
+      name: "t",
+      type: %Type{
+        kind: :tuple,
+        items: [%Type{kind: :atom}],
+        transform: {SomeModule, :coerce}
+      },
+      default: [true, false],
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    refute Map.has_key?(Schema.params(tool)["properties"]["t"], "default")
+  end
+
+  test "omits boolean atom defaults even when a transform bypasses compatibility" do
+    param = %Param{
+      name: "x",
+      type: %Type{kind: :atom, transform: {SomeModule, :coerce}},
+      default: true,
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    refute Map.has_key?(Schema.params(tool)["properties"]["x"], "default")
+  end
+
+  test "omits nested atom boolean defaults even under a transform" do
+    param = %Param{
+      name: "x",
+      type: %Type{
+        kind: :object,
+        transform: {SomeModule, :coerce},
+        fields: [
+          %Field{name: "flag", key: :flag, type: %Type{kind: :atom}},
+          %Field{
+            name: "flags",
+            key: :flags,
+            type: %Type{kind: :array, items: %Type{kind: :atom}}
+          }
+        ]
+      },
+      default: %{flag: true, flags: [false]},
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    refute Map.has_key?(Schema.params(tool)["properties"]["x"], "default")
+  end
+
+  test "omits atom booleans through transformed unions" do
+    atom = %Type{kind: :atom}
+    string = %Type{kind: :string}
+    integer = %Type{kind: :integer}
+
+    atom_union = %Type{
+      kind: :union,
+      variants: [atom, string],
+      transform: {SomeModule, :coerce}
+    }
+
+    nested_atom_union = %Type{
+      kind: :union,
+      variants: [%Type{kind: :union, variants: [atom]}, string],
+      transform: {SomeModule, :coerce}
+    }
+
+    non_atom_union = %Type{
+      kind: :union,
+      variants: [string, integer],
+      transform: {SomeModule, :coerce}
+    }
+
+    tool = %Tool{
+      name: "go",
+      description: "Go.",
+      params: [
+        %Param{name: "a", type: atom_union, default: true, required: false},
+        %Param{name: "b", type: nested_atom_union, default: false, required: false},
+        %Param{name: "c", type: non_atom_union, default: false, required: false}
+      ]
+    }
+
+    params = Schema.params(tool)["properties"]
+    refute Map.has_key?(params["a"], "default")
+    refute Map.has_key?(params["b"], "default")
+    assert params["c"]["default"] == false
+  end
+
+  test "renders enum atom defaults as strings" do
+    enum = %Type{kind: :enum, values: [:a, :b]}
+
+    param = %Param{
+      name: "x",
+      type: enum,
+      default: :a,
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == "a"
+
+    nested = %Param{
+      name: "x",
+      type: %Type{kind: :array, items: enum},
+      default: [:a, :b],
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [nested]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == ["a", "b"]
+  end
+
+  test "renders enum atom defaults inside mixed unions" do
+    enum = %Type{kind: :enum, values: [:a, :b]}
+
+    param = %Param{
+      name: "x",
+      type: %Type{kind: :union, variants: [%Type{kind: :string}, enum]},
+      default: :a,
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == "a"
+  end
+
+  test "renders nested char and charlist defaults as strings" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                object :: %{name: charlist(), c: char()},
+                chars :: list(char()),
+                charlists :: list(charlist()),
+                nullable :: %{name: charlist() | nil, c: char() | nil}
+              ) :: term()
+        def go(
+              object \\\\ %{name: ~c"abc", c: ?a},
+              chars \\\\ [?a, ?b],
+              charlists \\\\ [~c"cd"],
+              nullable \\\\ %{name: nil, c: nil}
+            ),
+            do: {object, chars, charlists, nullable}
+      end
+      """)
+
+    assert param_schema(module, "go", "object")["default"] == %{name: "abc", c: "a"}
+    assert param_schema(module, "go", "chars")["default"] == ["a", "b"]
+    assert param_schema(module, "go", "charlists")["default"] == ["cd"]
+    assert param_schema(module, "go", "nullable")["default"] == %{name: nil, c: nil}
+  end
+
+  test "keeps an unvalidated union default when no variant matches" do
+    param = %Param{
+      name: "x",
+      type: %Type{
+        kind: :union,
+        variants: [%Type{kind: :string}, %Type{kind: :integer}],
+        transform: {SomeModule, :coerce}
+      },
+      default: [],
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == []
+  end
+
+  test "renders char defaults through unions" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(chars :: charlist() | String.t(), char :: char() | String.t()) :: term()
+        def go(chars \\\\ ~c"abc", char \\\\ ?a), do: {chars, char}
+      end
+      """)
+
+    assert param_schema(module, "go", "chars")["default"] == "abc"
+    assert param_schema(module, "go", "char")["default"] == "a"
+  end
+
+  test "keeps union atom defaults when no union variant accepts the atom" do
+    param = %Param{
+      name: "x",
+      type: %Type{
+        kind: :union,
+        variants: [%Type{kind: :string}, %Type{kind: :integer}],
+        transform: {SomeModule, :coerce}
+      },
+      default: :a,
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == :a
+  end
+
+  test "finds enum atoms through nested unions" do
+    enum = %Type{kind: :enum, values: [:a, :b]}
+
+    param = %Param{
+      name: "x",
+      type: %Type{
+        kind: :union,
+        variants: [
+          %Type{kind: :string},
+          %Type{kind: :union, variants: [enum]}
+        ]
+      },
+      default: :a,
+      required: false
+    }
+
+    tool = %Tool{name: "go", description: "Go.", params: [param]}
+    assert Schema.params(tool)["properties"]["x"]["default"] == "a"
   end
 
   test "emitters default their options" do

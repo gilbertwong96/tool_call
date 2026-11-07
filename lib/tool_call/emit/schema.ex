@@ -8,6 +8,8 @@ defmodule ToolCall.Emit.Schema do
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
 
+  @invalid_default :__tool_call_invalid_default__
+
   @doc "Renders the `parameters`/`input_schema` object for a tool."
   @spec params(Tool.t(), keyword()) :: map()
   def params(%Tool{} = tool, opts \\ []) do
@@ -94,6 +96,10 @@ defmodule ToolCall.Emit.Schema do
 
   defp put_default(schema, %Param{default: nil}, _opts), do: schema
 
+  defp put_default(schema, %Param{type: %Type{kind: :atom}, default: default}, _opts)
+       when is_boolean(default) or is_nil(default),
+       do: schema
+
   defp put_default(schema, %Param{wire: :string_integer} = param, opts) do
     if strict?(opts) or not is_integer(param.default) do
       schema
@@ -121,42 +127,113 @@ defmodule ToolCall.Emit.Schema do
 
   defp put_default(schema, %Param{} = param, opts) do
     # The API rejects `default` in strict mode; nullability carries the same idea.
-    if strict?(opts),
-      do: schema,
-      else: Map.put(schema, "default", atom_default(param.type, param.default))
+    if strict?(opts) do
+      schema
+    else
+      case atom_default(param.type, param.default) do
+        @invalid_default -> schema
+        value -> Map.put(schema, "default", value)
+      end
+    end
   end
 
   # `atom()` is a string on the wire, so an atom default must be rendered as one
   # too. The walk follows arrays and objects so nested defaults match their schema.
-  defp atom_default(%Type{kind: :atom, nullable: true}, nil), do: nil
-  defp atom_default(%Type{kind: :atom}, value) when is_atom(value), do: Atom.to_string(value)
-
-  defp atom_default(%Type{kind: :union, nullable: true}, nil), do: nil
-
-  defp atom_default(%Type{kind: :union, variants: variants}, value) when is_atom(value) do
-    if Enum.any?(variants || [], &(&1.kind == :atom)), do: Atom.to_string(value), else: value
+  defp atom_default(%Type{kind: :enum, values: values}, value)
+       when is_atom(value) and not is_boolean(value) and not is_nil(value) do
+    if value in values, do: Atom.to_string(value), else: value
   end
 
-  defp atom_default(%Type{kind: :array, items: items}, values) when is_list(values),
-    do: Enum.map(values, &atom_default(items || %Type{kind: :any}, &1))
+  defp atom_default(%Type{kind: :atom}, value) when is_boolean(value) or is_nil(value),
+    do: @invalid_default
+
+  defp atom_default(%Type{kind: :atom}, value) when is_atom(value),
+    do: Atom.to_string(value)
+
+  defp atom_default(%Type{kind: :union, variants: variants}, value) do
+    case Enum.find(variants || [], &ToolCall.Typespec.default_compatible?(&1, value)) do
+      nil -> if invalid_atom_union_value?(variants, value), do: @invalid_default, else: value
+      variant -> atom_default(variant, value)
+    end
+  end
+
+  defp atom_default(%Type{kind: :array, items: items}, values) when is_list(values) do
+    item_type = items || %Type{kind: :any}
+    map_defaults(values, &atom_default(item_type, &1))
+  end
 
   defp atom_default(%Type{kind: :tuple, items: items}, values) when is_list(values) do
     items = items || []
 
-    if length(items) == length(values),
-      do: Enum.zip_with(items, values, &atom_default/2),
-      else: values
+    if length(items) == length(values) do
+      items
+      |> Enum.zip(values)
+      |> map_defaults(fn {type, value} -> atom_default(type, value) end)
+    else
+      if invalid_mismatched_tuple_default?(items, values), do: @invalid_default, else: values
+    end
   end
 
   defp atom_default(%Type{kind: :object} = type, value) when is_map(value) do
     fields = type.fields || []
+    additional = type.additional || %Type{kind: :any}
 
-    Map.new(value, fn {key, item} ->
-      {key, atom_default(field_type(fields, key) || type.additional || %Type{kind: :any}, item)}
-    end)
+    pairs =
+      value
+      |> Enum.to_list()
+      |> map_defaults(fn {key, item} ->
+        case atom_default(field_type(fields, key) || additional, item) do
+          @invalid_default -> @invalid_default
+          value -> {key, value}
+        end
+      end)
+
+    case pairs do
+      @invalid_default -> @invalid_default
+      pairs -> Map.new(pairs)
+    end
   end
 
+  defp atom_default(%Type{kind: :string, source: :char}, value) do
+    char_default(value) || value
+  end
+
+  defp atom_default(%Type{kind: :string, source: :charlist}, value),
+    do: charlist_default(value)
+
   defp atom_default(_type, value), do: value
+
+  defp invalid_mismatched_tuple_default?(items, values) do
+    Enum.any?(items, &contains_atom?/1) and
+      Enum.any?(values, &(is_boolean(&1) or is_nil(&1)))
+  end
+
+  defp map_defaults(values, fun) do
+    values
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
+      case fun.(value) do
+        @invalid_default -> {:halt, @invalid_default}
+        value -> {:cont, {:ok, [value | acc]}}
+      end
+    end)
+    |> case do
+      {:ok, reversed} -> Enum.reverse(reversed)
+      @invalid_default -> @invalid_default
+    end
+  end
+
+  defp invalid_atom_union_value?(variants, value) when is_boolean(value) or is_nil(value) do
+    Enum.any?(variants || [], &contains_atom?/1)
+  end
+
+  defp invalid_atom_union_value?(_variants, _value), do: false
+
+  defp contains_atom?(%Type{kind: :atom}), do: true
+
+  defp contains_atom?(%Type{kind: :union, variants: variants}),
+    do: Enum.any?(variants || [], &contains_atom?/1)
+
+  defp contains_atom?(_type), do: false
 
   defp field_type(fields, key) do
     Enum.find_value(fields, fn field ->
@@ -272,9 +349,11 @@ defmodule ToolCall.Emit.Schema do
   end
 
   defp char_default(value) when is_binary(value), do: value
+  defp char_default(_value), do: nil
 
   defp charlist_default(value) when is_binary(value), do: value
   defp charlist_default(value) when is_list(value), do: List.to_string(value)
+  defp charlist_default(value), do: value
 
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)

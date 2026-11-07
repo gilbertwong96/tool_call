@@ -486,14 +486,14 @@ defmodule ToolCall.BuilderTest do
                 num :: charlist()
               ) :: :ok
         def go(
-              a \\\\ true,
-              l \\\\ [true, :ok],
-              m \\\\ %{flag: false},
+              a \\\\ :ok,
+              l \\\\ [:ok, :error],
+              m \\\\ %{flag: :ok},
               b \\\\ true,
-              ln \\\\ [nil, true],
-              lu \\\\ [nil, true],
-              m2 \\\\ %{"flag" => false},
-              t \\\\ [true, false],
+              ln \\\\ [:ok],
+              lu \\\\ [:ok],
+              m2 \\\\ %{"flag" => :ok},
+              t \\\\ [:ok, :error],
               ch \\\\ "ab",
               bad \\\\ [:a],
               num \\\\ 1
@@ -502,17 +502,103 @@ defmodule ToolCall.BuilderTest do
       end
       """)
 
-    assert param_schema(module, "go", "a")["default"] == "true"
-    assert param_schema(module, "go", "l")["default"] == ["true", "ok"]
-    assert param_schema(module, "go", "m")["default"] == %{flag: "false"}
+    assert param_schema(module, "go", "a")["default"] == "ok"
+    assert param_schema(module, "go", "l")["default"] == ["ok", "error"]
+    assert param_schema(module, "go", "m")["default"] == %{flag: "ok"}
     assert param_schema(module, "go", "b")["default"] == true
-    assert param_schema(module, "go", "ln")["default"] == [nil, "true"]
-    assert param_schema(module, "go", "lu")["default"] == [nil, "true"]
-    assert param_schema(module, "go", "m2")["default"] == %{"flag" => "false"}
-    assert param_schema(module, "go", "t")["default"] == ["true", "false"]
+    assert param_schema(module, "go", "ln")["default"] == ["ok"]
+    assert param_schema(module, "go", "lu")["default"] == ["ok"]
+    assert param_schema(module, "go", "m2")["default"] == %{"flag" => "ok"}
+    assert param_schema(module, "go", "t")["default"] == ["ok", "error"]
     assert param_schema(module, "go", "ch")["default"] == "ab"
     refute Map.has_key?(param_schema(module, "go", "bad"), "default")
     refute Map.has_key?(param_schema(module, "go", "num"), "default")
+  end
+
+  test "omits boolean and nil atom defaults" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                a :: atom(),
+                l :: list(atom()),
+                m :: %{flag: atom()},
+                n :: atom() | nil,
+                mn :: %{flag: atom() | nil},
+                b :: boolean()
+              ) :: :ok
+        def go(
+              a \\\\ true,
+              l \\\\ [true, :ok],
+              m \\\\ %{flag: false},
+              n \\\\ nil,
+              mn \\\\ %{flag: nil},
+              b \\\\ true
+            ),
+            do: {a, l, m, n, mn, b}
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "go", "a"), "default")
+    refute Map.has_key?(param_schema(module, "go", "l"), "default")
+    refute Map.has_key?(param_schema(module, "go", "m"), "default")
+    refute Map.has_key?(param_schema(module, "go", "n"), "default")
+    refute Map.has_key?(param_schema(module, "go", "mn"), "default")
+    assert param_schema(module, "go", "b")["default"] == true
+  end
+
+  test "does not warn when omitting atom boolean and nil defaults" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                a :: atom(),
+                b :: %{flag: atom()},
+                c :: {atom()},
+                d :: atom() | String.t(),
+                e :: list(atom()),
+                f :: {atom()},
+                g :: {atom() | String.t()}
+              ) :: :ok
+        def go(
+              a \\\\ true,
+              b \\\\ %{flag: nil},
+              c \\\\ [true],
+              d \\\\ false,
+              e \\\\ [true],
+              f \\\\ [true, false],
+              g \\\\ [true, false]
+            ),
+            do: {a, b, c, d, e, f, g}
+      end
+      """)
+
+    refute warnings =~ "default for parameter"
+    refute Map.has_key?(param_schema(module, "go", "a"), "default")
+    refute Map.has_key?(param_schema(module, "go", "b"), "default")
+    refute Map.has_key?(param_schema(module, "go", "c"), "default")
+    refute Map.has_key?(param_schema(module, "go", "d"), "default")
+    refute Map.has_key?(param_schema(module, "go", "e"), "default")
+    refute Map.has_key?(param_schema(module, "go", "f"), "default")
+    refute Map.has_key?(param_schema(module, "go", "g"), "default")
+  end
+
+  test "warns for a non-atom mismatched tuple default" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: {String.t()}) :: :ok
+        def go(x \\\\ [true, false]), do: x
+      end
+      """)
+
+    assert warnings =~ "default for parameter \"x\""
   end
 
   test "drops defaults that do not belong to the parameter type" do
@@ -558,6 +644,196 @@ defmodule ToolCall.BuilderTest do
     refute Map.has_key?(param_schema(module, "go", "missing"), "default")
     refute Map.has_key?(param_schema(module, "go", "wrong"), "default")
     refute Map.has_key?(param_schema(module, "go", "extra"), "default")
+  end
+
+  test "renders keyword defaults as objects" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                good :: keyword(integer()),
+                atom :: keyword(atom()),
+                empty :: keyword(),
+                bad :: keyword(integer())
+              ) :: term()
+        def go(
+              good \\\\ [a: 1, b: 2],
+              atom \\\\ [mode: :fast],
+              empty \\\\ [],
+              bad \\\\ [a: "bad"]
+            ),
+            do: {good, atom, empty, bad}
+      end
+      """)
+
+    assert warnings =~ ~s(default for parameter "bad" of go/4 is not compatible)
+    assert param_schema(module, "go", "good")["default"] == %{a: 1, b: 2}
+    assert param_schema(module, "go", "atom")["default"] == %{mode: "fast"}
+    assert param_schema(module, "go", "empty")["default"] == %{}
+    refute Map.has_key?(param_schema(module, "go", "bad"), "default")
+  end
+
+  test "drops keyword defaults that cannot be represented" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                lazy :: keyword(integer()),
+                malformed :: keyword(integer()),
+                non_list :: keyword(integer())
+              ) :: term()
+        def go(
+              lazy \\\\ [a: DateTime.utc_now()],
+              malformed \\\\ [1],
+              non_list \\\\ :bad
+            ),
+            do: {lazy, malformed, non_list}
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "go", "lazy"), "default")
+    refute Map.has_key?(param_schema(module, "go", "malformed"), "default")
+    refute Map.has_key?(param_schema(module, "go", "non_list"), "default")
+  end
+
+  test "renders defaults for keyword values inside unions" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                opts :: keyword(integer()) | String.t(),
+                object :: %{opts: keyword(integer()) | String.t()},
+                list :: list(keyword(integer()) | String.t())
+              ) :: term()
+        def go(
+              opts \\\\ [a: 1],
+              object \\\\ %{opts: [b: 2]},
+              list \\\\ [[c: 3]]
+            ),
+            do: {opts, object, list}
+      end
+      """)
+
+    assert param_schema(module, "go", "opts")["default"] == %{a: 1}
+    assert param_schema(module, "go", "object")["default"] == %{opts: %{b: 2}}
+    assert param_schema(module, "go", "list")["default"] == [%{c: 3}]
+  end
+
+  test "expands module attributes in defaults" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @default 3
+        @opts [a: 1]
+
+        @spec go(
+                n :: integer(),
+                opts :: keyword(integer()),
+                nested :: %{n: integer()}
+              ) :: term()
+        def go(n \\\\ @default, opts \\\\ @opts, nested \\\\ %{n: @default}), do: {n, opts, nested}
+      end
+      """)
+
+    assert param_schema(module, "go", "n")["default"] == 3
+    assert param_schema(module, "go", "opts")["default"] == %{a: 1}
+    assert param_schema(module, "go", "nested")["default"] == %{n: 3}
+  end
+
+  test "does not expand struct module attributes into defaults" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @date_default ~D[2024-01-01]
+
+        @spec go(x :: term()) :: term()
+        def go(x \\\\ @date_default), do: x
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "go", "x"), "default")
+  end
+
+  test "drops incompatible defaults inside unions" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: integer() | String.t()) :: term()
+        def go(x \\\\ {:bad}), do: x
+      end
+      """)
+
+    refute Map.has_key?(param_schema(module, "go", "x"), "default")
+  end
+
+  test "renders nested keyword defaults" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                object :: %{opts: keyword(integer())},
+                list :: list(keyword(atom()))
+              ) :: term()
+        def go(
+              object \\\\ %{opts: [a: 1]},
+              list \\\\ [[mode: :fast]]
+            ),
+            do: {object, list}
+      end
+      """)
+
+    assert param_schema(module, "go", "object")["default"] == %{opts: %{a: 1}}
+    assert param_schema(module, "go", "list")["default"] == [%{mode: "fast"}]
+  end
+
+  test "keeps generic map and list defaults when the type is unconstrained" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(map :: term(), list :: term()) :: term()
+        def go(map \\\\ %{a: 1}, list \\\\ [1, {2, 3}]), do: {map, list}
+      end
+      """)
+
+    assert param_schema(module, "go", "map")["default"] == %{a: 1}
+    refute Map.has_key?(param_schema(module, "go", "list"), "default")
+  end
+
+  test "applies doc bullets to duplicate renamed parameters" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc \"\"\"
+        Go.
+
+        ## Parameters
+          * `city` - city name
+        \"\"\"
+        @spec go(city :: String.t(), city :: integer()) :: term()
+        def go(city, count), do: {city, count}
+      end
+      """)
+
+    assert param_schema(module, "go", "city")["description"] == "city name"
+    assert param_schema(module, "go", "city_2")["description"] == "city name"
   end
 
   test "drops map defaults whose keys JSON cannot represent" do

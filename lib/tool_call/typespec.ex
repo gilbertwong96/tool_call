@@ -861,9 +861,20 @@ defmodule ToolCall.Typespec do
 
   @doc false
   @spec default_compatible?(Type.t(), term()) :: boolean()
+  def default_compatible?(%Type{kind: :object, source: :keyword} = type, value)
+      when is_map(value) do
+    additional = type.additional || %Type{kind: :any}
+
+    Enum.all?(value, fn
+      {key, item} when is_atom(key) -> default_compatible?(additional, item)
+      _other -> false
+    end)
+  end
+
   def default_compatible?(%Type{transform: transform}, _value) when not is_nil(transform),
     do: true
 
+  def default_compatible?(%Type{kind: :atom}, nil), do: false
   def default_compatible?(%Type{nullable: true}, nil), do: true
 
   def default_compatible?(%Type{kind: :integer} = type, value) when is_integer(value),
@@ -897,7 +908,10 @@ defmodule ToolCall.Typespec do
   end
 
   def default_compatible?(%Type{kind: :boolean}, value), do: is_boolean(value)
-  def default_compatible?(%Type{kind: :atom}, value), do: is_atom(value)
+
+  def default_compatible?(%Type{kind: :atom}, value),
+    do: is_atom(value) and not is_boolean(value)
+
   def default_compatible?(%Type{kind: :null}, nil), do: true
 
   def default_compatible?(%Type{kind: :enum, values: values}, value) when is_list(values),

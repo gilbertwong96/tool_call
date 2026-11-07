@@ -234,11 +234,12 @@ defmodule ToolCall.Builder do
         %Param{
           name: param_name,
           type: type,
-          default: default_value(default, context.env),
+          default: default_value(default, context.env, type),
           required: default == :none,
           source: source_ast
         }
       end)
+      |> Enum.map(&apply_doc_description(&1, doc_info))
       |> unique_names(context.module, location, name, arity)
       |> Enum.map(fn param ->
         param
@@ -268,18 +269,68 @@ defmodule ToolCall.Builder do
          name,
          arity
        ) do
-    if Typespec.default_compatible?(type, default) do
-      param
-    else
-      warn(
-        module,
-        location,
-        "default for parameter \"#{param_name}\" of #{name}/#{arity} is not compatible " <>
-          "with its type; dropping it."
-      )
+    cond do
+      Typespec.default_compatible?(type, default) ->
+        param
 
-      %{param | default: nil}
+      intentional_atom_default?(type, default) ->
+        %{param | default: nil}
+
+      true ->
+        warn(
+          module,
+          location,
+          "default for parameter \"#{param_name}\" of #{name}/#{arity} is not compatible " <>
+            "with its type; dropping it."
+        )
+
+        %{param | default: nil}
     end
+  end
+
+  defp intentional_atom_default?(%Type{kind: :atom}, value),
+    do: is_boolean(value) or is_nil(value)
+
+  defp intentional_atom_default?(%Type{kind: :array, items: items}, values)
+       when is_list(values) do
+    item_type = items || %Type{kind: :any}
+    Enum.any?(values, &intentional_atom_default?(item_type, &1))
+  end
+
+  defp intentional_atom_default?(%Type{kind: :tuple, items: items}, values)
+       when is_list(items) and is_list(values) do
+    if length(items) == length(values) do
+      items
+      |> Enum.zip(values)
+      |> Enum.any?(fn {type, value} -> intentional_atom_default?(type, value) end)
+    else
+      Enum.any?(items, &contains_atom_type?/1) and
+        Enum.any?(values, &(is_boolean(&1) or is_nil(&1)))
+    end
+  end
+
+  defp intentional_atom_default?(%Type{kind: :object} = type, value) when is_map(value) do
+    fields = type.fields || []
+    additional = type.additional || %Type{kind: :any}
+
+    Enum.any?(value, fn {key, item} ->
+      intentional_atom_default?(field_default_type(fields, additional, key), item)
+    end)
+  end
+
+  defp intentional_atom_default?(_type, _value), do: false
+
+  defp contains_atom_type?(%Type{kind: :atom}), do: true
+
+  defp contains_atom_type?(%Type{kind: :union, variants: variants}),
+    do: Enum.any?(variants || [], &contains_atom_type?/1)
+
+  defp contains_atom_type?(_type), do: false
+
+  defp field_default_type(fields, additional, key) do
+    Enum.find_value(fields, additional, fn field ->
+      if field.key == key or field.name == key, do: field.type
+    end)
   end
 
   defp unique_names(params, module, location, fun, arity) do
@@ -544,13 +595,27 @@ defmodule ToolCall.Builder do
   # Only compile-time literals can be shown to the model. Anything else (a
   # call such as `DateTime.utc_now()`, an interpolation) would reach the
   # schema as a quoted AST, so it is dropped; the parameter stays optional.
-  defp default_value(:none, _env), do: nil
+  defp default_value(:none, _env, _type), do: nil
 
-  defp default_value({:ok, ast}, env) do
-    case literal(ast, env) do
+  defp default_value({:ok, ast}, env, type) do
+    ast = expand_module_attributes(ast, env)
+
+    case typed_literal(ast, type, env) do
       {:ok, value} -> value
       :error -> nil
     end
+  end
+
+  defp expand_module_attributes(ast, %Macro.Env{module: module}) do
+    Macro.prewalk(ast, fn
+      {:@, _, [{name, _, context}]} = node when is_atom(name) and is_atom(context) ->
+        value = Module.get_attribute(module, name)
+
+        if is_struct(value), do: node, else: Macro.escape(value)
+
+      node ->
+        node
+    end)
   end
 
   defp literal(value, _env) when is_number(value) or is_binary(value) or is_atom(value),
@@ -595,6 +660,83 @@ defmodule ToolCall.Builder do
       end
     end)
   end
+
+  defp typed_literal(ast, %Type{kind: :object, source: :keyword} = type, env) do
+    keyword_literal(ast, type.additional || %Type{kind: :any}, env)
+  end
+
+  defp typed_literal(ast, %Type{kind: :array, items: items}, env) when is_list(ast) do
+    item_type = items || %Type{kind: :any}
+
+    ast
+    |> Enum.reduce_while({:ok, []}, fn element, {:ok, acc} ->
+      case typed_literal(element, item_type, env) do
+        {:ok, value} -> {:cont, {:ok, [value | acc]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
+      :error -> :error
+    end
+  end
+
+  defp typed_literal({:%{}, _, pairs}, %Type{kind: :object} = type, env) do
+    type = %{type | fields: type.fields || []}
+
+    Enum.reduce_while(pairs, {:ok, %{}}, fn {key_ast, value_ast}, {:ok, acc} ->
+      with {:ok, key} <- literal(key_ast, env),
+           true <- is_atom(key) or is_binary(key),
+           value_type = typed_field_type(type, key),
+           {:ok, value} <- typed_literal(value_ast, value_type, env) do
+        {:cont, {:ok, Map.put(acc, key, value)}}
+      else
+        _other -> {:halt, :error}
+      end
+    end)
+  end
+
+  defp typed_literal(ast, %Type{kind: :union, variants: variants}, env) do
+    variants
+    |> List.wrap()
+    |> Enum.find_value(:error, &union_literal(ast, &1, env))
+  end
+
+  defp typed_literal(ast, _type, env), do: literal(ast, env)
+
+  defp union_literal(ast, variant, env) do
+    with {:ok, value} <- typed_literal(ast, variant, env),
+         true <- Typespec.default_compatible?(variant, value) do
+      {:ok, value}
+    else
+      _other -> nil
+    end
+  end
+
+  defp typed_field_type(%Type{} = type, key) do
+    fields = type.fields || []
+    default = type.additional || %Type{kind: :any}
+
+    Enum.find_value(fields, default, fn field ->
+      if field.key == key or field.name == key, do: field.type
+    end)
+  end
+
+  defp keyword_literal(list, value_type, env) when is_list(list) do
+    list
+    |> Enum.reduce_while({:ok, %{}}, fn
+      {key, value}, {:ok, acc} when is_atom(key) ->
+        case typed_literal(value, value_type, env) do
+          {:ok, value} -> {:cont, {:ok, Map.put(acc, key, value)}}
+          :error -> {:halt, :error}
+        end
+
+      _other, _acc ->
+        {:halt, :error}
+    end)
+  end
+
+  defp keyword_literal(_other, _value_type, _env), do: :error
 
   defp unwrap_spec({:when, _, [spec, constraints]}) when is_list(constraints),
     do: {spec, constraints}

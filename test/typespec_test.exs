@@ -278,6 +278,12 @@ defmodule ToolCall.TypespecTest do
     assert Typespec.default_compatible?(%Type{kind: :float, minimum: 1.0}, 1.5)
     refute Typespec.default_compatible?(%Type{kind: :float}, 1)
     assert Typespec.default_compatible?(%Type{kind: :number}, 1)
+    assert Typespec.default_compatible?(%Type{kind: :atom}, :ok)
+    refute Typespec.default_compatible?(%Type{kind: :atom}, true)
+    refute Typespec.default_compatible?(%Type{kind: :atom}, false)
+    refute Typespec.default_compatible?(%Type{kind: :atom}, nil)
+    refute Typespec.default_compatible?(%Type{kind: :atom, nullable: true}, nil)
+    refute Typespec.default_compatible?(%Type{kind: :atom, nullable: true}, true)
     assert Typespec.default_compatible?(%Type{kind: :null}, nil)
     assert Typespec.default_compatible?(%Type{kind: :enum, values: [:a]}, :a)
     refute Typespec.default_compatible?(%Type{kind: :enum, values: [:a]}, :b)
@@ -328,6 +334,15 @@ defmodule ToolCall.TypespecTest do
     refute Typespec.default_compatible?(
              %Type{kind: :object, fields: [], additional: :invalid},
              %{}
+           )
+
+    refute Typespec.default_compatible?(
+             %Type{
+               kind: :object,
+               source: :keyword,
+               additional: %Type{kind: :integer}
+             },
+             %{"a" => 1}
            )
   end
 
