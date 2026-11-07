@@ -111,6 +111,34 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "city_2")["description"] == "second city only"
   end
 
+  test "uses doc bullets to name unannotated spec parameters" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc \"\"\"
+        Search.
+
+        ## Parameters
+          * `city` - city name
+          * `days` - forecast days
+        \"\"\"
+        @spec go(String.t(), integer()) :: :ok
+        def go(city, days), do: {city, days}
+      end
+      """)
+
+    refute warnings =~ "has no name"
+
+    schema = ToolCall.emit(module, :openai) |> hd() |> get_in(["function", "parameters"])
+    assert schema["properties"]["city"]["description"] == "city name"
+    assert schema["properties"]["days"]["description"] == "forecast days"
+
+    assert {:ok, {"Oslo", 2}} =
+             ToolCall.run(module, :go, %{"city" => "Oslo", "days" => 2})
+  end
+
   test "unnamed parameters fall back to positional names" do
     {module, warnings} =
       compile_with_warnings!("""

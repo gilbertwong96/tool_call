@@ -25,7 +25,10 @@ defmodule ToolCall.DocTest do
       * `limit` - page size
     """
 
-    assert %{params: %{"query" => "free text", "limit" => "page size"}} = Doc.parse(doc)
+    assert %{
+             params: %{"query" => "free text", "limit" => "page size"},
+             param_order: ["query", "limit"]
+           } = Doc.parse(doc)
   end
 
   test "ignores nested bullets, which are not parameters" do
@@ -141,6 +144,25 @@ defmodule ToolCall.DocTest do
     assert %{description: "Get the weather\nCity forecast."} = Doc.parse(doc)
   end
 
+  test "stops at a parameter heading without a blank line" do
+    doc = """
+    Search.
+    ## Parameters
+      * `query` - free text
+    """
+
+    assert %{description: "Search.", params: %{"query" => "free text"}} = Doc.parse(doc)
+  end
+
+  test "does not use a parameter heading as the tool description" do
+    doc = """
+    ## Parameters
+      * `query` - free text
+    """
+
+    assert %{description: nil, params: %{"query" => "free text"}} = Doc.parse(doc)
+  end
+
   test "stops at the next heading" do
     doc = """
     Search.
@@ -155,16 +177,56 @@ defmodule ToolCall.DocTest do
     assert %{params: %{"query" => "free text"}} = Doc.parse(doc)
   end
 
-  test "ignores bullets that do not name a parameter" do
+  test "accepts typed bullets and keeps only their descriptions" do
     doc = """
     Search.
 
     ## Parameters
       no bullets here
-      * `query` (string) - typed bullets are not supported
+      * `query` (String.t()) - typed bullet description
+    """
+
+    assert %{params: %{"query" => "typed bullet description"}} = Doc.parse(doc)
+  end
+
+  test "ignores non-bullet parameter lines" do
+    doc = """
+    Search.
+
+    ## Parameters
+      not a parameter
+      * not a parameter either
+      no bullets here
     """
 
     assert %{params: %{}} = Doc.parse(doc)
+  end
+
+  test "uses section heading bodies as descriptions" do
+    assert %{description: "Run it."} = Doc.parse("## Usage\nRun it.")
+    assert %{description: nil} = Doc.parse("## Usage")
+  end
+
+  test "recognizes colon and indented parameter headings" do
+    doc = """
+    Search.
+
+      ## Parameters:
+        * `query` - free text
+    """
+
+    assert %{params: %{"query" => "free text"}} = Doc.parse(doc)
+  end
+
+  test "recognizes plus bullets as parameter descriptions" do
+    doc = """
+    Search.
+
+    ## Parameters
+      + `query` - free text
+    """
+
+    assert %{params: %{"query" => "free text"}} = Doc.parse(doc)
   end
 
   test "a document without a blank line still yields a description" do

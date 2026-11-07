@@ -2,10 +2,11 @@ defmodule ToolCall.Doc do
   @moduledoc """
   Extracts tool descriptions from `@doc` strings.
 
-  `@doc` is free-form markdown, so this module only understands one
-  convention: the first paragraph becomes the tool description (a leading
-  markdown heading marker is stripped), and bullets under a `## Parameters`
-  heading become per-parameter descriptions.
+  `@doc` is free-form markdown. The first paragraph becomes the tool
+  description; a leading `#` title is stripped, while a leading level-2+
+  section heading is omitted and its body is used. Bullets under a
+  `## Parameters` heading become per-parameter descriptions, with an optional
+  type annotation such as `* city (String.t()) - city name`.
 
       @doc \"\"\"
       Get the forecast.
@@ -16,28 +17,54 @@ defmodule ToolCall.Doc do
       \"\"\"
   """
 
-  @param_heading ~r/^#+\s*(parameters|params|options|arguments|args)\s*$/i
-  @any_heading ~r/^#+\s+/
-  @bullet ~r/^\s*[*-]\s+`?([\w.?!]+)`?\s*[-–—:]\s*(.+?)\s*$/u
+  @param_heading ~r/^\s{0,3}#+\s*(parameters|params|options|arguments|args)\s*:?\s*$/i
+  @any_heading ~r/^\s{0,3}#+\s+/
+  @bullet ~r/^\s*[+*-]\s+`?([\w.?!]+)`?(?:\s*\([^()\n]*(?:\([^()\n]*\)[^()\n]*)*\))?\s*[-–—:]\s*(.+?)\s*$/u
 
-  @type parsed :: %{description: String.t() | nil, params: %{String.t() => String.t()}}
+  @type parsed :: %{
+          description: String.t() | nil,
+          params: %{String.t() => String.t()},
+          param_order: [String.t()]
+        }
 
   @spec parse(nil | false | String.t()) :: parsed()
-  def parse(nil), do: %{description: nil, params: %{}}
-  def parse(false), do: %{description: nil, params: %{}}
+  def parse(nil), do: %{description: nil, params: %{}, param_order: []}
+  def parse(false), do: %{description: nil, params: %{}, param_order: []}
 
   def parse(text) when is_binary(text) do
-    %{description: description(text), params: params(text)}
+    params = params(text)
+
+    %{
+      description: description(text),
+      params: Map.new(params),
+      param_order: Enum.map(params, fn {name, _description} -> name end)
+    }
   end
 
   defp description(text) do
     text
     |> String.split(~r/\n\s*\n/, parts: 2)
     |> hd()
+    |> description_lines()
+    |> Enum.join("\n")
     |> String.trim()
     |> String.replace(~r/\A#+\s+/, "")
     |> blank_to_nil()
   end
+
+  defp description_lines(first) do
+    [first_line | rest] = String.split(first, "\n")
+    rest = Enum.take_while(rest, &(not Regex.match?(@any_heading, &1)))
+
+    cond do
+      Regex.match?(@param_heading, first_line) -> []
+      level_one_heading?(first_line) -> [first_line | rest]
+      Regex.match?(@any_heading, first_line) -> rest
+      true -> [first_line | rest]
+    end
+  end
+
+  defp level_one_heading?(line), do: Regex.match?(~r/^\s{0,3}#\s+/, line)
 
   defp params(text) do
     text
@@ -46,7 +73,6 @@ defmodule ToolCall.Doc do
     |> Enum.drop(1)
     |> Enum.take_while(&(not Regex.match?(@any_heading, &1)))
     |> collect_params()
-    |> Map.new()
   end
 
   # Only bullets at the indentation of the first bullet are parameters; a

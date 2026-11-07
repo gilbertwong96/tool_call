@@ -193,6 +193,7 @@ defmodule ToolCall.Builder do
       |> Enum.with_index(1)
       |> Enum.map(fn {arg_ast, index} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
+        {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
 
         source_ast =
           type_ast
@@ -572,6 +573,15 @@ defmodule ToolCall.Builder do
   end
 
   defp split_arg(type_ast, index, head_args), do: unnamed_arg(type_ast, index, head_args)
+
+  defp doc_param_name(%{param_order: names}, index, fallback, false) do
+    case Enum.at(names, index - 1) do
+      nil -> {fallback, false}
+      name -> {name, true}
+    end
+  end
+
+  defp doc_param_name(_doc_info, _index, fallback, true), do: {fallback, true}
 
   defp unnamed_arg(type_ast, index, head_args) do
     fallback = head_args |> Enum.at(index - 1) |> head_var_name() || "arg#{index}"
