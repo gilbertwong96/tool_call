@@ -405,6 +405,50 @@ defmodule ToolCall.TypedocIntegrationTest do
     assert param_description(module, "send", "all") == nil
   end
 
+  test "local alias chains resolve current-module references" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @type location :: __MODULE__.address()
+
+        @doc "Send a parcel."
+        @spec send(to :: location()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+  end
+
+  test "local alias chains take the nearest typedoc" do
+    module =
+      compile_with_docs!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @typedoc "Postal address"
+        @type address :: String.t()
+
+        @type location :: address()
+
+        @doc "Send a parcel."
+        @spec send(to :: location()) :: :ok
+        def send(_to), do: :ok
+      end
+      """)
+
+    on_exit(fn -> unload(module) end)
+
+    assert param_description(module, "send", "to") == "Postal address"
+  end
+
   test "parameterized local types take their typedoc" do
     module =
       compile_with_docs!("""

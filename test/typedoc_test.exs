@@ -40,6 +40,20 @@ defmodule ToolCall.TypedocTest do
            }
   end
 
+  test "from_docs/1 falls back when English text is empty or whitespace" do
+    docs =
+      {:docs_v1, 0, :elixir, "text/markdown", :none, %{},
+       [
+         {{:type, :empty_en, 0}, 0, [], %{"en" => "", "fr" => "Adresse"}, %{}},
+         {{:type, :space_en, 0}, 0, [], %{"en" => "   ", "fr" => "Adresse"}, %{}}
+       ]}
+
+    assert Typedoc.from_docs(docs) == %{
+             {:empty_en, 0} => "Adresse",
+             {:space_en, 0} => "Adresse"
+           }
+  end
+
   test "from_docs/1 ignores malformed entries and terms" do
     docs =
       {:docs_v1, 0, :elixir, "text/markdown", :none, %{},
@@ -189,6 +203,53 @@ defmodule ToolCall.TypedocTest do
     assert Typedoc.key({:|, [], [address_ast, {:integer, [], []}]}, definitions()) == nil
     assert Typedoc.key(remote_ast, definitions()) == nil
     assert Typedoc.key({:missing, [], []}, definitions()) == nil
+  end
+
+  test "keys/2 follows local alias chains" do
+    definitions = %{
+      {:address, 0} => {[], {:string, [], []}},
+      {:location, 0} => {[], {:address, [], []}},
+      {:nullable_location, 0} => {[], {:|, [], [{:address, [], []}, nil]}},
+      {:recursive, 0} => {[], {:recursive, [], []}}
+    }
+
+    assert Typedoc.keys({:address, [], []}, definitions) == [{:address, 0}]
+
+    assert Typedoc.keys({:location, [], []}, definitions) ==
+             [{:location, 0}, {:address, 0}]
+
+    assert Typedoc.keys({:nullable_location, [], []}, definitions) ==
+             [{:nullable_location, 0}, {:address, 0}]
+
+    assert Typedoc.keys({:recursive, [], []}, definitions) == [{:recursive, 0}]
+    assert Typedoc.keys({:list, [], [{:address, [], []}]}, definitions) == []
+  end
+
+  test "apply/3 accepts a key list and uses the first documented key" do
+    tool = %Tool{name: "create", params: [%Param{name: "address"}]}
+    keys = %{{"create", "address"} => [{:location, 0}, {:address, 0}]}
+    docs = %{{:address, 0} => "Postal address"}
+
+    assert [%Tool{params: [%Param{description: "Postal address"}]}] =
+             Typedoc.apply([tool], keys, docs)
+  end
+
+  test "apply/3 skips an empty alias typedoc and uses the next key" do
+    tool = %Tool{name: "create", params: [%Param{name: "address"}]}
+    keys = %{{"create", "address"} => [{:location, 0}, {:address, 0}]}
+    docs = %{{:location, 0} => "", {:address, 0} => "Postal address"}
+
+    assert [%Tool{params: [%Param{description: "Postal address"}]}] =
+             Typedoc.apply([tool], keys, docs)
+  end
+
+  test "apply/3 skips whitespace-only alias typedoc and uses the next key" do
+    tool = %Tool{name: "create", params: [%Param{name: "address"}]}
+    keys = %{{"create", "address"} => [{:location, 0}, {:address, 0}]}
+    docs = %{{:location, 0} => "   ", {:address, 0} => "Postal address"}
+
+    assert [%Tool{params: [%Param{description: "Postal address"}]}] =
+             Typedoc.apply([tool], keys, docs)
   end
 
   test "apply/3 fills only nil descriptions with typedoc text" do

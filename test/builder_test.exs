@@ -1291,10 +1291,10 @@ defmodule ToolCall.BuilderTest do
       """)
 
     assert result.typedoc_keys == %{
-             {"go", "value"} => {:address, 0},
-             {"nullable", "value"} => {:address, 0},
-             {"constrained", "value"} => {:address, 0},
-             {"qualified", "value"} => {:address, 0}
+             {"go", "value"} => [{:address, 0}],
+             {"nullable", "value"} => [{:address, 0}],
+             {"constrained", "value"} => [{:address, 0}],
+             {"qualified", "value"} => [{:address, 0}]
            }
 
     refute Map.has_key?(result.typedoc_keys, {"listed", "value"})

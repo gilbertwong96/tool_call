@@ -27,7 +27,7 @@ defmodule ToolCall.Builder do
       overrides: overrides,
       env: env,
       providers: providers,
-      definitions: LocalTypes.definitions(module)
+      definitions: definitions(module, env)
     }
 
     entries =
@@ -45,15 +45,30 @@ defmodule ToolCall.Builder do
     %{tools: tools, typedoc_keys: typedoc_keys(tools, context.definitions)}
   end
 
+  defp definitions(module, env) do
+    module
+    |> LocalTypes.definitions()
+    |> Map.new(fn {key, {params, body}} ->
+      {key, {params, normalize_type(body, env)}}
+    end)
+  end
+
+  defp normalize_type(ast, env) do
+    ast
+    |> expand_aliases(env)
+    |> localize_module_types(env.module)
+  end
+
   defp typedoc_keys(tools, definitions) do
     # `Typedoc.apply/3` only fills nil descriptions, so a parameter that is
     # already documented by `@doc`, `@tool_param` or an explicit "" needs no
     # key and must not drag its module onto the guarded accessor path.
     for %Tool{name: tool_name, params: params} <- tools,
         %Param{name: param_name, description: nil, source: source} <- params,
-        type_key = Typedoc.key(source, definitions),
+        type_keys = Typedoc.keys(source, definitions),
+        type_keys != [],
         into: %{} do
-      {{tool_name, param_name}, type_key}
+      {{tool_name, param_name}, type_keys}
     end
   end
 

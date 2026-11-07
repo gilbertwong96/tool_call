@@ -100,9 +100,10 @@ defmodule ToolCall.LocalTypes do
     {Enum.reverse(reversed), state}
   end
 
-  defp substitute(body, [], _args), do: body
+  @doc false
+  def substitute(body, [], _args), do: body
 
-  defp substitute(body, params, args) do
+  def substitute(body, params, args) do
     bindings =
       params
       |> Enum.map(&var_name/1)

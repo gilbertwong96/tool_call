@@ -90,6 +90,26 @@ defmodule ToolCall.LocalTypesTest do
            } = param_schema(module, "go", "l")
   end
 
+  test "resolves current-module references inside alias bodies" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        alias __MODULE__, as: Self
+
+        @type city :: String.t()
+        @type location :: __MODULE__.city()
+        @type self_location :: Self.city()
+
+        @spec go(a :: location(), b :: self_location()) :: :ok
+        def go(_a, _b), do: :ok
+      end
+      """)
+
+    assert param_schema(module, "go", "a") == %{"type" => "string"}
+    assert param_schema(module, "go", "b") == %{"type" => "string"}
+  end
+
   test "inlines a local type used as a remote type's argument" do
     module =
       compile!("""

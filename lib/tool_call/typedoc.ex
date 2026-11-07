@@ -12,7 +12,7 @@ defmodule ToolCall.Typedoc do
 
   @type type_key :: {atom(), non_neg_integer()}
   @type typedocs :: %{type_key() => String.t()}
-  @type typedoc_keys :: %{{term(), term()} => type_key()}
+  @type typedoc_keys :: %{{term(), term()} => [type_key()]}
   @type bytecode_error :: :missing_docs_chunk | :corrupt_docs_chunk | :unreadable_beam
 
   @spec from_bytecode(binary()) :: typedocs()
@@ -62,6 +62,13 @@ defmodule ToolCall.Typedoc do
     end
   end
 
+  @spec keys(term(), map()) :: [type_key()]
+  def keys(ast, definitions) when is_map(definitions) do
+    ast
+    |> unwrap_nullable()
+    |> collect_keys(definitions, [])
+  end
+
   @spec apply([Tool.t()], typedoc_keys(), typedocs()) :: [Tool.t()]
   def apply(tools, typedoc_keys, typedocs) do
     Enum.map(tools, fn %Tool{params: params} = tool ->
@@ -83,27 +90,52 @@ defmodule ToolCall.Typedoc do
     _exception -> {:error, :corrupt_docs_chunk}
   end
 
-  defp doc_text(%{"en" => text}) when is_binary(text), do: text
-
   defp doc_text(doc) when is_map(doc) do
-    doc
-    |> Enum.sort_by(fn {language, _text} -> language end)
-    |> Enum.find_value(fn
-      {_language, text} when is_binary(text) -> text
-      _other -> nil
-    end)
+    case Map.fetch(doc, "en") do
+      {:ok, text} when is_binary(text) ->
+        nonempty_text(text) || first_language_text(doc)
+
+      _other ->
+        first_language_text(doc)
+    end
   end
 
-  defp doc_text(text) when is_binary(text), do: text
+  defp doc_text(text) when is_binary(text), do: nonempty_text(text)
   defp doc_text(_doc), do: nil
+
+  defp first_language_text(doc) do
+    doc
+    |> Enum.sort_by(fn {language, _text} -> language end)
+    |> Enum.find_value(fn {_language, text} -> nonempty_text(text) end)
+  end
+
+  defp collect_keys({name, _meta, args}, definitions, seen)
+       when is_atom(name) and is_list(args) do
+    key = {name, length(args)}
+
+    if Map.has_key?(definitions, key) and key not in seen do
+      {params, body} = Map.fetch!(definitions, key)
+
+      next =
+        body
+        |> ToolCall.LocalTypes.substitute(params, args)
+        |> unwrap_nullable()
+
+      [key | collect_keys(next, definitions, [key | seen])]
+    else
+      []
+    end
+  end
+
+  defp collect_keys(_ast, _definitions, _seen), do: []
 
   defp unwrap_nullable({:|, _meta, [left, nil]}), do: left
   defp unwrap_nullable({:|, _meta, [nil, right]}), do: right
   defp unwrap_nullable(ast), do: ast
 
   defp apply_param(%Param{description: nil, name: name} = param, tool_name, keys, docs) do
-    with type_key when not is_nil(type_key) <- Map.get(keys, {tool_name, name}),
-         text when is_binary(text) and text != "" <- Map.get(docs, type_key) do
+    with key when not is_nil(key) <- Map.get(keys, {tool_name, name}),
+         text when is_binary(text) and text != "" <- first_doc(key, docs) do
       %{param | description: text}
     else
       _other -> param
@@ -111,4 +143,16 @@ defmodule ToolCall.Typedoc do
   end
 
   defp apply_param(param, _tool_name, _keys, _docs), do: param
+
+  defp first_doc(keys, docs) when is_list(keys) do
+    Enum.find_value(keys, fn key -> nonempty_text(Map.get(docs, key)) end)
+  end
+
+  defp first_doc(key, docs), do: nonempty_text(Map.get(docs, key))
+
+  defp nonempty_text(text) when is_binary(text) do
+    if String.trim(text) == "", do: nil, else: text
+  end
+
+  defp nonempty_text(_text), do: nil
 end
