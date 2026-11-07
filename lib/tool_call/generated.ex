@@ -13,11 +13,13 @@ defmodule ToolCall.Generated do
   #
   # `create/5` and `remove/2` own the companion lifecycle: `:nofile` modules
   # keep the companion in memory, while source-file modules persist it under
-  # `Mix.Project.compile_path/0` so releases can load it.
+  # `Mix.Project.compile_path/0` so releases can load it. An absent companion
+  # is cached per module, function and generation; create/remove clear it.
 
   alias ToolCall.IR.Tool
 
   @generation_shift 64
+  @source_suffix ".source"
 
   @spec companion(module()) :: module()
   def companion(module), do: Module.concat(module, "__ToolCall__")
@@ -41,16 +43,20 @@ defmodule ToolCall.Generated do
 
   @spec create(Macro.Env.t(), module(), [Tool.t()], map(), pos_integer()) :: :ok | :error
   def create(env, companion, tools, schemas, generation) do
-    case companion_status(env, companion) do
-      :foreign ->
-        warn_collision(env, companion)
-        :error
+    result =
+      case companion_status(env, companion) do
+        :foreign ->
+          warn_collision(env, companion)
+          :error
 
-      _absent_or_ours ->
-        purge(companion)
-        delete_beam(env, companion)
-        create_after_removal(env, companion, tools, schemas, generation)
-    end
+        _absent_or_ours ->
+          purge(companion)
+          delete_beam(env, companion)
+          create_after_removal(env, companion, tools, schemas, generation)
+      end
+
+    if result == :ok, do: forget_absence(companion)
+    result
   end
 
   @spec remove(Macro.Env.t(), module()) :: :ok
@@ -64,7 +70,53 @@ defmodule ToolCall.Generated do
         delete_beam(env, companion)
     end
 
+    forget_absence(companion)
     :ok
+  end
+
+  @doc false
+  @spec prune() :: non_neg_integer()
+  def prune do
+    case compile_path() do
+      {:ok, path} -> prune(path)
+      :error -> 0
+    end
+  end
+
+  @doc false
+  @spec prune(Path.t()) :: non_neg_integer()
+  def prune(path) when is_binary(path) do
+    path
+    |> Path.join("*" <> @source_suffix)
+    |> Path.wildcard()
+    |> Enum.reduce(0, &prune_source/2)
+  end
+
+  @doc false
+  @spec clean() :: non_neg_integer()
+  def clean do
+    case compile_path() do
+      {:ok, path} -> clean(path)
+      :error -> 0
+    end
+  end
+
+  @doc false
+  @spec clean(Path.t()) :: non_neg_integer()
+  def clean(path) when is_binary(path) do
+    source_count =
+      path
+      |> Path.join("*" <> @source_suffix)
+      |> Path.wildcard()
+      |> Enum.reduce(0, &clean_source/2)
+
+    beam_count =
+      path
+      |> Path.join("*.__ToolCall__.beam")
+      |> Path.wildcard()
+      |> Enum.reduce(0, &clean_companion/2)
+
+    source_count + beam_count
   end
 
   defp create_after_removal(env, companion, tools, schemas, generation) do
@@ -98,6 +150,7 @@ defmodule ToolCall.Generated do
   defp write_companion(env, companion, path, binary) do
     case write_atomic(path, binary) do
       :ok ->
+        write_source_metadata(env, path)
         :ok
 
       {:error, reason} ->
@@ -139,9 +192,19 @@ defmodule ToolCall.Generated do
 
   defp delete_beam(_env, companion) do
     case compile_path() do
-      {:ok, path} -> File.rm(Path.join(path, beam_name(companion)))
-      :error -> :ok
+      {:ok, path} ->
+        beam = Path.join(path, beam_name(companion))
+        File.rm(beam)
+        File.rm(source_metadata_path(beam))
+
+      :error ->
+        :ok
     end
+  end
+
+  defp write_source_metadata(env, path) do
+    _ = File.write(source_metadata_path(path), Path.expand(env.file))
+    :ok
   end
 
   defp write_atomic(path, binary) do
@@ -159,6 +222,8 @@ defmodule ToolCall.Generated do
   end
 
   defp beam_name(companion), do: Atom.to_string(companion) <> ".beam"
+
+  defp source_metadata_path(beam), do: beam <> @source_suffix
 
   defp compile_path do
     if Code.ensure_loaded?(Mix.Project) and Mix.Project.get() do
@@ -220,6 +285,100 @@ defmodule ToolCall.Generated do
     end
   end
 
+  defp prune_source(metadata, count) do
+    beam = String.trim_trailing(metadata, @source_suffix)
+
+    if source_present?(metadata, beam) do
+      count
+    else
+      remove_orphan(metadata, beam, count)
+    end
+  end
+
+  defp clean_source(metadata, count) do
+    beam = String.trim_trailing(metadata, @source_suffix)
+
+    if source_present?(metadata, beam) and File.regular?(parent_beam(beam)) do
+      count
+    else
+      remove_orphan(metadata, beam, count)
+    end
+  end
+
+  defp clean_companion(beam, count) do
+    cond do
+      not File.regular?(parent_beam(beam)) ->
+        remove_orphan(source_metadata_path(beam), beam, count)
+
+      source_missing?(beam) ->
+        remove_orphan(source_metadata_path(beam), beam, count)
+
+      true ->
+        count
+    end
+  end
+
+  defp source_missing?(beam) do
+    metadata = source_metadata_path(beam)
+
+    case File.read(metadata) do
+      {:ok, _source} -> not source_present?(metadata, beam)
+      {:error, _reason} -> legacy_source_missing?(beam)
+    end
+  end
+
+  defp legacy_source_missing?(beam) do
+    case beam_source(beam) do
+      source when is_list(source) -> not File.regular?(Path.expand(List.to_string(source)))
+      _other -> false
+    end
+  end
+
+  defp source_present?(metadata, beam) do
+    source_present?(metadata) or beam_source_present?(beam)
+  end
+
+  defp beam_source_present?(beam) do
+    case beam_source(beam) do
+      source when is_list(source) -> File.regular?(Path.expand(List.to_string(source)))
+      _other -> false
+    end
+  end
+
+  defp beam_source(beam) do
+    case :beam_lib.chunks(String.to_charlist(beam), [:compile_info]) do
+      {:ok, {_module, [compile_info: info]}} -> Keyword.get(info, :source)
+      _other -> nil
+    end
+  end
+
+  defp source_present?(metadata) do
+    case File.read(metadata) do
+      {:ok, source} -> File.regular?(source)
+      {:error, _reason} -> false
+    end
+  end
+
+  defp remove_orphan(metadata, beam, count) do
+    case beam_status_at(beam) do
+      :ours ->
+        File.rm(beam)
+        File.rm(metadata)
+        count + 1
+
+      :absent ->
+        File.rm(metadata)
+        count
+
+      :foreign ->
+        count
+    end
+  end
+
+  defp parent_beam(beam) do
+    String.trim_trailing(beam, ".__ToolCall__.beam") <> ".beam"
+  end
+
   defp beam_exports(beam) do
     case :beam_lib.chunks(String.to_charlist(beam), [:exports]) do
       {:ok, {_module, [exports: exports]}} -> {:ok, exports}
@@ -264,16 +423,36 @@ defmodule ToolCall.Generated do
   end
 
   defp current?(companion, function, generation) do
+    key = absence_key(companion, function)
+
+    case :persistent_term.get(key, :unknown) do
+      {:absent, ^generation} ->
+        false
+
+      _other ->
+        current_after_cache?(key, companion, function, generation)
+    end
+  end
+
+  defp current_after_cache?(key, companion, function, generation) do
     loaded? = Code.ensure_loaded?(companion)
     exported? = function_exported?(companion, function, 0)
     stamped? = function_exported?(companion, :__generation__, 0)
     marked? = companion_marked?(companion)
 
-    if loaded? and exported? and stamped? and marked? do
-      companion.__generation__() == generation
+    if loaded? and exported? and stamped? and marked? and companion.__generation__() == generation do
+      true
     else
+      :persistent_term.put(key, {:absent, generation})
       false
     end
+  end
+
+  defp absence_key(companion, function), do: {__MODULE__, :absence, companion, function}
+
+  defp forget_absence(companion) do
+    :persistent_term.erase(absence_key(companion, :__tools__))
+    :persistent_term.erase(absence_key(companion, :__schemas__))
   end
 
   defp companion_marked?(companion) do

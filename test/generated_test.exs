@@ -163,6 +163,36 @@ defmodule ToolCall.GeneratedTest do
     assert Generated.schemas(companion, 1, @fallback_schemas) == @fallback_schemas
   end
 
+  test "caches an absent companion until create invalidates it" do
+    companion = Generated.companion(ToolCall.GeneratedTest.AbsentFixture)
+    env = %Macro.Env{module: ToolCall.GeneratedTest.AbsentFixture, file: "nofile", line: 1}
+
+    assert Generated.tools(companion, 41, @fallback_tools) == @fallback_tools
+    assert Generated.tools(companion, 41, @fallback_tools) == @fallback_tools
+
+    assert :persistent_term.get({Generated, :absence, companion, :__tools__}) ==
+             {:absent, 41}
+
+    created_tools = [%Tool{name: "created", module: ToolCall.GeneratedTest.AbsentFixture}]
+
+    on_exit(fn ->
+      :code.purge(companion)
+      :code.delete(companion)
+      :persistent_term.erase({Generated, :absence, companion, :__tools__})
+      :persistent_term.erase({Generated, :absence, companion, :__schemas__})
+    end)
+
+    assert Generated.create(env, companion, created_tools, %{}, 41) == :ok
+
+    assert :persistent_term.get({Generated, :absence, companion, :__tools__}, :unknown) ==
+             :unknown
+
+    assert Generated.tools(companion, 41, @fallback_tools) == created_tools
+
+    assert Generated.remove(env, companion) == :ok
+    assert Generated.tools(companion, 41, @fallback_tools) == @fallback_tools
+  end
+
   test "tools/3 and schemas/3 return the fallback when the companion has no generation token" do
     companion = ToolCall.GeneratedTest.UnstampedCompanion
 
@@ -176,11 +206,13 @@ defmodule ToolCall.GeneratedTest do
 
     assert Generated.tools(tools_only, 7, @fallback_tools) == tools
     assert Generated.schemas(tools_only, 7, @fallback_schemas) == @fallback_schemas
+    assert Generated.tools(tools_only, 7, @fallback_tools) == tools
 
     schemas_only = ToolCall.GeneratedTest.SchemasOnlyCompanion
     schemas = schemas_only.__schemas__()
 
     assert Generated.schemas(schemas_only, 11, @fallback_schemas) == schemas
     assert Generated.tools(schemas_only, 11, @fallback_tools) == @fallback_tools
+    assert Generated.schemas(schemas_only, 11, @fallback_schemas) == schemas
   end
 end

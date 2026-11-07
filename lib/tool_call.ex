@@ -189,6 +189,7 @@ defmodule ToolCall do
         :ok
     end
 
+    Generated.prune()
     :ok
   end
 
