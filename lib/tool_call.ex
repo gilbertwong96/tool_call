@@ -152,6 +152,8 @@ defmodule ToolCall do
         end
       end
 
+    runner_clauses = runner_clauses(embedded)
+
     quote do
       @doc false
       def __tools__, do: unquote(tools_body)
@@ -162,11 +164,50 @@ defmodule ToolCall do
       @doc false
       def __tool__(name), do: Enum.find(__tools__(), &(&1.name == to_string(name)))
 
+      unquote_splicing(runner_clauses)
+
       @doc false
       def __run__(name, args),
         do: ToolCall.Runner.run_prepared(__MODULE__, __tools__(), name, args)
     end
   end
+
+  defp runner_clauses(tools) do
+    tools
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {tool, index} ->
+      runner = :"__tool_call_run_#{index}__"
+
+      known = Enum.map(tool.params, & &1.name)
+      nested? = Enum.any?(tool.params, &nested_key_check?(&1.type))
+
+      [
+        quote do
+          def __run__(unquote(tool.name), args), do: unquote(runner)(args)
+          def __run__(unquote(tool.fun), args), do: unquote(runner)(args)
+
+          defp unquote(runner)(args) do
+            ToolCall.Runner.run_prepared_tool(
+              __MODULE__,
+              unquote(Macro.escape(tool)),
+              args,
+              unquote(nested?),
+              unquote(known)
+            )
+          end
+        end
+      ]
+    end)
+  end
+
+  defp nested_key_check?(%ToolCall.IR.Type{kind: :object}), do: true
+  defp nested_key_check?(%ToolCall.IR.Type{kind: :array}), do: true
+  defp nested_key_check?(%ToolCall.IR.Type{kind: :tuple}), do: true
+
+  defp nested_key_check?(%ToolCall.IR.Type{kind: :union, variants: variants}),
+    do: Enum.any?(variants || [], &nested_key_check?/1)
+
+  defp nested_key_check?(_type), do: false
 
   # Phase two: recover visible typedocs from the just-compiled bytecode and
   # publish a companion only when at least one description changed. The

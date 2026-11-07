@@ -111,6 +111,50 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"point" => %{"x" => 1}, "points" => [%{x: 2}]})
   end
 
+  test "skips nested scanning for an omitted optional object" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(name :: String.t(), point :: %{x: integer()}) :: term()
+        def go(name, point \\\\ %{x: 0}), do: {name, point}
+      end
+      """)
+
+    assert {:ok, {"n", %{x: 0}}} = ToolCall.run(module, :go, %{"name" => "n"})
+  end
+
+  test "checks nested keys through a union" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(value :: %{x: integer()} | nil) :: term()
+        def go(value), do: value
+      end
+      """)
+
+    assert {:error, {:non_string_arguments, [:x]}} =
+             ToolCall.run(module, :go, %{"value" => %{x: 1}})
+  end
+
+  test "checks nested keys through a non-nullable union" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(value :: integer() | %{x: integer()}) :: term()
+        def go(value), do: value
+      end
+      """)
+
+    assert {:error, {:non_string_arguments, [:x]}} =
+             ToolCall.run(module, :go, %{"value" => %{x: 1}})
+  end
+
   test "accepts atom keys in nested keyword values" do
     module =
       compile!("""
@@ -365,6 +409,11 @@ defmodule ToolCall.RunnerTest do
   test "rejects non-map arguments through the validating entry" do
     assert {:error, {:invalid_arguments, "bad"}} =
              ToolCall.Runner.run(__MODULE__, [], "ping", "bad")
+  end
+
+  test "rejects non-map arguments through the prepared entry" do
+    assert {:error, {:invalid_arguments, "bad"}} =
+             ToolCall.Runner.run_prepared(__MODULE__, [], "ping", "bad")
   end
 
   test "rejects non-string keys instead of reporting a known name as unknown" do

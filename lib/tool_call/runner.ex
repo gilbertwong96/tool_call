@@ -42,17 +42,38 @@ defmodule ToolCall.Runner do
   def run_prepared(module, tools, name, args) when is_map(args) do
     name = to_string(name)
 
-    with {:ok, tool} <- fetch(tools, name),
-         :ok <- reject_non_string_keys(args),
-         :ok <- reject_nested_non_string_keys(tool, args),
-         :ok <- reject_unknown_arguments(tool, args),
+    case fetch(tools, name) do
+      {:ok, tool} -> run_prepared_tool(module, tool, args)
+      error -> error
+    end
+  end
+
+  def run_prepared(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+
+  @doc false
+  @spec run_prepared_tool(module(), Tool.t(), term()) :: {:ok, term()} | {:error, term()}
+  def run_prepared_tool(module, %Tool{} = tool, args) do
+    run_prepared_tool(module, tool, args, true, nil)
+  end
+
+  @doc false
+  @spec run_prepared_tool(module(), Tool.t(), term(), boolean(), [String.t()] | nil) ::
+          {:ok, term()} | {:error, term()}
+  def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known)
+      when is_map(args) do
+    known = known || Enum.map(tool.params || [], & &1.name)
+
+    with :ok <- reject_non_string_keys(args),
+         :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
+         :ok <- reject_unknown_arguments(args, known),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
       invoke(module, tool, positional)
     end
   end
 
-  def run_prepared(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+  def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known),
+    do: {:error, {:invalid_arguments, args}}
 
   # Reporting a known name as "unknown" because it arrived as an atom is
   # misleading; JSON objects decode to strings, so say what is wrong.
@@ -145,10 +166,8 @@ defmodule ToolCall.Runner do
     end
   end
 
-  defp reject_unknown_arguments(%Tool{} = tool, args) do
-    known = MapSet.new(tool.params, & &1.name)
-
-    case Enum.reject(Map.keys(args), &MapSet.member?(known, &1)) do
+  defp reject_unknown_arguments(args, known) do
+    case Enum.reject(Map.keys(args), &(&1 in known)) do
       [] -> :ok
       unknown -> {:error, {:unknown_arguments, Enum.map(unknown, &to_string/1)}}
     end
