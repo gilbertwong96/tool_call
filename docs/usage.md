@@ -85,17 +85,19 @@ companion is stale or missing.
 
 Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module with an
 empty typedoc key map takes about 0.07 µs for `emit/3`, 13 ns for
-`__schemas__/0` and 0.5 µs for `run/3`. A local-type parameter that is already
-documented by `@doc` or `@tool_param` takes that same direct path, because
-`Typedoc.apply/3` would not touch it. With a typedoc companion present,
-`emit/3` takes about 0.14 µs and `run/3` about 0.6 µs. A module with an
+`__schemas__/0` and about 0.15 µs for `run/3` on the generated scalar fast path.
+A local-type parameter that is already documented by `@doc` or `@tool_param`
+takes that same direct path, because `Typedoc.apply/3` would not touch it. With
+a typedoc companion present, `emit/3` takes about 0.14 µs; `run/3` uses the
+generated per-tool IR without the companion guard. A complex nested tool falls
+back to the generic coercion path at roughly 0.5 µs. A module with an
 undocumented local-type parameter whose type has no visible `@typedoc` still
-pays the guard on the first accessor call — roughly 16–26 µs because the failed
-`Code.ensure_loaded?/1` searches the code path, which depends on the code path
-length. The absence is cached per companion, function and generation, so later
-calls use the phase-one literal directly. A fresh render of a runtime
-`ToolCall.IR.Tool` costs about 0.5 µs. The embedded schemas add roughly 35 KB to
-the beam and 9 ms to compilation.
+pays the guard on the first `__tools__`/`__schemas__` accessor call — roughly
+16–26 µs because the failed `Code.ensure_loaded?/1` searches the code path,
+which depends on the code path length. The absence is cached per companion,
+function and generation, so later calls use the phase-one literal directly. A
+fresh render of a runtime `ToolCall.IR.Tool` costs about 0.5 µs. The embedded
+schemas add roughly 35 KB to the beam and 9 ms to compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
 chunks, so Code.Typespec.fetch_specs/1 and `Code.fetch_docs/1` fail on the

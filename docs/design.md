@@ -357,20 +357,22 @@ it, which keeps a stale companion from serving old data.
 
 Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module whose
 effective typedoc key map is empty reads the literals directly — `emit/3` costs
-about 0.07 µs per call, `__schemas__/0` about 13 ns and `run/3` about 0.5 µs.
-That includes a module whose local-type parameter is already documented by a
-`@doc` bullet or `@tool_param` description. With a typedoc companion present,
-`emit/3` costs about 0.14 µs and `run/3` about 0.6 µs. A module with an
+about 0.07 µs per call, `__schemas__/0` about 13 ns and `run/3` about 0.15 µs
+for the generated scalar fast path. A local-type parameter that is already
+documented by a `@doc` bullet or `@tool_param` description takes that same
+direct path, because `Typedoc.apply/3` would not touch it. With a typedoc
+companion present, `emit/3` costs about 0.14 µs; `run/3` uses the generated
+per-tool IR and does not need the companion guard. A complex nested tool falls
+back to the generic coercion path at roughly 0.5 µs. A module with an
 undocumented local-type parameter whose type has no visible `@typedoc` still
-takes the guarded path. The first `__tools__/0` or `__schemas__/0` call pays
-roughly 16–26 µs because the failed `Code.ensure_loaded?/1` searches the code
-path (the exact cost depends on the code path length); the per-companion,
+takes the guarded path for `__tools__/0` / `__schemas__/0`. The first such call
+pays roughly 16–26 µs because the failed `Code.ensure_loaded?/1` searches the
+code path (the exact cost depends on the code path length); the per-companion,
 per-function absence is cached for that generation, so later calls return the
 phase-one literal without repeating the lookup. A fresh render of a runtime
-`ToolCall.IR.Tool` costs about
-0.5 µs per call. The embedded schemas add about 35 KB to the beam and 9 ms to
-compilation. A module built at runtime (`ToolCall.IR.Tool`) is rendered on
-demand instead.
+`ToolCall.IR.Tool` costs about 0.5 µs per call. The embedded schemas add about
+35 KB to the beam and 9 ms to compilation. A module built at runtime
+(`ToolCall.IR.Tool`) is rendered on demand instead.
 
 **Strict mode is an emitter concern.** `strict: true` sets the tool flag,
 rewrites optional properties to `["T","null"]`, moves every property (nested
