@@ -75,6 +75,32 @@ defmodule ToolCall.Runner do
   def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known),
     do: {:error, {:invalid_arguments, args}}
 
+  @doc false
+  @spec check_arguments(term(), [String.t()]) :: :ok | {:error, term()}
+  def check_arguments(args, known) do
+    with :ok <- reject_non_string_keys(args) do
+      reject_unknown_arguments(args, known)
+    end
+  end
+
+  @doc false
+  @spec normalize(term()) :: {:ok, term()} | {:error, term()}
+  def normalize({:ok, _value} = ok), do: ok
+  def normalize({:error, _reason} = error), do: error
+  def normalize(other), do: {:ok, other}
+
+  @doc false
+  @spec raised(Exception.t(), list()) :: {:error, {:raised, String.t()}}
+  def raised(exception, stacktrace) do
+    Logger.error(Exception.format(:error, exception, stacktrace))
+    {:error, {:raised, Exception.message(exception)}}
+  end
+
+  @doc false
+  @spec caught(:throw | :exit, term()) :: {:error, term()}
+  def caught(:throw, value), do: {:error, {:thrown, value}}
+  def caught(:exit, reason), do: {:error, {:exited, reason}}
+
   # Reporting a known name as "unknown" because it arrived as an atom is
   # misleading; JSON objects decode to strings, so say what is wrong.
   defp reject_non_string_keys(args) do
@@ -232,40 +258,19 @@ defmodule ToolCall.Runner do
   defp optional_prefix?(provided, optional), do: Enum.take(optional, length(provided)) == provided
 
   defp first_optional_gap(optional, values) do
-    {missing, dropped, _seen_missing?} =
-      Enum.reduce(optional, {nil, [], false}, fn param, {missing, dropped, seen_missing?} ->
-        cond do
-          not Map.has_key?(values, param.name) ->
-            {missing || param, dropped, true}
+    {_before, [missing | rest]} =
+      Enum.split_while(optional, &Map.has_key?(values, &1.name))
 
-          seen_missing? ->
-            {missing, dropped ++ [param], true}
-
-          true ->
-            {missing, dropped, false}
-        end
-      end)
-
+    dropped = Enum.filter(rest, &Map.has_key?(values, &1.name))
     {missing, dropped}
   end
 
   defp invoke(module, %Tool{} = tool, args) do
-    result =
-      try do
-        apply(module, tool.fun, args)
-      rescue
-        exception ->
-          Logger.error(Exception.format(:error, exception, __STACKTRACE__))
-          {:error, {:raised, Exception.message(exception)}}
-      catch
-        :throw, value -> {:error, {:thrown, value}}
-        :exit, reason -> {:error, {:exited, reason}}
-      end
-
-    normalize(result)
+    normalize(apply(module, tool.fun, args))
+  rescue
+    exception -> raised(exception, __STACKTRACE__)
+  catch
+    :throw, value -> caught(:throw, value)
+    :exit, reason -> caught(:exit, reason)
   end
-
-  defp normalize({:ok, _value} = ok), do: ok
-  defp normalize({:error, _reason} = error), do: error
-  defp normalize(other), do: {:ok, other}
 end

@@ -46,6 +46,99 @@ defmodule ToolCall.Coerce do
   end
 
   @doc false
+  @spec simple_string(term()) :: {:ok, String.t()} | {:error, term()}
+  def simple_string(value) when is_binary(value) do
+    if String.valid?(value), do: {:ok, value}, else: {:error, {:invalid_utf8, value}}
+  end
+
+  def simple_string(value), do: {:error, {:expected_string, value}}
+
+  @doc false
+  @spec simple_integer(term(), integer() | nil, integer() | nil) ::
+          {:ok, integer()} | {:error, term()}
+  def simple_integer(value, minimum, maximum) do
+    cond do
+      is_integer(value) -> simple_bounds(value, minimum, maximum)
+      is_float(value) and value == trunc(value) -> simple_bounds(trunc(value), minimum, maximum)
+      true -> {:error, {:expected_integer, value}}
+    end
+  end
+
+  @doc false
+  @spec simple_float(term(), number() | nil, number() | nil) ::
+          {:ok, float()} | {:error, term()}
+  def simple_float(value, minimum, maximum) do
+    cond do
+      is_float(value) ->
+        simple_bounds(value, minimum, maximum)
+
+      is_integer(value) ->
+        if abs(value) <= @max_float,
+          do: simple_bounds(value * 1.0, minimum, maximum),
+          else: {:error, {:expected_float, value}}
+
+      true ->
+        {:error, {:expected_float, value}}
+    end
+  end
+
+  @doc false
+  @spec simple_number(term(), number() | nil, number() | nil) ::
+          {:ok, number()} | {:error, term()}
+  def simple_number(value, minimum, maximum) when is_number(value),
+    do: simple_bounds(value, minimum, maximum)
+
+  def simple_number(value, _minimum, _maximum), do: {:error, {:expected_number, value}}
+
+  @doc false
+  @spec simple_boolean(term()) :: {:ok, boolean()} | {:error, term()}
+  def simple_boolean(value) when is_boolean(value), do: {:ok, value}
+  def simple_boolean(value), do: {:error, {:expected_boolean, value}}
+
+  @doc false
+  @spec simple_atom(term()) :: {:ok, atom()} | {:error, term()}
+  def simple_atom(value) when is_atom(value) and not is_boolean(value) and not is_nil(value),
+    do: {:ok, value}
+
+  def simple_atom(value) when is_binary(value) do
+    if String.valid?(value) do
+      atom = String.to_existing_atom(value)
+
+      if is_boolean(atom) or is_nil(atom),
+        do: {:error, {:expected_atom, value}},
+        else: {:ok, atom}
+    else
+      {:error, {:invalid_utf8, value}}
+    end
+  rescue
+    ArgumentError -> {:error, {:unknown_atom, value}}
+  end
+
+  def simple_atom(value), do: {:error, {:expected_atom, value}}
+
+  @doc false
+  @spec simple_null(term()) :: {:ok, nil} | {:error, term()}
+  def simple_null(nil), do: {:ok, nil}
+  def simple_null(value), do: {:error, {:expected_null, value}}
+
+  @doc false
+  @spec simple_any(term()) :: {:ok, term()}
+  def simple_any(value), do: {:ok, value}
+
+  defp simple_bounds(value, nil, nil), do: {:ok, value}
+
+  defp simple_bounds(value, minimum, maximum) do
+    below? = not is_nil(minimum) and value < minimum
+    above? = not is_nil(maximum) and value > maximum
+
+    cond do
+      below? -> {:error, {:below_minimum, value, minimum}}
+      above? -> {:error, {:above_maximum, value, maximum}}
+      true -> {:ok, value}
+    end
+  end
+
+  @doc false
   @spec accepts_nil?(Type.t()) :: boolean()
   def accepts_nil?(%Type{nullable: true}), do: true
   def accepts_nil?(%Type{kind: :null}), do: true
@@ -169,27 +262,7 @@ defmodule ToolCall.Coerce do
   defp coerce_kind(%Type{kind: :null}, nil), do: {:ok, nil}
   defp coerce_kind(%Type{kind: :null}, value), do: {:error, {:expected_null, value}}
 
-  defp coerce_kind(%Type{kind: :atom}, value)
-       when is_atom(value) and not is_boolean(value) and not is_nil(value),
-       do: {:ok, value}
-
-  defp coerce_kind(%Type{kind: :atom}, value) when is_binary(value) do
-    if String.valid?(value) do
-      atom = String.to_existing_atom(value)
-
-      if is_boolean(atom) or is_nil(atom) do
-        {:error, {:expected_atom, value}}
-      else
-        {:ok, atom}
-      end
-    else
-      {:error, {:invalid_utf8, value}}
-    end
-  rescue
-    ArgumentError -> {:error, {:unknown_atom, value}}
-  end
-
-  defp coerce_kind(%Type{kind: :atom}, value), do: {:error, {:expected_atom, value}}
+  defp coerce_kind(%Type{kind: :atom}, value), do: simple_atom(value)
 
   defp coerce_kind(%Type{kind: :enum} = type, value), do: coerce_enum(type, value)
 

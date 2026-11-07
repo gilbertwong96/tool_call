@@ -604,6 +604,50 @@ defmodule ToolCall.CoerceTest do
     end
   end
 
+  describe "simple scalar fast path" do
+    test "coerces strings, numbers, booleans and null" do
+      huge = 10 ** 400
+
+      assert {:ok, "x"} = Coerce.simple_string("x")
+      assert {:error, {:invalid_utf8, <<255>>}} = Coerce.simple_string(<<255>>)
+      assert {:error, {:expected_string, 1}} = Coerce.simple_string(1)
+
+      assert {:ok, 2} = Coerce.simple_integer(2.0, 1, 3)
+      assert {:error, {:expected_integer, 2.5}} = Coerce.simple_integer(2.5, nil, nil)
+      assert {:error, {:below_minimum, 0, 1}} = Coerce.simple_integer(0, 1, nil)
+      assert {:error, {:above_maximum, 4, 3}} = Coerce.simple_integer(4, nil, 3)
+
+      assert {:ok, 2.0} = Coerce.simple_float(2, nil, nil)
+      assert {:ok, 2.5} = Coerce.simple_float(2.5, 1.0, 3.0)
+      assert {:error, {:expected_float, "2"}} = Coerce.simple_float("2", nil, nil)
+      assert {:error, {:expected_float, ^huge}} = Coerce.simple_float(huge, nil, nil)
+
+      assert {:ok, 2} = Coerce.simple_number(2, 1, 3)
+      assert {:error, {:below_minimum, 0, 1}} = Coerce.simple_number(0, 1, nil)
+      assert {:error, {:expected_number, "2"}} = Coerce.simple_number("2", nil, nil)
+
+      assert {:ok, true} = Coerce.simple_boolean(true)
+      assert {:error, {:expected_boolean, "true"}} = Coerce.simple_boolean("true")
+
+      assert {:ok, nil} = Coerce.simple_null(nil)
+      assert {:error, {:expected_null, 1}} = Coerce.simple_null(1)
+      assert {:ok, :anything} = Coerce.simple_any(:anything)
+    end
+
+    test "coerces atoms through existing atoms" do
+      assert {:ok, :ok} = Coerce.simple_atom(:ok)
+      assert {:ok, :ok} = Coerce.simple_atom("ok")
+      assert {:error, {:expected_atom, "true"}} = Coerce.simple_atom("true")
+
+      assert {:error, {:unknown_atom, "not_an_existing_atom"}} =
+               Coerce.simple_atom("not_an_existing_atom")
+
+      assert {:error, {:invalid_utf8, <<255>>}} = Coerce.simple_atom(<<255>>)
+      assert {:error, {:expected_atom, 1}} = Coerce.simple_atom(1)
+      assert {:error, {:expected_atom, nil}} = Coerce.simple_atom(nil)
+    end
+  end
+
   describe "param/2" do
     test "prefixes errors with the parameter name" do
       param = %Param{name: "user_id", type: integer(min: 1), wire: :number}

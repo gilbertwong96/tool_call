@@ -26,7 +26,7 @@ defmodule ToolCallTest.Weather do
   @spec paint(color :: :red | :green) :: :ok
   def paint(_color), do: :ok
 
-  @spec boom(x :: integer()) :: integer()
+  @spec boom(x :: integer()) :: no_return()
   def boom(_x), do: raise("kaboom")
 
   @doc false

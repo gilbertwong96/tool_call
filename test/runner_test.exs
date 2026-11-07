@@ -93,6 +93,103 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"text" => "x", "pattern" => "x", "chars" => <<255>>})
   end
 
+  test "handles scalar fast-path types" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(
+                n :: number(),
+                b :: boolean(),
+                a :: atom(),
+                z :: nil,
+                x :: any(),
+                f :: float()
+              ) :: term()
+        def go(n, b, a, z, x, f), do: {n, b, a, z, x, f}
+      end
+      """)
+
+    assert {:ok, {1, true, :ok, nil, %{"a" => 1}, 2.0}} =
+             ToolCall.run(module, :go, %{
+               "n" => 1,
+               "b" => true,
+               "a" => "ok",
+               "z" => nil,
+               "x" => %{"a" => 1},
+               "f" => 2
+             })
+  end
+
+  test "rejects an argument gap in a generic complex tool" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(name :: String.t(), opts :: %{a: integer()}, extra :: %{b: integer()}) :: term()
+        def go(name, opts \\\\ %{a: 0}, extra \\\\ %{b: 0}), do: {name, opts, extra}
+      end
+      """)
+
+    assert {:error, {:argument_gap, "opts", ["extra"]}} =
+             ToolCall.run(module, :go, %{"name" => "n", "extra" => %{"b" => 1}})
+  end
+
+  @tag capture_log: true
+  test "handles exceptions through the generic complex runner" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec boom(x :: %{a: integer()}) :: no_return()
+        def boom(_x), do: raise("complex boom")
+
+        @spec fail(x :: %{a: integer()}) :: {:error, :bad}
+        def fail(_x), do: {:error, :bad}
+      end
+      """)
+
+    assert {:error, {:raised, "complex boom"}} =
+             ToolCall.run(module, :boom, %{"x" => %{"a" => 1}})
+
+    assert {:error, :bad} = ToolCall.run(module, :fail, %{"x" => %{"a" => 1}})
+  end
+
+  test "handles throws and exits through the generic complex runner" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec toss(x :: %{a: integer()}) :: no_return()
+        def toss(_x), do: throw(:nope)
+
+        @spec halt(x :: %{a: integer()}) :: no_return()
+        def halt(_x), do: exit(:nope)
+      end
+      """)
+
+    assert {:error, {:thrown, :nope}} = ToolCall.run(module, :toss, %{"x" => %{"a" => 1}})
+    assert {:error, {:exited, :nope}} = ToolCall.run(module, :halt, %{"x" => %{"a" => 1}})
+  end
+
+  test "rejects non-map arguments through a generic complex tool" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: %{a: integer()}) :: term()
+        def go(x), do: x
+      end
+      """)
+
+    assert {:error, {:invalid_arguments, nil}} = ToolCall.run(module, :go, nil)
+  end
+
   test "rejects nested non-string keys" do
     module =
       compile!("""
@@ -313,6 +410,26 @@ defmodule ToolCall.RunnerTest do
 
     assert {:ok, 3} = ToolCall.run(module, :go, %{})
     assert {:ok, nil} = ToolCall.run(module, :go, %{"x" => nil})
+  end
+
+  test "keeps explicit null for optional any and null types" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec any_value(x :: any()) :: any()
+        def any_value(x \\\\ :default), do: x
+
+        @spec null_value(x :: nil) :: nil | :default
+        def null_value(x \\\\ :default), do: x
+      end
+      """)
+
+    assert {:ok, nil} = ToolCall.run(module, :any_value, %{"x" => nil})
+    assert {:ok, nil} = ToolCall.run(module, :null_value, %{"x" => nil})
+    assert {:ok, :default} = ToolCall.run(module, :any_value, %{})
+    assert {:ok, :default} = ToolCall.run(module, :null_value, %{})
   end
 
   test "treats an explicit null for an optional argument as absent" do
