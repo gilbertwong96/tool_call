@@ -43,7 +43,7 @@ defmodule ToolCall.ReleaseSmokeTest do
       File.rm_rf(release_dir)
     end)
 
-    {^module, main_beam, _diagnostics} = compile!(path)
+    {^module, main_beam, _diagnostics} = compile!(path, module)
     assert File.exists?(companion_beam)
 
     File.mkdir_p!(release_dir)
@@ -83,7 +83,7 @@ defmodule ToolCall.ReleaseSmokeTest do
       File.rm(path)
     end)
 
-    {^module, _main_beam, _diagnostics} = compile!(path)
+    {^module, _main_beam, _diagnostics} = compile!(path, module)
     assert param_description(module, "send", "to") == "Postal address"
 
     # Make the atomic write fail after the old companion has been purged.
@@ -97,7 +97,7 @@ defmodule ToolCall.ReleaseSmokeTest do
       |> String.replace("Postal address", "Updated address")
     )
 
-    {^module, _main_beam, diagnostics} = compile!(path)
+    {^module, _main_beam, diagnostics} = compile!(path, module)
     warning = Enum.map_join(diagnostics, "\n", & &1.message)
 
     assert warning =~ "could not write the typedoc companion beam"
@@ -115,13 +115,16 @@ defmodule ToolCall.ReleaseSmokeTest do
     path
   end
 
-  defp compile!(path) do
+  defp compile!(path, module) do
     previous = Code.compiler_options()[:docs]
     Code.compiler_options(docs: true)
 
     try do
-      {[{module, binary} | _], diagnostics} =
+      {compiled, diagnostics} =
         Code.with_diagnostics(fn -> Code.compile_file(path) end)
+
+      {^module, binary} =
+        Enum.find(compiled, fn {compiled_module, _binary} -> compiled_module == module end)
 
       {module, binary, diagnostics}
     after
