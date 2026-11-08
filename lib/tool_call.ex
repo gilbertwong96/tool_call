@@ -360,10 +360,15 @@ defmodule ToolCall do
   end
 
   defp ensure_tool_module!(module, function \\ :__tools__) do
-    if not (is_atom(module) and Code.ensure_loaded?(module) and
-              function_exported?(module, function, function_arity(function))) do
+    loaded? = is_atom(module) and loaded_module?(module)
+
+    if not (loaded? and function_exported?(module, function, function_arity(function))) do
       raise ArgumentError, "#{inspect(module)} does not use ToolCall"
     end
+  end
+
+  defp loaded_module?(module) do
+    :code.is_loaded(module) != false or Code.ensure_loaded?(module)
   end
 
   defp function_arity(:__schemas__), do: 0

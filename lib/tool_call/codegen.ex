@@ -51,8 +51,17 @@ defmodule ToolCall.Codegen do
       |> Enum.with_index()
       |> Enum.map(fn {_param, index} -> present_var(index) end)
 
-    present_clauses = Enum.zip(optional, present_vars) |> Enum.map(&present_clause/1)
-    body = optional_body(tool, params, vars, optional, present_vars, indirect?)
+    value_vars =
+      optional
+      |> Enum.with_index()
+      |> Enum.map(fn {_param, index} -> optional_value_var(index) end)
+
+    present_clauses =
+      optional
+      |> Enum.zip(Enum.zip(present_vars, value_vars))
+      |> Enum.map(&present_clause/1)
+
+    body = optional_body(tool, params, vars, optional, present_vars, value_vars, indirect?)
 
     clauses = [check_clause(known)] ++ required_clauses ++ present_clauses
     with_ast = {:with, [], clauses ++ [[do: body]]}
@@ -83,22 +92,22 @@ defmodule ToolCall.Codegen do
     end
   end
 
-  defp optional_body(tool, params, vars, [], _present_vars, indirect?) do
+  defp optional_body(tool, params, vars, [], _present_vars, _value_vars, indirect?) do
     selected = Enum.map(params, fn param -> vars[Enum.find_index(params, &(&1 == param))] end)
     invoke_ast(tool, selected, indirect?)
   end
 
-  defp optional_body(tool, params, vars, optional, present_vars, indirect?) do
+  defp optional_body(tool, params, vars, optional, present_vars, value_vars, indirect?) do
     branches =
       for mask <- 0..(bsl(1, length(optional)) - 1) do
-        optional_branch(tool, params, vars, optional, mask, indirect?)
+        optional_branch(tool, params, vars, optional, mask, value_vars, indirect?)
       end
 
     tuple = quote do: {unquote_splicing(present_vars)}
     {:case, [], [tuple, [do: branches]]}
   end
 
-  defp optional_branch(tool, params, vars, optional, mask, indirect?) do
+  defp optional_branch(tool, params, vars, optional, mask, value_vars, indirect?) do
     bits = for index <- 0..(length(optional) - 1), do: band(mask, bsl(1, index)) != 0
     pattern = quote do: {unquote_splicing(bits)}
 
@@ -107,9 +116,9 @@ defmodule ToolCall.Codegen do
         optional
         |> Enum.with_index()
         |> Enum.filter(fn {_param, index} -> Enum.at(bits, index) end)
-        |> Enum.map(fn {param, _optional_index} ->
+        |> Enum.map(fn {param, optional_index} ->
           param_index = Enum.find_index(params, &(&1 == param))
-          arg_clause(param, vars[param_index], param_index)
+          optional_value_clause(param, vars[param_index], Enum.at(value_vars, optional_index))
         end)
 
       selected =
@@ -154,21 +163,16 @@ defmodule ToolCall.Codegen do
     end
   end
 
-  defp present_clause({param, var}) do
-    quote do
-      unquote(var) <- unquote(present_ast(param))
-    end
-  end
-
-  defp present_ast(%Param{name: name, type: type}) do
+  defp present_clause({%Param{name: name, type: type}, {present_var, value_var}}) do
     accepts_nil = accepts_nil?(type)
 
     quote do
-      case Map.fetch(args, unquote(name)) do
-        {:ok, nil} -> unquote(accepts_nil)
-        {:ok, _value} -> true
-        :error -> false
-      end
+      {unquote(present_var), unquote(value_var)} <-
+        case Map.fetch(args, unquote(name)) do
+          {:ok, nil} -> {unquote(accepts_nil), nil}
+          {:ok, value} -> {true, value}
+          :error -> {false, nil}
+        end
     end
   end
 
@@ -187,6 +191,18 @@ defmodule ToolCall.Codegen do
 
           :error ->
             {:error, {:missing_argument, unquote(name)}}
+        end
+    end
+  end
+
+  defp optional_value_clause(%Param{name: name, type: type}, var, value_var) do
+    coerce = coerce_ast(type, value_var)
+
+    quote do
+      {:ok, unquote(var)} <-
+        case unquote(coerce) do
+          {:ok, unquote(var)} -> {:ok, unquote(var)}
+          {:error, reason} -> {:error, {:invalid_argument, {unquote(name), reason}}}
         end
     end
   end
@@ -251,6 +267,7 @@ defmodule ToolCall.Codegen do
   end
 
   defp present_var(index), do: Macro.var(:"present_#{index}", __MODULE__)
+  defp optional_value_var(index), do: Macro.var(:"optional_value_#{index}", __MODULE__)
 
   defp fast_tool?(%Tool{params: params}) do
     params = params || []

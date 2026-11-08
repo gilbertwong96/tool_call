@@ -78,8 +78,24 @@ defmodule ToolCall.Runner do
   @doc false
   @spec check_arguments(term(), [String.t()]) :: :ok | {:error, term()}
   def check_arguments(args, known) do
-    with :ok <- reject_non_string_keys(args) do
-      reject_unknown_arguments(args, known)
+    {non_string, unknown} =
+      Enum.reduce(Map.keys(args), {[], []}, fn key, {non_string, unknown} ->
+        cond do
+          not is_binary(key) -> {[key | non_string], unknown}
+          key not in known -> {non_string, [key | unknown]}
+          true -> {non_string, unknown}
+        end
+      end)
+
+    cond do
+      non_string != [] ->
+        {:error, {:non_string_arguments, Enum.reverse(non_string)}}
+
+      unknown != [] ->
+        {:error, {:unknown_arguments, Enum.map(Enum.reverse(unknown), &to_string/1)}}
+
+      true ->
+        :ok
     end
   end
 

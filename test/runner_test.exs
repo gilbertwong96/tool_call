@@ -252,6 +252,24 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"value" => %{x: 1}})
   end
 
+  test "reports key errors through a generic complex tool" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(x :: %{a: integer()}) :: term()
+        def go(x), do: x
+      end
+      """)
+
+    assert {:error, {:non_string_arguments, [1]}} =
+             ToolCall.run(module, :go, %{1 => %{"a" => 1}})
+
+    assert {:error, {:unknown_arguments, ["extra"]}} =
+             ToolCall.run(module, :go, %{"x" => %{"a" => 1}, "extra" => 2})
+  end
+
   test "accepts atom keys in nested keyword values" do
     module =
       compile!("""
