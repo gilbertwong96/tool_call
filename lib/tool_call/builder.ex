@@ -7,7 +7,7 @@ defmodule ToolCall.Builder do
   # the `Docs` and `Dbgi` chunks, so `Code.Typespec` / `Code.fetch_docs` are not
   # available in production. Typedoc enrichment happens after this module
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
-  # README release notes.
+  # docs/design.md release notes.
 
   alias ToolCall.{Doc, LocalTypes, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}

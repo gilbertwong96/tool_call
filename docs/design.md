@@ -173,12 +173,17 @@ scans companion beams directly: a missing parent beam removes an owned
 companion, and a live source from either the `.source` sidecar or the beam's
 `compile_info.source` keeps it. A stripped `compile_info` leaves only the
 parent-beam check. A remaining stale beam is harmless because of the generation
-token,
-though a release may copy it. A build that predates the marker leaves foreign
-companion beams behind until `mix clean`.
+token, though a release may copy it. A build that predates the marker leaves
+foreign companion beams behind until `mix clean`.
 Release assembly copies the companion beam from the application's ebin, so a
 `strip_beams: true` release still has the enriched literals; the `Docs` and
 `Dbgi` chunks are stripped, but the companion's literal functions are not.
+
+A `ToolCall.TypeProvider` that defines `coerce/1` runs at dispatch time, so the
+provider module must be present in the release; do not put it in a
+`runtime: false` dependency if the tool uses it. Do not reconstruct tools at
+runtime from the compiler's typespec or Docs chunks; use the embedded
+`ToolCall.tools/1` IR or construct `ToolCall.IR.Tool` values explicitly.
 
 The test suite reproduces the stripped-release shape: it compiles a fixture and
 its companion, strips `Docs`/`Dbgi` with `:beam_lib`, loads both from an

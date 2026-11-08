@@ -41,6 +41,114 @@ Everything else is derived. What the library reads:
 
 Boolean and nil `atom()` defaults are omitted, including nullable `atom() | nil`.
 
+### Custom types
+
+Built-in remote types are resolved by a built-in provider. A user-defined type
+gets a `ToolCall.TypeProvider` registered per tool module:
+
+```elixir
+defmodule MyApp.MoneyType do
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(Money, :t, []) do
+    {:ok, %ToolCall.IR.Type{kind: :string, pattern: "^-?\\d+\\.\\d{2}$"}}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+
+  @impl true
+  def coerce(value), do: {:ok, Money.new(value)}
+end
+
+defmodule MyApp.Tools do
+  use ToolCall, types: [MyApp.MoneyType]
+
+  @spec price(amount :: Money.t()) :: Money.t()
+  def price(amount), do: amount
+end
+```
+
+`resolve/3` receives the remote module, the type name and the already-resolved
+argument types. Return `{:ok, %ToolCall.IR.Type{}}`, or `:error` to fall back to
+`{}`. `coerce/1` is optional; it runs after the wire value has been coerced.
+Providers are tried after the built-ins (`String`, `Keyword`, `Path`, calendar),
+so a provider cannot replace them. `types:` is per module. The provider module
+must be compiled before the tool module; the generated `require` adds that
+compile dependency.
+
+`Decimal.t()` is not built in; implement a provider for it, or use `String.t()`
+and convert in the function.
+
+### Compile-time conventions
+
+- **Annotate arguments to name them.** `@spec f(city :: String.t())`, not
+  `@spec f(String.t())`. Unnamed parameters can be named by position from
+  `@doc` parameter bullets; otherwise they fall back to the head variable (or
+  `argN` when the head is `_`) with a warning. A bare type variable in a `when`
+  spec counts as unnamed too: write
+  `@spec id(value :: x) :: x when x: integer()`.
+- **A default makes a parameter optional.** `def f(a, b \\ 1)` puts `a` in
+  `required` and leaves `b` out. Defaults that are not literals (such as
+  `DateTime.utc_now()`) are not sent to the model; the parameter is still
+  optional. A module attribute default (`def f(x \\ @default)`) is expanded
+  when its value is a JSON literal; struct values are still dropped. Defaults
+  JSON cannot carry (tuples, non-string map keys) are dropped too, and a literal
+  default that does not belong to the parameter's value domain is dropped with
+  a compile-time warning. `~s`, `~c` and `~w` sigil defaults are kept (a
+  charlist default is sent as a string); sigils that interpolate or build
+  non-JSON values (dates, regexes) are dropped. A non-boolean `atom()` default
+  is sent as its string form; `true`, `false` and `nil` defaults are omitted.
+  The atom wire domain rejects booleans, and nil defaults are kept out even for
+  nullable atom types. Defaults are parsed
+  against the declared type at any depth: nested `keyword(t)`, object/list
+  fields and union branches keep their values, and nested `char()`/`charlist()`
+  values become strings in the schema.
+- **Names must be unique and provider-safe.** A duplicate argument name is
+  exposed as `name_2` with a warning; an unnamed `_` argument falls back to the
+  head variable or `argN`. Provider tool names must match
+  `^[a-zA-Z0-9_-]{1,64}$`: a function named `find?` warns, and the export task
+  refuses to write it. Two arities of the same function share one tool name, so
+  only the first is exposed.
+- **`@doc` first paragraph is the description.** A leading `# Title` is
+  stripped; a leading level-2+ section heading is omitted and its body is used.
+  Bullets inside a `## Parameters` heading become per-parameter descriptions:
+  `* city - city name`, `+ city - city name` or `- city - city name`
+  (backticks around the name are optional; an optional type annotation such as
+  `(String.t())` is ignored). Indented continuation lines are appended; a blank
+  line ends the current bullet's continuation, and nested bullets (and their
+  continuations) are not parameters.
+- **`@doc false` opts a function out** of the tool list.
+- **`@type` declarations in the same module are resolved**, including `@typep`
+  and `@opaque`, with parameters (`@type pair(a) :: {a, a}`). Recursive
+  definitions stop at the first re-entry and that reference becomes `{}`.
+- **`@typedoc` is a fallback parameter description.** A parameter declared as a
+  local `@type` or `@opaque`, directly or wrapped as `<type>() | nil`, uses the
+  type's typedoc when the parameter has no description. Parameterized local
+  types work too: `pair(integer())` uses the typedoc of `pair/1`; a local alias
+  chain such as `@type location :: address()` follows to `address()` when
+  `location` has no typedoc, including current-module `__MODULE__` or alias
+  references in the alias body. Precedence is
+  `@tool_param` description, then a `@doc` `## Parameters` bullet, then
+  `@typedoc`, then no description; an empty-string `@tool_param` suppresses the
+  fallback. Nested and wrapped uses such as `list(address())` or
+  `%{address: address()}` do not inherit typedoc. `@typep` is unsupported for
+  descriptions because Elixir discards its typedoc at definition time; the
+  private type is still resolved for the schema. `@typedoc false` is hidden too.
+- **Large integers travel as strings.** Opt in per argument:
+
+  ```elixir
+  @tool_param %{fun: :transfer, name: "user_id", wire: :string_integer,
+                description: "Snowflake id"}
+  ```
+
+  The `:fun` key scopes the override to one function; without it the override
+  is ignored with a compile-time warning. A misspelled function or argument name
+  warns too. Unknown keys and a non-string `:description` are ignored with a
+  warning; duplicate entries for the same argument warn because only one is used.
+  A `:description` of `nil` leaves the doc description in place; an empty string
+  clears it.
+
 ## 2. Emit a schema
 
 ```elixir
@@ -101,7 +209,8 @@ schemas add roughly 35 KB to the beam and 9 ms to compilation.
 
 That is also why releases work: `mix release` strips the `Docs` and `Dbgi`
 chunks, so Code.Typespec.fetch_specs/1 and `Code.fetch_docs/1` fail on the
-compiled beam, and this library never calls them. See the README release notes.
+compiled beam, and this library never calls them. See the release notes in
+[`design.md`](design.md).
 
 A `ToolCall.IR.Tool` — a tool built at runtime — is still rendered on demand.
 That is the only path that pays for rendering.
@@ -239,7 +348,39 @@ end
 | `[1, 2]` instead of a map | `{:error, {:invalid_arguments, [1, 2]}}` |
 | a raising function | `{:error, {:raised, "..."}}` |
 
-The full error list is in the [README](../README.md#errors).
+### Error terms
+
+`ToolCall.run/3` never raises for bad input; it returns one of:
+
+| Error | Meaning |
+|---|---|
+| `{:unknown_tool, name, known}` | no tool with that name |
+| `{:unknown_arguments, names}` | keys the schema does not declare |
+| `{:non_string_arguments, keys}` | `args` used atom or other non-string keys; JSON objects decode to strings |
+| `{:invalid_arguments, args}` | `args` was not a map (a provider may hand back a list or a scalar) |
+| `{:missing_argument, name}` | a required argument is absent |
+| `{:argument_gap, missing, dropped}` | a later optional argument was supplied after an omitted optional one, so Elixir would shift it into the wrong slot; a required argument after an omitted optional one is fine |
+| `{:invalid_argument, {name, reason}}` | coercion failed, e.g. `{:expected_integer, "1.5"}` |
+| `{:raised, message}` | the function raised |
+| `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |
+
+Top-level argument maps use string keys, as JSON decodes them, and nested object
+values should too; `keyword(t)` values also accept atom keys because a keyword
+list is their value domain.
+
+A raised exception is also logged with its stacktrace at `:error`; the model only
+sees `{:raised, message}`. A tool that raises is a bug, not a model error — return
+`{:error, reason}` for input the model can fix.
+
+Send the error back to the model as the tool result — the reason is plain data
+on purpose:
+
+```elixir
+case ToolCall.run(MyApp.Tools.Weather, call_name, call_args) do
+  {:ok, value} -> inspect(value)
+  {:error, reason} -> inspect(reason)
+end
+```
 
 ## 8. Rules and caveats
 
@@ -295,5 +436,7 @@ The full error list is in the [README](../README.md#errors).
 - **Deeply nested `@type` hierarchies are inlined up to a budget** (100
   inlinings). Past that the rest of the type is treated as `{}` and the build
   warns; flatten the hierarchy or enumerate the fields.
+- **The return type is not checked.** Tool results are returned as plain terms
+  and must be JSON-encodable by the caller.
 - **`run/3` has no timeout.** A tool that can hang should be wrapped in
   `Task.async/1` + `Task.yield/2` by the caller.

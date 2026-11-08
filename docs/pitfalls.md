@@ -1,7 +1,7 @@
 # Pitfalls
 
 Compile-time traps that are easy to miss when deriving tools from `@spec` and
-`@doc`. Release behaviour is covered in the README; the type subset and runtime
+`@doc`. Release behaviour is covered in [`design.md`](design.md); the type subset and runtime
 boundaries are covered in [`design.md`](design.md) and
 [`number-handling.md`](number-handling.md).
 
