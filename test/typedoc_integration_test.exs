@@ -781,10 +781,15 @@ defmodule ToolCall.TypedocIntegrationTest do
     try do
       name = "Fixture#{System.unique_integer([:positive])}"
 
-      {[{module, binary} | _], _diagnostics} =
+      module = String.to_atom("Elixir." <> name)
+
+      {compiled, _diagnostics} =
         Code.with_diagnostics(fn ->
           Code.compile_string(String.replace(source, "FIXTURE", name))
         end)
+
+      {^module, binary} =
+        Enum.find(compiled, fn {compiled_module, _binary} -> compiled_module == module end)
 
       {module, binary}
     after
@@ -872,8 +877,14 @@ defmodule ToolCall.TypedocIntegrationTest do
     Code.compiler_options(docs: true)
 
     try do
-      {[{module, _binary} | _], _diagnostics} =
+      name = path |> Path.basename(".ex")
+      module = String.to_atom("Elixir." <> name)
+
+      {compiled, _diagnostics} =
         Code.with_diagnostics(fn -> Code.compile_file(path) end)
+
+      {^module, _binary} =
+        Enum.find(compiled, fn {compiled_module, _binary} -> compiled_module == module end)
 
       module
     after

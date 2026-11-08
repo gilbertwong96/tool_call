@@ -5,9 +5,9 @@ defmodule ToolCall.TestModule do
 
   @doc "Compiles `source`, replacing `FIXTURE` with a unique module name."
   def compile!(source) do
-    # A typedoc fixture also compiles its in-memory companion, so the fixture
-    # module is not necessarily the only module returned.
-    {[{module, _binary} | _], _diagnostics} = compile_source(source)
+    # A typedoc fixture may compile its companion first, so select the fixture
+    # module by name instead of relying on compilation order.
+    {module, _diagnostics} = compile_source(source)
     module
   end
 
@@ -19,8 +19,7 @@ defmodule ToolCall.TestModule do
 
   @doc "Compiles `source` and returns `{module, diagnostics}` with locations."
   def compile_with_diagnostics!(source) do
-    {[{module, _binary} | _], diagnostics} = compile_source(source)
-    {module, diagnostics}
+    compile_source(source)
   end
 
   @doc "Returns the emitted OpenAI schema for one parameter of one tool."
@@ -35,10 +34,21 @@ defmodule ToolCall.TestModule do
   # `IO.warn/2`) as data instead of writing to the shared stderr device, which
   # keeps these tests safe under `async: true`.
   defp compile_source(source) do
-    name = "Fixture#{System.unique_integer([:positive])}"
+    source =
+      if String.contains?(source, "FIXTURE") do
+        String.replace(source, "FIXTURE", "Fixture#{System.unique_integer([:positive])}")
+      else
+        source
+      end
 
-    Code.with_diagnostics(fn ->
-      Code.compile_string(String.replace(source, "FIXTURE", name))
-    end)
+    {compiled, diagnostics} =
+      Code.with_diagnostics(fn -> Code.compile_string(source) end)
+
+    {module, _binary} =
+      Enum.find(compiled, fn {compiled_module, _binary} ->
+        not String.ends_with?(Atom.to_string(compiled_module), ".__ToolCall__")
+      end)
+
+    {module, diagnostics}
   end
 end
