@@ -439,8 +439,9 @@ mix ci
 ```
 
 `mix ci` is the full gate: `compile --warnings-as-errors`,
-`format --check-formatted`, `test`, `credo --strict`, `dialyzer`,
-`ex_dna --max-clones 0` and `reach.check --arch --smells`. The quality config
+`format --check-formatted`, `test`, `spec_lint --warnings-as-errors`,
+`credo --strict`, `dialyzer`, `ex_dna --max-clones 0` and
+`reach.check --arch --smells`. The quality config
 (`.credo.exs`, `.reach.exs`, the alias) was installed by VibeKit;
 `mix test --cover` reports line coverage.
 

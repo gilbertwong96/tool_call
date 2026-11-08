@@ -11,8 +11,9 @@ mix ci
 
 - Use `mix ci` for the full validation suite before finishing changes. It runs
   `compile --warnings-as-errors`, `format --check-formatted`, `test`,
-  `credo --strict`, `dialyzer`, `ex_dna --max-clones 0` and
-  `reach.check --arch --smells` in the `test` environment.
+  `spec_lint --warnings-as-errors`, `credo --strict`, `dialyzer`,
+  `ex_dna --max-clones 0` and `reach.check --arch --smells` in the `test`
+  environment.
 - Keep changes small, tested, and formatted.
 - `.credo.exs` and `.reach.exs` come from the VibeKit 0.1.7 installer. VibeKit
   itself is not a dependency: re-run `mix igniter.install vibe_kit --agents-md`

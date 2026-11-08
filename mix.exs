@@ -43,6 +43,7 @@ defmodule ToolCall.MixProject do
   defp deps do
     [
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
+      {:spec_lint, "~> 0.1", only: [:dev, :test], runtime: false},
       {:reach, "~> 2.0", only: [:dev, :test], runtime: false},
       {:ex_dna, "~> 1.0", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
@@ -65,6 +66,7 @@ defmodule ToolCall.MixProject do
         "compile --warnings-as-errors",
         "format --check-formatted",
         "test",
+        "spec_lint --warnings-as-errors",
         "credo --strict",
         "dialyzer",
         "ex_dna --max-clones 0",
