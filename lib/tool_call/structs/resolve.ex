@@ -16,12 +16,13 @@ defmodule ToolCall.Structs.Resolve do
   alias ToolCall.IR.{Field, Param, Tool, Type}
   alias ToolCall.{LocalTypes, Structs, Typespec}
 
-  @spec run(Tool.t(), [module()]) :: {Tool.t(), [String.t()]}
-  def run(%Tool{} = tool, providers) do
+  @spec run(Tool.t(), [module()], map()) :: {Tool.t(), [String.t()], map()}
+  def run(%Tool{} = tool, providers, raw \\ %{}) do
     existing = MapSet.new(Map.keys(tool.defs || %{}))
 
     state = %{
       cache: %{},
+      raw: raw,
       defs: %{},
       warnings: [],
       inst_names: %{},
@@ -51,7 +52,7 @@ defmodule ToolCall.Structs.Resolve do
 
     defs = Map.merge(defs, ctx.struct_defs)
 
-    {%{tool | params: params, defs: defs}, Enum.reverse(state.warnings)}
+    {%{tool | params: params, defs: defs}, Enum.reverse(state.warnings), state.raw}
   end
 
   # --- discovery ------------------------------------------------------------
@@ -83,52 +84,106 @@ defmodule ToolCall.Structs.Resolve do
   end
 
   defp collect_struct(module, providers, state) do
+    {raw, state} =
+      case Map.fetch(state.raw, module) do
+        {:ok, raw} ->
+          {raw, state}
+
+        :error ->
+          raw = introspect(module)
+          state = %{state | raw: Map.put(state.raw, module, raw)}
+          {raw, warn_introspection(module, raw, state)}
+      end
+
+    install_struct(module, raw, providers, state)
+  end
+
+  # Reading the beam, probing @enforce_keys and warning about the result are
+  # per-module costs; a module with twenty tools should pay them once, not
+  # twenty times.
+  defp introspect(module) do
     case Structs.fields(module) do
       :opaque ->
-        state = put_cache(state, module, :opaque)
-
-        add_warning(
-          state,
-          "#{inspect(module)}.t() is @opaque; its fields are hidden and the type is treated as {}"
-        )
+        :opaque
 
       :error ->
-        put_cache(state, module, :error)
+        :error
 
       {:ok, field_asts, insts, status} ->
-        {names, state} = assign_inst_names(module, insts, state)
+        probe =
+          case Structs.enforced_keys(module) do
+            {:ok, keys} -> {:ok, MapSet.new(keys)}
+            :error -> :error
+          end
 
-        {defs, inst_types} =
-          insts
-          |> Enum.with_index()
-          |> Enum.reduce({state.defs, []}, fn {inst, index}, {defs, types} ->
-            name = Map.fetch!(names, index)
-            type = Typespec.to_type(rewrite(inst.body, names), providers)
-            {Map.put_new(defs, name, type), [type | types]}
-          end)
-
-        fields =
-          Enum.map(field_asts, fn {field, ast} ->
-            {field, Typespec.to_type(rewrite(ast, names), providers)}
-          end)
-
-        {required, state} = required_fields(module, state)
-
-        state = %{
-          state
-          | defs: defs,
-            cache: Map.put(state.cache, module, %{fields: fields, required: required})
-        }
-
-        state = maybe_warn_struct_type(module, status, state)
-
-        state =
-          Enum.reduce(fields, state, fn {_field, type}, st ->
-            collect_type(type, providers, st)
-          end)
-
-        Enum.reduce(inst_types, state, &collect_type(&1, providers, &2))
+        {:ok, %{field_asts: field_asts, insts: insts, status: status, probe: probe}}
     end
+  end
+
+  defp warn_introspection(module, :opaque, state) do
+    add_warning(
+      state,
+      "#{inspect(module)}.t() is @opaque; its fields are hidden and the type is treated as {}"
+    )
+  end
+
+  defp warn_introspection(_module, :error, state), do: state
+
+  defp warn_introspection(module, {:ok, %{status: status, probe: probe}}, state) do
+    state = maybe_warn_struct_type(module, status, state)
+
+    case probe do
+      {:ok, _keys} ->
+        state
+
+      :error ->
+        add_warning(
+          state,
+          "could not determine @enforce_keys for #{inspect(module)}; every field is optional"
+        )
+    end
+  end
+
+  defp install_struct(module, :opaque, _providers, state), do: put_cache(state, module, :opaque)
+  defp install_struct(module, :error, _providers, state), do: put_cache(state, module, :error)
+
+  defp install_struct(module, {:ok, raw}, providers, state) do
+    %{field_asts: field_asts, insts: insts, probe: probe} = raw
+
+    required =
+      case probe do
+        {:ok, keys} -> keys
+        :error -> MapSet.new()
+      end
+
+    {names, state} = assign_inst_names(module, insts, state)
+
+    {defs, inst_types} =
+      insts
+      |> Enum.with_index()
+      |> Enum.reduce({state.defs, []}, fn {inst, index}, {defs, types} ->
+        name = Map.fetch!(names, index)
+        type = Typespec.to_type(rewrite(inst.body, names), providers)
+        {Map.put_new(defs, name, type), [type | types]}
+      end)
+
+    fields =
+      Enum.map(field_asts, fn {field, ast} ->
+        {field, Typespec.to_type(rewrite(ast, names), providers)}
+      end)
+
+    state = %{
+      state
+      | defs: defs,
+        cache: Map.put(state.cache, module, %{fields: fields, required: required})
+    }
+
+    state =
+      Enum.reduce(fields, state, fn {_field, type}, st ->
+        collect_type(type, providers, st)
+      end)
+
+    Enum.reduce(inst_types, state, &collect_type(&1, providers, &2))
   end
 
   defp rewrite(ast, names), do: LocalTypes.rewrite_refs(ast, names)
@@ -156,20 +211,6 @@ defmodule ToolCall.Structs.Resolve do
   end
 
   defp maybe_warn_struct_type(_module, :ok, state), do: state
-
-  defp required_fields(module, state) do
-    case Structs.enforced_keys(module) do
-      {:ok, keys} ->
-        {MapSet.new(keys), state}
-
-      :error ->
-        {MapSet.new(),
-         add_warning(
-           state,
-           "could not determine @enforce_keys for #{inspect(module)}; every field is optional"
-         )}
-    end
-  end
 
   defp assign_inst_names(module, insts, state) do
     {names, state} =

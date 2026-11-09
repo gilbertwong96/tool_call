@@ -36,7 +36,7 @@ defmodule ToolCall.Builder do
       |> Enum.uniq_by(fn {name, args, _doc, _file, _line} -> {name, length(args)} end)
       |> Enum.flat_map(&build_one(&1, context))
       |> unique_tool_names(module)
-      |> Enum.map(&resolve_and_warn(&1, context, module))
+      |> resolve_and_warn(context, module)
 
     tools = Enum.map(entries, &elem(&1, 0))
 
@@ -450,11 +450,16 @@ defmodule ToolCall.Builder do
 
   defp validate_wire_type(%Param{} = param, _module, _location), do: param
 
-  defp resolve_and_warn({%Tool{} = tool, location, truncated}, context, module) do
-    {tool, warnings} = Structs.Resolve.run(tool, context.providers)
-    Enum.each(warnings, &warn(module, location, &1))
-    warn_tool(module, location, tool, truncated)
-    {tool, location, truncated}
+  defp resolve_and_warn(entries, context, module) do
+    {entries, _raw} =
+      Enum.map_reduce(entries, %{}, fn {tool, location, truncated}, raw ->
+        {tool, warnings, raw} = Structs.Resolve.run(tool, context.providers, raw)
+        Enum.each(warnings, &warn(module, location, &1))
+        warn_tool(module, location, tool, truncated)
+        {{tool, location, truncated}, raw}
+      end)
+
+    entries
   end
 
   defp warn_tool(module, location, %Tool{} = tool, truncated) do

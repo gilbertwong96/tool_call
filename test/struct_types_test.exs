@@ -430,4 +430,27 @@ defmodule ToolCall.StructTypesTest do
     args = %{"n" => %{"value" => 1, "children" => [%{"value" => 2, "children" => []}]}}
     assert {:ok, ^expected} = run(source, :go, args)
   end
+
+  test "a struct problem warns once per module, not once per tool" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "A."
+        @spec a(x :: ToolCall.TestFixtures.ParamOnly.t()) :: map()
+        def a(x), do: x
+
+        @doc "B."
+        @spec b(x :: ToolCall.TestFixtures.ParamOnly.t()) :: map()
+        def b(x), do: x
+
+        @doc "C."
+        @spec c(x :: ToolCall.TestFixtures.ParamOnly.t()) :: map()
+        def c(x), do: x
+      end
+      """)
+
+    assert warnings |> String.split("only a parameterized @type t") |> Enum.count_until(3) == 2
+  end
 end
