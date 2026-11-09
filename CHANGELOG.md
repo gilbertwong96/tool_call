@@ -4,6 +4,14 @@
 
 ### Added
 
+- Derive a tool's `@spec` return type into `%ToolCall.IR.Tool{result: ...}`,
+  sharing the tool's `$defs`. `ToolCall.run/4` with `validate_result: true`
+  validates the raw return value against it and answers
+  `{:error, {:invalid_result, reason}}` on a mismatch. Opt-in; `run/3` never
+  validates.
+- `ToolCall.TypeProvider` gains an optional `validate/1` for the value domain;
+  the built-ins cover the calendar types, `Keyword`, `MapSet` and `Regex`.
+
 - `ToolCall.emit/3` supports `:mcp`, returning `{name, description, inputSchema}`
   tool objects for an MCP `tools/list` result. MCP renders on demand from the
   tool IR; `strict: true` renders the closed schema subset without a flag.

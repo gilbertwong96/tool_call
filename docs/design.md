@@ -390,6 +390,63 @@ At dispatch, an object with `struct: Mod` is coerced field by field and then
 rebuilt with `struct/2`. Omitted optional fields are not inserted, so
 `defstruct` defaults apply; an unknown key is `{:unknown_keys, keys}`.
 
+## Result validation
+
+The declared `@spec` return type is derived into `%Tool{result: Type.t() | nil}`
+through the same pipeline as an argument: `when` variable substitution, alias
+expansion, local type inlining with `$defs` hoisting, and struct resolution. It
+shares `Tool.defs` and the tool's 32-definition budget. `no_return()` and
+`none()` leave `result: nil`.
+
+The input schema is unaffected: `Emit.Schema.params/2` renders only the defs
+reachable from the parameters (`ToolCall.Defs.reachable/2`), so a recursive type
+used only by the result stays in the IR and out of `inputSchema`, and it does not
+produce "the model will see `{}`" warnings.
+
+Validation is **opt-in**:
+
+```elixir
+ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
+```
+
+- It runs through the generic `ToolCall.Runner` path, so no generated code
+  changes; `run/3` keeps the fast path and never validates.
+- It validates the **raw** return value, before `Runner.normalize/1` unwraps
+  `{:ok, value}` / `{:error, reason}`. The spec describes what the function
+  returns, so `@spec f() :: {:ok, map()} | {:error, String.t()}` returning
+  `{:ok, "not a map"}` fails.
+- A mismatch returns `{:error, {:invalid_result, reason}}`; `result: nil` skips.
+- A function that raises/throws/exits keeps its current error, unvalidated.
+
+`ToolCall.Validate.valid?/3` checks the value domain:
+
+- `nil` on a `nullable: true` node is valid before any other rule.
+- A node with `validator: {M, f}` is checked by `f`; the validator **replaces**
+  the kind rule, because a provider type's kind describes its wire form.
+- A node with a `transform` and no `validator` describes a domain the library
+  cannot see, so it is accepted.
+- `binary()`/`bitstring()`/`nonempty_binary()` use their real value domains (no
+  UTF-8 or pattern requirement); `String.t()` requires valid UTF-8 and its
+  pattern; `char()` is a codepoint and `charlist()` a list.
+- `float()` requires a float; `number()` accepts integers and floats.
+- Structs check `is_struct/2`, required fields and field types; a closed plain
+  object rejects unknown keys; an open object accepts them.
+- Arrays and tuples check length and elements with index paths; unions accept any
+  matching variant; `:ref` resolves through `defs`.
+
+`ToolCall.TypeProvider` gains an optional `validate/1` (value domain, boolean).
+The built-ins implement it for the calendar types, `Keyword`, `MapSet` and
+`Regex`. A provider type with neither `validate/1` nor an explicit `validator` is
+accepted unchecked — the documented hole.
+
+Measured locally on a 20-tool module returning `ToolCall.TestFixtures.Address.t()`
+versus `map()`: 87,672 B versus 61,620 B of beam, with compile time unchanged
+(170.7 ms versus 170.8 ms, min of 5). The result IR embeds the struct object once
+per tool; the input schema is byte-identical either way.
+
+Not included: converting a value into a JSON value (struct → map, `Date` → ISO
+8601) or a JSON string. That stays with the caller.
+
 ## Provider subsets
 
 The same IR is normalized for the provider formats below. Runtime emitters exist

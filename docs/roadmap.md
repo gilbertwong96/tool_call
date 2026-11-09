@@ -23,9 +23,9 @@ and the runtime dispatcher.
 
 ## 0.3 — output and integrations
 
-- Result encoding: bring the `@spec` return type into the IR and use it for
-  result validation/encoding. Return values are currently passed through
-  without checking.
+- Result validation: done, as validation only. The `@spec` return type is in
+  the IR and `run/4` validates the raw return value when opted in. Value → JSON
+  encoding stays with the caller.
 - MCP `emit/3` target: done. `ToolCall.emit/3` renders `{name, description,
   inputSchema}` on demand, and `mix tool_call.export --format mcp` uses it.
 - Gemini `emit/3` target.

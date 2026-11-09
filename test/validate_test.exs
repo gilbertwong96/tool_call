@@ -221,4 +221,25 @@ defmodule ToolCall.ValidateTest do
     assert {:error, {:validator, {ToolCall.Providers.Regex, :validate}, "a"}} =
              Validate.valid?(regex_t, "a", %{})
   end
+
+  test "an optional field may be absent" do
+    node = %Type{kind: :object, fields: [field(:a, int(), false)], additional: nil}
+    assert :ok = Validate.valid?(node, %{}, %{})
+  end
+
+  test "an additional schema validates extra values" do
+    node = %Type{kind: :object, fields: [], additional: int()}
+
+    assert :ok = Validate.valid?(node, %{a: 1}, %{})
+    assert {:error, {"a", {:expected_integer, "x"}}} = Validate.valid?(node, %{a: "x"}, %{})
+  end
+
+  test "a throwing validator is reported" do
+    defmodule Throwing do
+      def validate(_value), do: throw(:nope)
+    end
+
+    node = %Type{kind: :string, validator: {Throwing, :validate}}
+    assert {:error, {:validate_raised, :nope}} = Validate.valid?(node, "x", %{})
+  end
 end

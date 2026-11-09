@@ -282,6 +282,43 @@ tool with several struct parameters can exceed 32 entries in total. Depth is
 linear, not a cliff: a 100 000-level value coerces in about 0.3 s without
 raising.
 
+## Result validation is opt-in and sees the raw return
+
+`ToolCall.run/3` never validates a return value. `run/4` with
+`validate_result: true` validates the **raw** value, before `{:ok, value}` /
+`{:error, reason}` is unwrapped: a spec `{:ok, map()} | {:error, String.t()}`
+returning `{:ok, "not a map"}` fails even though the tool would have answered
+`{:ok, "not a map"}` without validation. A mismatch is
+`{:error, {:invalid_result, path}}`; a function that raises keeps
+`{:error, {:raised, message}}`. A `no_return()` spec has no result type and
+skips validation. Validation uses the generic runner path, so it is slower than
+the generated fast path.
+
+## A provider type without `validate/1` is accepted
+
+The IR describes a provider type in its **wire** domain (`Date.t()` is a
+string), so result validation asks the provider's optional `validate/1` about
+the value instead. A provider that does not implement it — and does not set
+`%ToolCall.IR.Type{validator: {Module, :fun}}` — is accepted unchecked. The
+built-ins cover the calendar types, `Keyword`, `MapSet` and `Regex`; everything
+else is the provider author's call.
+
+## Result validation is strict to the value domain
+
+`float()` rejects an integer, `String.t()` requires valid UTF-8,
+`char()` is a codepoint and `charlist()` is a list — while `binary()`,
+`bitstring()` and `nonempty_binary()` accept raw bytes without the UTF-8 or
+pattern requirement. `nil` is valid on any `nullable: true` node before every
+other rule. A closed plain object rejects unknown keys; a struct is checked by
+`is_struct/2` plus its declared fields.
+
+## Result-only `$defs` stay out of the input schema
+
+A recursive type referenced only by the return type lives in `Tool.defs` (for
+validation) but is filtered out of `inputSchema`/`describe/2`, and it does not
+produce "the model will see `{}`" warnings. A type shared by a parameter and the
+result is emitted once.
+
 ## Remaining design boundaries
 
 Some limits are intentional: nested/remote/provider typedoc inheritance,

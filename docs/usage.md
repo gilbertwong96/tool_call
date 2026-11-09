@@ -396,6 +396,33 @@ Measured output for a good call and two bad ones:
 "content" => "{\"error\":\"{:unknown_arguments, [\\\"c\\\"]}\",\"ok\":false}"
 ```
 
+### Result validation
+
+`run/4` can check the function's raw return value against its `@spec` return
+type:
+
+```elixir
+@spec get_weather(city :: String.t()) :: {:ok, map()} | {:error, String.t()}
+
+ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"},
+  validate_result: true)
+#=> {:ok, %{temp: 21.5}}
+#=> {:error, {:invalid_result, {:no_variant_matched, {:ok, "oops"}}}}
+```
+
+- It validates the **raw** return (`{:ok, value}`, not `value`) before the
+  `{:ok, _}` / `{:error, _}` unwrap.
+- It is off by default; `run/3` uses the generated fast path and never validates.
+- A tool with a `no_return()` spec has no result type and skips validation.
+- A function that raises keeps `{:error, {:raised, message}}`, not
+  `{:invalid_result, _}`.
+
+Validation is strict to the value domain: `float()` rejects `1`, `String.t()`
+requires valid UTF-8, `char()` is a codepoint and `charlist()` a list, while
+`binary()`/`bitstring()` accept raw bytes. `nil` is valid for a `T | nil` return.
+A provider type (`Date.t()`, `MapSet.t()`, …) is checked through the provider's
+optional `validate/1`; a provider without one is accepted unchecked.
+
 ## 5. Export the schemas
 
 ```sh
