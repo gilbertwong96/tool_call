@@ -25,9 +25,11 @@
 
 ### Changed
 
-- A struct defined in the same module as its tools is now extracted from that
-  module's `@type t/0` literal, and `defstruct`'s generated `__struct__/0,1` no
-  longer warn about a missing `@spec`.
+- A struct defined in the same module as its tools is now extracted from the
+  field map in the generated `__struct__/0`, with types from `@type t/0`, and
+  `defstruct`'s `__struct__/0,1` no longer warn about a missing `@spec`.
+- An enum value that is a boolean no longer accepts its string form (`"true"`);
+  booleans are JSON literals, not atoms on the wire.
 - An enum that mixes atoms with booleans or integers stringifies the atoms, so
   the schema term is JSON-encodable by any encoder.
 

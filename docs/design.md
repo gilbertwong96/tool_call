@@ -341,11 +341,11 @@ four-hex-digit signature of the instantiation (`tree_integer_40ca`). Sanitised t
 truncation. The name is a pure function of `{key, args}` and of nothing else, so
 adding a parameter cannot rename an existing entry, and two compiles of the same
 source produce the same names. Two bounds keep a pathological parameterized
-cycle finite:
-`@max_defs 32` overall and `@max_instantiations_per_key 8` (a call that
-transforms its own arguments, `@type t(a) :: %{next: t({a, a})}`, grows the
-argument tree exponentially). Past either bound the reference degrades to `{}`
-and the compile warns.
+cycle finite: `@max_defs 32` per tool, shared by its parameters in declaration
+order, and `@max_instantiations_per_key 8` (a call that transforms its own
+arguments, `@type t(a) :: %{next: t({a, a})}`, grows the argument tree
+exponentially). Past either bound the reference degrades to `{}` and the compile
+warns.
 
 A cyclic value is coerced through the same `$defs` map at dispatch, so nested
 maps arrive with atom keys at every level. Coercion is driven by the value,
@@ -609,7 +609,7 @@ These are intentional limits rather than missing implementation:
   describe parameters, not fields. Flatten the shape into parameters with
   `@doc` bullets, or explain it in the tool description, when field meaning
   matters.
-- A struct defined in the same module as its tools is extracted from that
-  module's `@type t/0` literal. A field that `t/0` omits cannot be recovered
-  (the generated `__struct__/0` is not callable while the module compiles), so
-  list every field in `t/0` or move the struct to another module.
+- A struct defined in the same module as its tools takes its field names from
+  the map in the generated `__struct__/0`, captured at definition time, and its
+  field types from `t/0`; a field that `t/0` omits is typed `{}`. A module with
+  no generated `__struct__/0` (a hand-written struct) falls back to `t/0` alone.

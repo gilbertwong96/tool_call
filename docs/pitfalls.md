@@ -147,8 +147,9 @@ in the types chunk.
 
 A struct whose only type is `@type t/N` (no `t/0`), or whose `t/0` is not a
 `%__MODULE__{}` literal, warns at compile time: extraction reads `t/0` alone, so
-the shape you wrote is not being used. If that leaves the *argument* untyped,
-the tool is not exposed either; see the next entry.
+the shape you wrote is not being used. The fields still appear, typed `{}`. Only
+`@opaque t` leaves the *argument* untyped, and that hides the tool; see the next
+entry.
 
 `@opaque t` is deliberately not extracted: the author hid the shape. Note that
 most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
@@ -187,11 +188,12 @@ when their meaning matters.
 
 ## A struct and its tools in one module
 
-A struct defined in the same module as its tools is extracted from that module's
-`@type t/0` literal, and `defstruct`'s generated `__struct__/0,1` are not treated
-as tools. A field that `t/0` omits cannot be recovered, because `__struct__/0`
-does not exist yet while the module compiles; list every field in `t/0`, or move
-the struct to its own module.
+A struct defined in the same module as its tools gets its field names from the
+map that `defstruct` puts in the generated `__struct__/0`, captured at
+definition time; `t/0` supplies the field types. A field that `t/0` omits still
+appears, typed `{}`. `__struct__/0,1` are not treated as tools. `@opaque t` still
+hides the tool, and a module with no generated `__struct__/0` (a hand-written
+struct) falls back to `t/0` alone.
 
 ## A struct type is a shape break in 0.2
 
@@ -260,10 +262,10 @@ The generated generic runner walks a recursive value to report
 `{:non_string_arguments, keys}` instead of a plain coercion error. That walk is
 the bulk of the roughly 3 µs `run/3` cost for a recursive parameter, against
 about 0.17 µs on the scalar fast path. It is a dispatch cost, not a provider
-cost. The 32-definition / 8-instantiation bounds are per parameter, not per
-module, so several parameters can each carry a small `$defs` set. Depth is
-linear, not a cliff: a 100 000-level value coerces in about 0.3 s without
-raising.
+cost. The 32-definition budget is per **tool**, shared by its parameters in
+declaration order, so an earlier parameter that grows can push a later one into
+`{}`; the 8-instantiation bound is per key within one expansion. Depth is linear,
+not a cliff: a 100 000-level value coerces in about 0.3 s without raising.
 
 ## Remaining design boundaries
 

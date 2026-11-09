@@ -239,7 +239,8 @@ end
 ```
 
 - Field names come from `__struct__/0`; field types from the module's public
-  `@type t`. A field that `t` omits stays `{}`.
+  `@type t`. A field that `t` omits stays `{}`, but still appears: the struct,
+  not `t`, decides the field set.
 - `required` comes from `@enforce_keys`.
 - Omitted optional fields are not inserted before `struct/2`, so `defstruct`
   defaults apply. An unknown key is rejected with `{:unknown_keys, keys}`.
