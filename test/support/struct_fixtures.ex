@@ -80,6 +80,13 @@ defmodule ToolCall.TestFixtures.Shapes do
         }
 end
 
+defmodule ToolCall.TestFixtures.ParamOnly do
+  @moduledoc false
+  defstruct [:a]
+
+  @type t(a) :: %__MODULE__{a: a}
+end
+
 defmodule ToolCall.TestFixtures.Deep do
   @moduledoc false
   defstruct [:v]

@@ -291,29 +291,35 @@ defmodule ToolCall.LocalTypesTest do
     name = &ToolCall.LocalTypes.name(&1, &2)
 
     assert name.({:tree, 0}, []) == "tree"
-    assert name.({:tree, 1}, [quoted("integer()")]) == "tree_integer"
-    assert name.({:tree, 1}, [quoted("[integer()]")]) == "tree_list_integer"
-    assert name.({:tree, 1}, [quoted("String.t()")]) == "tree_string"
-    assert name.({:tree, 1}, [quoted(":leaf")]) == "tree_leaf"
-    assert name.({:tree, 1}, [quoted("%{a: integer()}")]) == "tree_map"
-    assert name.({:tree, 1}, [quoted("{integer(), integer()}")]) == "tree_tuple"
-    assert name.({:tree, 1}, [quoted("integer() | String.t()")]) == "tree_integer_or_string"
-    assert name.({:tree, 1}, [quoted("Date.t()")]) == "tree_date"
-    assert name.({:tree, 1}, [quoted("%ToolCall.TestFixtures.Address{}")]) == "tree_address"
-    assert name.({:tree, 1}, [quoted("term()")]) == "tree_any"
-    assert name.({:tree, 1}, [quoted("pid()")]) == "tree_any"
-    assert name.({:tree, 1}, [{:.., [], [1, 10]}]) == "tree_integer"
-    assert name.({:tree, 1}, [quoted("7")]) == "tree_integer"
-    assert name.({:tree, 1}, [quoted("number()")]) == "tree_number"
-    assert name.({:tree, 1}, [quoted("float()")]) == "tree_number"
-    assert name.({:tree, 1}, [quoted("boolean()")]) == "tree_boolean"
-    assert name.({:tree, 1}, [quoted("atom()")]) == "tree_atom"
-    assert name.({:tree, 1}, [quoted("any()")]) == "tree_any"
-    assert name.({:tree, 1}, [quoted("binary()")]) == "tree_string"
-    assert name.({:tree, 1}, [quoted("list(integer())")]) == "tree_list_integer"
-    assert name.({:tree, 1}, [quoted("nonempty_list(integer())")]) == "tree_list_integer"
-    assert name.({:tree, 1}, [quoted("map()")]) == "tree_map"
-    assert name.({:tree, 1}, [quoted("{integer(), integer(), integer()}")]) == "tree_tuple"
+
+    for {arg, base} <- [
+          {"integer()", "tree_integer"},
+          {"[integer()]", "tree_list_integer"},
+          {"String.t()", "tree_string"},
+          {":leaf", "tree_leaf"},
+          {"%{a: integer()}", "tree_map"},
+          {"{integer(), integer()}", "tree_tuple"},
+          {"integer() | String.t()", "tree_integer_or_string"},
+          {"Date.t()", "tree_date"},
+          {"%ToolCall.TestFixtures.Address{}", "tree_address"},
+          {"term()", "tree_any"},
+          {"pid()", "tree_any"},
+          {"7", "tree_integer"},
+          {"number()", "tree_number"},
+          {"float()", "tree_number"},
+          {"boolean()", "tree_boolean"},
+          {"atom()", "tree_atom"},
+          {"any()", "tree_any"},
+          {"binary()", "tree_string"},
+          {"list(integer())", "tree_list_integer"},
+          {"nonempty_list(integer())", "tree_list_integer"},
+          {"map()", "tree_map"},
+          {"{integer(), integer(), integer()}", "tree_tuple"}
+        ] do
+      assert name.({:tree, 1}, [quoted(arg)]) =~ ~r/^#{base}_[0-9a-f]{4}$/
+    end
+
+    assert name.({:tree, 1}, [{:.., [], [1, 10]}]) =~ ~r/^tree_integer_[0-9a-f]{4}$/
   end
 
   test "name/2 sanitises and truncates" do

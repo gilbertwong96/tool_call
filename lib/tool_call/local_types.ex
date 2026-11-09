@@ -115,11 +115,17 @@ defmodule ToolCall.LocalTypes do
 
   @doc false
   @spec name({atom(), non_neg_integer()}, [term()]) :: String.t()
-  def name({type_name, _arity}, args) do
+  def name({type_name, _arity} = key, args) do
     name =
       case Enum.map(args, &arg_name/1) do
-        [] -> Atom.to_string(type_name)
-        parts -> Atom.to_string(type_name) <> "_" <> Enum.join(parts, "_")
+        [] ->
+          Atom.to_string(type_name)
+
+        parts ->
+          # The suffix is a pure function of the instantiation, so adding a
+          # parameter can never rename an existing `$defs` entry.
+          Atom.to_string(type_name) <>
+            "_" <> Enum.join(parts, "_") <> "_" <> signature(key, args)
       end
 
     sanitized =
@@ -129,6 +135,15 @@ defmodule ToolCall.LocalTypes do
       |> String.trim_trailing("_")
 
     if sanitized == "", do: "type", else: sanitized
+  end
+
+  defp signature(key, args) do
+    key
+    |> then(&{&1, args})
+    |> :erlang.phash2()
+    |> Integer.to_string(16)
+    |> String.downcase()
+    |> String.slice(0, 4)
   end
 
   defp arg_name({name, _, _}) when name in [:non_neg_integer, :pos_integer, :neg_integer, :byte],

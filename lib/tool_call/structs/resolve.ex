@@ -95,7 +95,7 @@ defmodule ToolCall.Structs.Resolve do
       :error ->
         put_cache(state, module, :error)
 
-      {:ok, field_asts, insts, truncated?} ->
+      {:ok, field_asts, insts, status} ->
         {names, state} = assign_inst_names(module, insts, state)
 
         {defs, inst_types} =
@@ -120,7 +120,7 @@ defmodule ToolCall.Structs.Resolve do
             cache: Map.put(state.cache, module, %{fields: fields, required: required})
         }
 
-        state = maybe_warn_truncated(module, truncated?, state)
+        state = maybe_warn_struct_type(module, status, state)
 
         state =
           Enum.reduce(fields, state, fn {_field, type}, st ->
@@ -133,14 +133,29 @@ defmodule ToolCall.Structs.Resolve do
 
   defp rewrite(ast, names), do: LocalTypes.rewrite_refs(ast, names)
 
-  defp maybe_warn_truncated(module, true, state) do
+  defp maybe_warn_struct_type(module, :truncated, state) do
     add_warning(
       state,
       "#{inspect(module)}'s @type t hit the type expansion budget; some fields are treated as {}"
     )
   end
 
-  defp maybe_warn_truncated(_module, false, state), do: state
+  defp maybe_warn_struct_type(module, :parameterized_t, state) do
+    add_warning(
+      state,
+      "#{inspect(module)} declares only a parameterized @type t/N; field extraction reads " <>
+        "t/0, so every field is treated as {}"
+    )
+  end
+
+  defp maybe_warn_struct_type(module, :non_literal_t, state) do
+    add_warning(
+      state,
+      "#{inspect(module)}.t/0 is not a %__MODULE__{} literal; every field is treated as {}"
+    )
+  end
+
+  defp maybe_warn_struct_type(_module, :ok, state), do: state
 
   defp required_fields(module, state) do
     case Structs.enforced_keys(module) do

@@ -20,7 +20,7 @@ defmodule ToolCall.Structs do
   end
 
   @spec fields(module()) ::
-          {:ok, %{atom() => term()}, [LocalTypes.instantiation()], boolean()}
+          {:ok, %{atom() => term()}, [LocalTypes.instantiation()], field_status()}
           | :opaque
           | :error
   def fields(module) when is_atom(module) do
@@ -30,7 +30,7 @@ defmodule ToolCall.Structs do
   @spec enforced_keys(module()) :: {:ok, [atom()]} | :error
   def enforced_keys(module) when is_atom(module) do
     defaults = module.__struct__() |> Map.delete(:__struct__)
-    keys = defaults |> Map.keys() |> Enum.sort()
+    keys = defaults |> Map.keys() |> Enum.reject(&(&1 == :__exception__)) |> Enum.sort()
 
     enforced =
       Enum.filter(keys, fn key ->
@@ -52,20 +52,22 @@ defmodule ToolCall.Structs do
     module |> Module.split() |> Enum.join("_") |> String.slice(0, 64)
   end
 
+  @type field_status :: :ok | :truncated | :parameterized_t | :non_literal_t
+
   defp do_fields(module) do
     case fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
-      :error -> {:ok, any_fields(module), [], false}
+      :error -> {:ok, any_fields(module), [], :ok}
     end
   rescue
-    _exception -> {:ok, any_fields(module), [], false}
+    _exception -> {:ok, any_fields(module), [], :ok}
   end
 
   defp from_entries(module, entries) do
     case Enum.find(entries, &match?({_kind, {:t, _body, []}}, &1)) do
       {:opaque, {:t, _body, []}} -> :opaque
       {:type, {:t, body, []}} -> type_fields(module, body)
-      nil -> {:ok, any_fields(module), [], false}
+      nil -> {:ok, any_fields(module), [], missing_t_status(entries)}
     end
   end
 
@@ -79,18 +81,26 @@ defmodule ToolCall.Structs do
 
     {expanded, truncated?, insts} = LocalTypes.expand(type_ast, definitions)
 
-    types =
-      case expanded do
-        {:%, _, [^module, {:%{}, _, pairs}]} -> Map.new(pairs)
-        _other -> %{}
-      end
+    case expanded do
+      {:%, _, [^module, {:%{}, _, pairs}]} ->
+        types = Map.new(pairs)
 
-    fields =
-      for field <- struct_keys(module), into: %{} do
-        {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
-      end
+        fields =
+          for field <- struct_keys(module), into: %{} do
+            {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
+          end
 
-    {:ok, fields, insts, truncated?}
+        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
+
+      _other ->
+        {:ok, any_fields(module), [], :non_literal_t}
+    end
+  end
+
+  defp missing_t_status(entries) do
+    if Enum.any?(entries, &match?({_kind, {:t, _body, [_ | _]}}, &1)),
+      do: :parameterized_t,
+      else: :ok
   end
 
   defp definitions(module) do
@@ -114,8 +124,10 @@ defmodule ToolCall.Structs do
 
   defp fetch_types(module), do: Code.Typespec.fetch_types(module)
 
+  # `__exception__` is a sentinel that `defexception` sets to true; it is not a
+  # payload field and dispatch must leave it at its default.
   defp struct_keys(module) do
-    module.__struct__() |> Map.delete(:__struct__) |> Map.keys()
+    module.__struct__() |> Map.delete(:__struct__) |> Map.delete(:__exception__) |> Map.keys()
   end
 
   defp any_fields(module) do

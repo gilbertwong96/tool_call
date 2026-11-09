@@ -85,8 +85,9 @@ defmodule ToolCall.RecursiveTypesTest do
         "go"
       )
 
-    assert %Type{kind: :ref, ref: "tree_integer"} = root
-    assert Map.has_key?(defs, "tree_integer")
+    assert %Type{kind: :ref, ref: ref} = root
+    assert ref =~ ~r/^tree_integer_[0-9a-f]{4}$/
+    assert Map.has_key?(defs, ref)
   end
 
   test "readable name collisions get distinct definitions" do
@@ -251,7 +252,10 @@ defmodule ToolCall.RecursiveTypesTest do
 
     assert ToolCall.Coerce.accepts_nil?(ref, %{"n" => %Type{kind: :null}})
     refute ToolCall.Coerce.accepts_nil?(ref, %{"n" => %Type{kind: :integer}})
-    refute ToolCall.Coerce.accepts_nil?(ref, %{})
+
+    assert_raise ArgumentError, ~r/unknown \$defs entry/, fn ->
+      ToolCall.Coerce.accepts_nil?(ref, %{})
+    end
   end
 
   test "coercing an unresolvable ref raises" do
@@ -305,5 +309,42 @@ defmodule ToolCall.RecursiveTypesTest do
         }
       })
     end
+  end
+
+  test "an unguarded ref chain raises instead of looping" do
+    ref = %Type{kind: :ref, ref: "a"}
+
+    defs = %{
+      "a" => %Type{kind: :ref, ref: "b"},
+      "b" => %Type{kind: :ref, ref: "a"}
+    }
+
+    assert_raise ArgumentError, ~r/\$ref chain/, fn ->
+      ToolCall.Coerce.coerce(ref, 1, :number, defs)
+    end
+
+    assert_raise ArgumentError, ~r/\$ref chain/, fn ->
+      ToolCall.Coerce.accepts_nil?(ref, defs)
+    end
+  end
+
+  test "a productive cycle is not limited by the ref chain guard" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @type tree :: %{value: integer(), children: [tree()]}
+        @doc "Walk."
+        @spec walk(root :: tree()) :: map()
+        def walk(root), do: root
+      end
+      """)
+
+    value =
+      Enum.reduce(1..200, %{"value" => 0, "children" => []}, fn _, acc ->
+        %{"value" => 0, "children" => [acc]}
+      end)
+
+    assert {:ok, _tree} = ToolCall.run(module, :walk, %{"root" => value})
   end
 end

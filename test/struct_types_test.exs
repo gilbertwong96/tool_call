@@ -291,6 +291,63 @@ defmodule ToolCall.StructTypesTest do
     assert warnings =~ "ToolCall.TestFixtures.Deep"
   end
 
+  test "a parameterized-only @type t warns instead of silently untyping" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.ParamOnly.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert warnings =~ "only a parameterized @type t"
+  end
+
+  test "a t/0 that is not a struct literal warns" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.WeirdType.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert warnings =~ "is not a %__MODULE__{} literal"
+  end
+
+  test "an exception struct exposes its payload, not __exception__" do
+    %Tool{params: [%Param{type: type}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(e :: ArgumentError.t()) :: map()
+        def go(e), do: e
+      end
+      """)
+
+    assert %Type{kind: :object, struct: ArgumentError} = type
+    assert Enum.map(type.fields, & &1.name) == ["message"]
+  end
+
+  test "dispatch builds a usable exception" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(e :: ArgumentError.t()) :: String.t()
+        def go(e), do: Exception.message(e)
+      end
+      """)
+
+    assert {:ok, "boom"} = ToolCall.run(module, :go, %{"e" => %{"message" => "boom"}})
+  end
+
   test "mutual struct recursion produces one definition per module" do
     %Tool{defs: defs, params: [%Param{type: root}]} =
       tool("""

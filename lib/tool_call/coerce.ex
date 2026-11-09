@@ -25,6 +25,11 @@ defmodule ToolCall.Coerce do
   # DBL_MAX; an integer above it cannot be widened without raising ArithmeticError.
   @max_float 1.797_693_134_862_315_7e308
 
+  # A ref followed without crossing an object, array or tuple never consumes a
+  # value, so such a chain only terminates if it is not a cycle. Validation
+  # rejects a non-productive cycle, but hand-built IR can still reach coercion.
+  @max_ref_hops 64
+
   @spec param(Param.t(), term(), %{String.t() => Type.t()}) ::
           {:ok, term()} | {:error, term()}
   def param(%Param{} = param, value, defs \\ %{}) do
@@ -37,14 +42,37 @@ defmodule ToolCall.Coerce do
   @spec coerce(Type.t(), term(), Param.wire(), %{String.t() => Type.t()}) ::
           {:ok, term()} | {:error, term()}
   def coerce(type, value, wire \\ :number, defs \\ %{})
+  def coerce(type, value, wire, defs), do: do_coerce(type, value, wire, defs, 0)
 
   # Nullability belongs to the value domain, so it wins over the wire format.
-  def coerce(%Type{nullable: true}, nil, _wire, _defs), do: {:ok, nil}
+  defp do_coerce(%Type{nullable: true}, nil, _wire, _defs, _hops), do: {:ok, nil}
 
-  def coerce(%Type{} = type, value, wire, defs) do
-    with {:ok, coerced} <- coerce_value(type, value, wire, defs) do
+  defp do_coerce(%Type{kind: :ref, ref: ref}, value, _wire, defs, hops) do
+    with {:ok, target} <- fetch_ref(defs, ref, hops) do
+      do_coerce(target, value, :number, defs, hops + 1)
+    end
+  end
+
+  defp do_coerce(%Type{} = type, value, wire, defs, hops) do
+    with {:ok, coerced} <- coerce_value(type, value, wire, defs, hops) do
       transform(type, coerced)
     end
+  end
+
+  defp fetch_ref(defs, ref, hops) when hops < @max_ref_hops do
+    case Map.fetch(defs, ref) do
+      {:ok, type} ->
+        {:ok, type}
+
+      :error ->
+        raise ArgumentError, "invalid ToolCall IR: unknown $defs entry #{inspect(ref)}"
+    end
+  end
+
+  defp fetch_ref(_defs, ref, _hops) do
+    raise ArgumentError,
+          "invalid ToolCall IR: $ref chain through #{inspect(ref)} does not consume a value; " <>
+            "the $defs cycle is not productive"
   end
 
   @doc false
@@ -143,48 +171,39 @@ defmodule ToolCall.Coerce do
   @doc false
   @spec accepts_nil?(Type.t(), %{String.t() => Type.t()}) :: boolean()
   def accepts_nil?(type, defs \\ %{})
+  def accepts_nil?(type, defs), do: do_accepts_nil?(type, defs, 0)
 
-  def accepts_nil?(%Type{nullable: true}, _defs), do: true
-  def accepts_nil?(%Type{kind: :null}, _defs), do: true
-  def accepts_nil?(%Type{kind: :any}, _defs), do: true
+  defp do_accepts_nil?(%Type{nullable: true}, _defs, _hops), do: true
+  defp do_accepts_nil?(%Type{kind: :null}, _defs, _hops), do: true
+  defp do_accepts_nil?(%Type{kind: :any}, _defs, _hops), do: true
 
-  def accepts_nil?(%Type{kind: :ref, ref: ref}, defs) do
-    case Map.fetch(defs, ref) do
-      {:ok, type} -> accepts_nil?(type, defs)
-      :error -> false
+  defp do_accepts_nil?(%Type{kind: :ref, ref: ref}, defs, hops) do
+    with {:ok, type} <- fetch_ref(defs, ref, hops) do
+      do_accepts_nil?(type, defs, hops + 1)
     end
   end
 
-  def accepts_nil?(%Type{kind: :enum, values: values}, _defs) when is_list(values),
+  defp do_accepts_nil?(%Type{kind: :enum, values: values}, _defs, _hops) when is_list(values),
     do: nil in values
 
-  def accepts_nil?(%Type{kind: :union, variants: variants}, defs) when is_list(variants),
-    do: Enum.any?(variants, &accepts_nil?(&1, defs))
+  defp do_accepts_nil?(%Type{kind: :union, variants: variants}, defs, hops)
+       when is_list(variants),
+       do: Enum.any?(variants, &do_accepts_nil?(&1, defs, hops))
 
-  def accepts_nil?(%Type{}, _defs), do: false
+  defp do_accepts_nil?(%Type{}, _defs, _hops), do: false
 
   # Large integers carried as strings. See docs/number-handling.md.
-  defp coerce_value(%Type{kind: :integer} = type, value, :string_integer, _defs) do
+  defp coerce_value(%Type{kind: :integer} = type, value, :string_integer, _defs, _hops) do
     with {:ok, integer} <- parse_integer(value) do
       check_bounds(type, integer)
     end
   end
 
-  defp coerce_value(%Type{kind: :ref, ref: ref}, value, _wire, defs) do
-    case Map.fetch(defs, ref) do
-      {:ok, type} ->
-        coerce(type, value, :number, defs)
-
-      :error ->
-        raise ArgumentError, "invalid ToolCall IR: unknown $defs entry #{inspect(ref)}"
-    end
-  end
-
-  defp coerce_value(%Type{} = type, value, _wire, defs) do
+  defp coerce_value(%Type{} = type, value, _wire, defs, hops) do
     cond do
       type.kind == :any -> {:ok, value}
       type.kind == :unsupported -> {:error, :unsupported_type}
-      true -> coerce_kind(type, value, defs)
+      true -> coerce_kind(type, value, defs, hops)
     end
   end
 
@@ -213,7 +232,7 @@ defmodule ToolCall.Coerce do
     {:error, {:invalid_transform, transform}}
   end
 
-  defp coerce_kind(%Type{kind: :integer} = type, value, _defs) do
+  defp coerce_kind(%Type{kind: :integer} = type, value, _defs, _hops) do
     cond do
       is_integer(value) -> check_bounds(type, value)
       is_float(value) and value == trunc(value) -> check_bounds(type, trunc(value))
@@ -221,31 +240,32 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :float} = type, value, _defs) when is_float(value),
+  defp coerce_kind(%Type{kind: :float} = type, value, _defs, _hops) when is_float(value),
     do: check_bounds(type, value)
 
-  defp coerce_kind(%Type{kind: :float} = type, value, _defs) when is_integer(value) do
+  defp coerce_kind(%Type{kind: :float} = type, value, _defs, _hops) when is_integer(value) do
     if abs(value) <= @max_float,
       do: check_bounds(type, value * 1.0),
       else: {:error, {:expected_float, value}}
   end
 
-  defp coerce_kind(%Type{kind: :float}, value, _defs), do: {:error, {:expected_float, value}}
+  defp coerce_kind(%Type{kind: :float}, value, _defs, _hops),
+    do: {:error, {:expected_float, value}}
 
-  defp coerce_kind(%Type{kind: :number} = type, value, _defs) when is_number(value),
+  defp coerce_kind(%Type{kind: :number} = type, value, _defs, _hops) when is_number(value),
     do: check_bounds(type, value)
 
-  defp coerce_kind(%Type{kind: :number}, value, _defs),
+  defp coerce_kind(%Type{kind: :number}, value, _defs, _hops),
     do: {:error, {:expected_number, value}}
 
-  defp coerce_kind(%Type{kind: :string, source: :charlist}, value, _defs)
+  defp coerce_kind(%Type{kind: :string, source: :charlist}, value, _defs, _hops)
        when is_binary(value) do
     if String.valid?(value),
       do: {:ok, String.to_charlist(value)},
       else: {:error, {:invalid_utf8, value}}
   end
 
-  defp coerce_kind(%Type{kind: :string, source: :char} = type, value, _defs)
+  defp coerce_kind(%Type{kind: :string, source: :char} = type, value, _defs, _hops)
        when is_binary(value) do
     cond do
       not String.valid?(value) ->
@@ -260,11 +280,12 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :string, pattern: nil}, value, _defs) when is_binary(value) do
+  defp coerce_kind(%Type{kind: :string, pattern: nil}, value, _defs, _hops)
+       when is_binary(value) do
     if String.valid?(value), do: {:ok, value}, else: {:error, {:invalid_utf8, value}}
   end
 
-  defp coerce_kind(%Type{kind: :string, pattern: pattern} = type, value, _defs)
+  defp coerce_kind(%Type{kind: :string, pattern: pattern} = type, value, _defs, _hops)
        when is_binary(value) do
     cond do
       not String.valid?(value) ->
@@ -278,23 +299,25 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :string}, value, _defs),
+  defp coerce_kind(%Type{kind: :string}, value, _defs, _hops),
     do: {:error, {:expected_string, value}}
 
-  defp coerce_kind(%Type{kind: :boolean}, value, _defs) when is_boolean(value),
+  defp coerce_kind(%Type{kind: :boolean}, value, _defs, _hops) when is_boolean(value),
     do: {:ok, value}
 
-  defp coerce_kind(%Type{kind: :boolean}, value, _defs),
+  defp coerce_kind(%Type{kind: :boolean}, value, _defs, _hops),
     do: {:error, {:expected_boolean, value}}
 
-  defp coerce_kind(%Type{kind: :null}, nil, _defs), do: {:ok, nil}
-  defp coerce_kind(%Type{kind: :null}, value, _defs), do: {:error, {:expected_null, value}}
+  defp coerce_kind(%Type{kind: :null}, nil, _defs, _hops), do: {:ok, nil}
 
-  defp coerce_kind(%Type{kind: :atom}, value, _defs), do: simple_atom(value)
+  defp coerce_kind(%Type{kind: :null}, value, _defs, _hops),
+    do: {:error, {:expected_null, value}}
 
-  defp coerce_kind(%Type{kind: :enum} = type, value, _defs), do: coerce_enum(type, value)
+  defp coerce_kind(%Type{kind: :atom}, value, _defs, _hops), do: simple_atom(value)
 
-  defp coerce_kind(%Type{kind: :array} = type, value, defs) when is_list(value) do
+  defp coerce_kind(%Type{kind: :enum} = type, value, _defs, _hops), do: coerce_enum(type, value)
+
+  defp coerce_kind(%Type{kind: :array} = type, value, defs, _hops) when is_list(value) do
     with {:ok, items} <- coerce_each(type.items || %Type{kind: :any}, value, defs) do
       length = length(items)
       minimum = type.minimum || 0
@@ -313,13 +336,13 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :array}, value, _defs),
+  defp coerce_kind(%Type{kind: :array}, value, _defs, _hops),
     do: {:error, {:expected_array, value}}
 
-  defp coerce_kind(%Type{kind: :tuple, items: nil}, value, _defs) when is_list(value),
+  defp coerce_kind(%Type{kind: :tuple, items: nil}, value, _defs, _hops) when is_list(value),
     do: {:ok, List.to_tuple(value)}
 
-  defp coerce_kind(%Type{kind: :tuple} = type, value, defs) when is_list(value) do
+  defp coerce_kind(%Type{kind: :tuple} = type, value, defs, _hops) when is_list(value) do
     items = type.items || []
 
     if length(value) == length(items) do
@@ -329,10 +352,10 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :tuple}, value, _defs),
+  defp coerce_kind(%Type{kind: :tuple}, value, _defs, _hops),
     do: {:error, {:expected_array, value}}
 
-  defp coerce_kind(%Type{kind: :object} = type, value, defs) when is_map(value) do
+  defp coerce_kind(%Type{kind: :object} = type, value, defs, _hops) when is_map(value) do
     fields = type.fields || []
 
     with {:ok, known} <- coerce_fields(fields, value, defs),
@@ -346,14 +369,14 @@ defmodule ToolCall.Coerce do
     end
   end
 
-  defp coerce_kind(%Type{kind: :object}, value, _defs),
+  defp coerce_kind(%Type{kind: :object}, value, _defs, _hops),
     do: {:error, {:expected_object, value}}
 
-  defp coerce_kind(%Type{kind: :union} = type, value, defs) do
+  defp coerce_kind(%Type{kind: :union} = type, value, defs, hops) do
     variants = type.variants || []
 
     Enum.reduce_while(variants, {:error, {:no_variant_matched, value}}, fn variant, _acc ->
-      case coerce(variant, value, :number, defs) do
+      case do_coerce(variant, value, :number, defs, hops) do
         {:ok, coerced} -> {:halt, {:ok, coerced}}
         {:error, _reason} -> {:cont, {:error, {:no_variant_matched, value}}}
       end
@@ -460,7 +483,7 @@ defmodule ToolCall.Coerce do
   end
 
   defp coerce_indexed(type, value, index, acc, defs) do
-    case coerce(type, value, :number, defs) do
+    case do_coerce(type, value, :number, defs, 0) do
       {:ok, coerced} -> {:cont, {:ok, [coerced | acc]}}
       {:error, reason} -> {:halt, {:error, {index, reason}}}
     end
@@ -492,7 +515,7 @@ defmodule ToolCall.Coerce do
   end
 
   defp coerce_field_value(%Field{name: name, type: type}, raw, defs) do
-    case coerce(type, raw, :number, defs) do
+    case do_coerce(type, raw, :number, defs, 0) do
       {:ok, coerced} -> {:ok, coerced}
       {:error, reason} -> {:error, {name, reason}}
     end
@@ -536,7 +559,7 @@ defmodule ToolCall.Coerce do
 
   defp coerce_fields_for_extra(additional, extra, defs) do
     Enum.reduce_while(extra, {:ok, %{}}, fn {key, raw}, {:ok, acc} ->
-      case coerce(additional, raw, :number, defs) do
+      case do_coerce(additional, raw, :number, defs, 0) do
         {:ok, coerced} -> {:cont, {:ok, Map.put(acc, key, coerced)}}
         {:error, reason} -> {:halt, {:error, {key, reason}}}
       end
