@@ -35,8 +35,8 @@ defmodule ToolCall.Builder do
       |> Enum.reverse()
       |> Enum.uniq_by(fn {name, args, _doc, _file, _line} -> {name, length(args)} end)
       |> Enum.flat_map(&build_one(&1, context))
-      |> unique_tool_names(module)
       |> resolve_and_warn(context, module)
+      |> unique_tool_names(module)
 
     tools = Enum.map(entries, &elem(&1, 0))
 
@@ -455,11 +455,32 @@ defmodule ToolCall.Builder do
       Enum.map_reduce(entries, %{}, fn {tool, location, truncated}, raw ->
         {tool, warnings, raw} = Structs.Resolve.run(tool, context.providers, raw)
         Enum.each(warnings, &warn(module, location, &1))
-        warn_tool(module, location, tool, truncated)
-        {{tool, location, truncated}, raw}
+        expose(module, location, tool, truncated, raw)
       end)
 
-    entries
+    Enum.reject(entries, &is_nil/1)
+  end
+
+  # A parameter with no JSON type cannot be described to a model, and a tool
+  # with one is not a contract the model can honour. Skipping it keeps the
+  # compile total and mirrors `@doc false`; the warning names the fix.
+  defp expose(module, location, %Tool{} = tool, truncated, raw) do
+    case Enum.find(tool.params, &(&1.type.kind == :any)) do
+      nil ->
+        warn_tool(module, location, tool, truncated)
+        {{tool, location, truncated}, raw}
+
+      %Param{name: param} ->
+        warn(
+          module,
+          location,
+          "tool #{inspect(tool.name)} is not exposed: parameter \"#{param}\" has no JSON " <>
+            "type (term/any, or a remote type with no provider). Narrow the type, add a " <>
+            "TypeProvider, or hide the function with @doc false."
+        )
+
+        {nil, raw}
+    end
   end
 
   defp warn_tool(module, location, %Tool{} = tool, truncated) do

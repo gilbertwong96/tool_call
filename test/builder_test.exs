@@ -784,7 +784,7 @@ defmodule ToolCall.BuilderTest do
 
         @date_default ~D[2024-01-01]
 
-        @spec go(x :: term()) :: term()
+        @spec go(x :: map()) :: term()
         def go(x \\\\ @date_default), do: x
       end
       """)
@@ -834,7 +834,7 @@ defmodule ToolCall.BuilderTest do
       defmodule FIXTURE do
         use ToolCall
 
-        @spec go(map :: term(), list :: term()) :: term()
+        @spec go(map :: map(), list :: list()) :: term()
         def go(map \\\\ %{a: 1}, list \\\\ [1, {2, 3}]), do: {map, list}
       end
       """)

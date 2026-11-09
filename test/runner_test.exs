@@ -104,20 +104,18 @@ defmodule ToolCall.RunnerTest do
                 b :: boolean(),
                 a :: atom(),
                 z :: nil,
-                x :: any(),
                 f :: float()
               ) :: term()
-        def go(n, b, a, z, x, f), do: {n, b, a, z, x, f}
+        def go(n, b, a, z, f), do: {n, b, a, z, f}
       end
       """)
 
-    assert {:ok, {1, true, :ok, nil, %{"a" => 1}, 2.0}} =
+    assert {:ok, {1, true, :ok, nil, 2.0}} =
              ToolCall.run(module, :go, %{
                "n" => 1,
                "b" => true,
                "a" => "ok",
                "z" => nil,
-               "x" => %{"a" => 1},
                "f" => 2
              })
   end
@@ -444,9 +442,24 @@ defmodule ToolCall.RunnerTest do
       end
       """)
 
-    assert {:ok, nil} = ToolCall.run(module, :any_value, %{"x" => nil})
+    # A compiled tool cannot carry an untyped argument; a runtime tool can.
+    any_tool = %ToolCall.IR.Tool{
+      name: "any_value",
+      description: "any_value",
+      params: [
+        %ToolCall.IR.Param{
+          name: "x",
+          type: %ToolCall.IR.Type{kind: :any},
+          required: false
+        }
+      ],
+      module: module,
+      fun: :any_value
+    }
+
+    assert {:ok, nil} = ToolCall.Runner.run(module, [any_tool], :any_value, %{"x" => nil})
+    assert {:ok, :default} = ToolCall.Runner.run(module, [any_tool], :any_value, %{})
     assert {:ok, nil} = ToolCall.run(module, :null_value, %{"x" => nil})
-    assert {:ok, :default} = ToolCall.run(module, :any_value, %{})
     assert {:ok, :default} = ToolCall.run(module, :null_value, %{})
   end
 

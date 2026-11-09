@@ -256,10 +256,6 @@ defmodule ToolCall.Codegen do
     quote do: ToolCall.Coerce.simple_null(unquote(value))
   end
 
-  defp coerce_ast(%Type{kind: :any}, value) do
-    quote do: ToolCall.Coerce.simple_any(unquote(value))
-  end
-
   defp vars(params) do
     params
     |> Enum.with_index()
@@ -282,7 +278,6 @@ defmodule ToolCall.Codegen do
   defp simple_type?(%Type{kind: :number, transform: nil, nullable: false}), do: true
   defp simple_type?(%Type{kind: :boolean, transform: nil, nullable: false}), do: true
   defp simple_type?(%Type{kind: :atom, transform: nil, nullable: false}), do: true
-  defp simple_type?(%Type{kind: :any, transform: nil, nullable: false}), do: true
   defp simple_type?(%Type{kind: :null, transform: nil, nullable: false}), do: true
 
   defp simple_type?(%Type{
@@ -297,7 +292,6 @@ defmodule ToolCall.Codegen do
 
   defp simple_type?(_type), do: false
 
-  defp accepts_nil?(%Type{kind: :any}), do: true
   defp accepts_nil?(%Type{kind: :null}), do: true
   defp accepts_nil?(_type), do: false
 

@@ -66,7 +66,7 @@ defmodule ToolCall.StructTypesTest do
     assert %Type{kind: :any} = Enum.find(type.fields, &(&1.name == "b")).type
   end
 
-  test "an opaque struct type stays untyped with a warning" do
+  test "an opaque struct type is not exposed" do
     {module, warnings} =
       compile_with_warnings!("""
       defmodule FIXTURE do
@@ -77,12 +77,12 @@ defmodule ToolCall.StructTypesTest do
       end
       """)
 
-    tool = module |> ToolCall.tools() |> Enum.find(&(&1.name == "go"))
-    assert %Type{kind: :any} = hd(tool.params).type
-    assert warnings =~ "no JSON type"
+    assert ToolCall.tools(module) == []
+    assert warnings =~ "@opaque"
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "p")
   end
 
-  test "a non-struct remote type stays untyped" do
+  test "a non-struct remote type is not exposed" do
     {module, warnings} =
       compile_with_warnings!("""
       defmodule FIXTURE do
@@ -93,9 +93,8 @@ defmodule ToolCall.StructTypesTest do
       end
       """)
 
-    tool = module |> ToolCall.tools() |> Enum.find(&(&1.name == "go"))
-    assert %Type{kind: :any} = hd(tool.params).type
-    assert warnings =~ "no JSON type"
+    assert ToolCall.tools(module) == []
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "p")
   end
 
   test "a recursive struct becomes one definition plus a ref" do

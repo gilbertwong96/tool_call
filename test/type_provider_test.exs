@@ -536,9 +536,9 @@ defmodule ToolCall.TypeProviderTest do
     assert {:ok, %Money{amount: "12.34"}} = ToolCall.run(module, "go", %{"value" => "12.34"})
   end
 
-  test "a struct without a provider falls back to any" do
-    module =
-      compile!("""
+  test "a module type without a provider is not exposed" do
+    {module, warnings} =
+      compile_with_warnings!("""
       defmodule FIXTURE do
         use ToolCall
 
@@ -548,8 +548,8 @@ defmodule ToolCall.TypeProviderTest do
       end
       """)
 
-    assert param_schema(module, "go", "value") == %{}
-    assert {:ok, "x"} = ToolCall.run(module, "go", %{"value" => "x"})
+    assert ToolCall.tools(module) == []
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "value")
   end
 
   test "raises when a provider returns an invalid value" do

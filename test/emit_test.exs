@@ -75,18 +75,37 @@ defmodule ToolCall.EmitTest do
           use ToolCall
 
           @doc "Untyped."
-          @spec go(a :: term(), b :: list(term())) :: :ok
-          def go(_a, _b), do: :ok
+          @spec go(b :: list(term())) :: :ok
+          def go(_b), do: :ok
         end
         """)
 
-      assert warnings =~ ~s(parameter "a" of go/2 has no JSON type)
-      assert warnings =~ ~s(parameter "b" of go/2 has no JSON type)
+      assert warnings =~ ~s(parameter "b" of go/1 has no JSON type)
 
       {_schema, diagnostics} =
         Code.with_diagnostics(fn -> tool(module, "go", :openai, strict: true) end)
 
       assert diagnostics == []
+    end
+
+    test "does not expose a tool whose argument has no JSON type" do
+      {module, warnings} =
+        compile_with_warnings!("""
+        defmodule FIXTURE do
+          use ToolCall
+
+          @doc "Untyped."
+          @spec go(a :: term()) :: :ok
+          def go(_a), do: :ok
+        end
+        """)
+
+      assert warnings =~ ~s(tool "go" is not exposed: parameter "a")
+      assert ToolCall.tools(module) == []
+      assert ToolCall.emit(module, :openai) == []
+
+      assert {:error, {:unknown_tool, "go", []}} =
+               ToolCall.run(module, :go, %{"a" => 1})
     end
 
     test "say nothing when every parameter is typed" do

@@ -631,7 +631,6 @@ defmodule ToolCall.CoerceTest do
 
       assert {:ok, nil} = Coerce.simple_null(nil)
       assert {:error, {:expected_null, 1}} = Coerce.simple_null(1)
-      assert {:ok, :anything} = Coerce.simple_any(:anything)
     end
 
     test "coerces atoms through existing atoms" do

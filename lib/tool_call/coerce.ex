@@ -151,10 +151,6 @@ defmodule ToolCall.Coerce do
   def simple_null(nil), do: {:ok, nil}
   def simple_null(value), do: {:error, {:expected_null, value}}
 
-  @doc false
-  @spec simple_any(term()) :: {:ok, term()}
-  def simple_any(value), do: {:ok, value}
-
   defp simple_bounds(value, nil, nil), do: {:ok, value}
 
   defp simple_bounds(value, minimum, maximum) do
