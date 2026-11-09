@@ -216,7 +216,7 @@ defmodule ToolCall.Builder do
           |> expand_aliases(context.env)
           |> localize_module_types(context.module)
 
-        {type_ast, truncated?} = LocalTypes.expand(source_ast, context.definitions)
+        {type_ast, truncated?, _insts} = LocalTypes.expand(source_ast, context.definitions)
 
         type_ast =
           type_ast

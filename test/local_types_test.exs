@@ -1,6 +1,6 @@
 defmodule ToolCall.LocalTypesProxy do
   defmacro __before_compile__(env) do
-    {ast, false} = ToolCall.LocalTypes.expand({:t, [], []}, env.module)
+    {ast, false, []} = ToolCall.LocalTypes.expand({:t, [], []}, env.module)
 
     quote do
       def __expanded_type__, do: unquote(Macro.escape(ast))
@@ -204,11 +204,9 @@ defmodule ToolCall.LocalTypesTest do
       end
       """)
 
-    assert %{
-             "type" => ["array", "null"],
-             "prefixItems" => [%{"type" => "string", "enum" => ["node"]}, %{}, %{}],
-             "minItems" => 3
-           } = param_schema(module, "go", "t")
+    schema = param_schema(module, "go", "t")
+    refute Map.has_key?(schema, "prefixItems")
+    assert nodes(schema) < 50
   end
 
   defp quoted(source), do: Code.string_to_quoted!(source)
@@ -227,5 +225,46 @@ defmodule ToolCall.LocalTypesTest do
   test "cyclic_keys/1 finds self and mutual recursion" do
     assert ToolCall.LocalTypes.cyclic_keys(definitions()) ==
              MapSet.new([{:tree, 0}, {:a, 0}, {:b, 0}, {:rec, 1}])
+  end
+
+  defp collect_refs(ast) do
+    {_ast, refs} =
+      Macro.prewalk(ast, [], fn
+        {{:., _, [:tool_call_ref, :ref]}, _, [_i]} = node, acc -> {node, [node | acc]}
+        node, acc -> {node, acc}
+      end)
+
+    Enum.reverse(refs)
+  end
+
+  test "expand/2 returns indexed refs for cyclic types" do
+    {ast, false, insts} = ToolCall.LocalTypes.expand(quoted("tree()"), definitions())
+
+    assert {{:., [], [:tool_call_ref, :ref]}, [], [0]} = ast
+    assert [%{key: {:tree, 0}, args: [], body: body}] = insts
+    assert {{:., [], [:tool_call_ref, :ref]}, [], [0]} = body |> collect_refs() |> hd()
+  end
+
+  test "expand/2 returns no instantiations for non-cyclic types" do
+    assert {_, false, []} = ToolCall.LocalTypes.expand(quoted("plain()"), definitions())
+  end
+
+  test "expand/2 expands mutual recursion into one instantiation per type" do
+    {_ast, false, insts} = ToolCall.LocalTypes.expand(quoted("a()"), definitions())
+    assert Enum.map(insts, & &1.key) == [{:a, 0}, {:b, 0}]
+  end
+
+  test "rewrite_refs/2 substitutes names for indices" do
+    {ast, false, _} = ToolCall.LocalTypes.expand(quoted("tree()"), definitions())
+
+    assert {{:., [], [:tool_call_ref, :ref]}, [], ["tree"]} =
+             ToolCall.LocalTypes.rewrite_refs(ast, %{0 => "tree"})
+  end
+
+  test "the instantiation bound stops argument growth" do
+    defs = %{{:grow, 1} => {[{:a, [], nil}], quoted("%{next: grow({a, a})}")}}
+
+    {_ast, true, insts} = ToolCall.LocalTypes.expand(quoted("grow(integer())"), defs)
+    assert length(insts) <= 8
   end
 end

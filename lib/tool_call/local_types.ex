@@ -7,30 +7,61 @@ defmodule ToolCall.LocalTypes do
   # Must run inside `@before_compile`: `Module.get_attribute/2` is only
   # readable while the module is still open.
   #
-  # Two things stop the inlining:
+  # Two things stop the inlining of a non-cyclic type:
   #
-  #   * recursion, detected per path, and
+  #   * recursion, detected per path (defensive; cyclic types are never
+  #     inlined), and
   #   * a budget on the number of inlinings, because a hierarchy such as
   #     `@type t0 :: {t1(), t1()}` with `t1` doubling again grows as 2^depth.
   #     Measured: depth 16 is 16 s, depth 18 is 83 s. Past the budget the
   #     reference is left alone and degrades to `:any` further down.
   #
-  # `$ref`/`$defs` would remove the need for both limits; see docs/design.md.
+  # A cyclic type is emitted once as a `$defs` entry and referenced by `$ref` at
+  # every occurrence. Two bounds keep a parameterized cycle
+  # (`@type t(a) :: %{next: t({a, a})}`) finite: one per key and one overall.
+  # Past either bound the reference degrades to `:any` and the compile warns.
 
   @max_inlinings 100
+  @max_defs 32
+  @max_instantiations_per_key 8
+
+  @typedoc "One hoisted `$defs` entry, with the arguments of its instantiation."
+  @type instantiation :: %{
+          key: {atom(), non_neg_integer()},
+          args: [term()],
+          body: term()
+        }
 
   @doc """
   Expands local type references in `ast`.
 
-  Returns `{ast, truncated?}` where `truncated?` says that the inlining budget
-  was hit and part of the type was left unresolved.
+  A call whose key is cyclic (see `cyclic_keys/1`) is never inlined; it becomes
+  a reference to a hoisted instantiation. Returns
+  `{ast, truncated?, instantiations}`, where `truncated?` says that one of the
+  budgets was hit and part of the type was left unresolved.
+
+  An instantiation is referenced in the returned AST by the reserved remote
+  call `{:., [], [:tool_call_ref, :ref]}` applied to its index in
+  `instantiations`. Use `rewrite_refs/2` to replace those indices with final
+  `$defs` names.
   """
-  @spec expand(term(), module() | map()) :: {term(), boolean()}
+  @spec expand(term(), module() | map()) :: {term(), boolean(), [instantiation()]}
   def expand(ast, module) when is_atom(module), do: expand(ast, definitions(module))
 
   def expand(ast, definitions) when is_map(definitions) do
-    {ast, state} = walk(ast, [], definitions, %{count: 0, truncated?: false})
-    {ast, state.truncated?}
+    state = %{
+      count: 0,
+      truncated?: false,
+      cyclic: cyclic_keys(definitions),
+      insts: %{},
+      by_inst: %{},
+      per_key: %{}
+    }
+
+    {ast, state} = walk(ast, [], definitions, state)
+    insts = state.insts |> Enum.sort_by(&elem(&1, 0)) |> Enum.map(&elem(&1, 1))
+
+    {ast, state.truncated?, insts}
   end
 
   @doc false
@@ -87,6 +118,20 @@ defmodule ToolCall.LocalTypes do
     end)
   end
 
+  @doc false
+  @spec rewrite_refs(term(), %{non_neg_integer() => String.t()}) :: term()
+  def rewrite_refs(ast, names) when map_size(names) == 0, do: ast
+
+  def rewrite_refs(ast, names) do
+    Macro.prewalk(ast, fn
+      {{:., _, [:tool_call_ref, :ref]}, meta, [index]} when is_integer(index) ->
+        {{:., [], [:tool_call_ref, :ref]}, meta, [Map.fetch!(names, index)]}
+
+      node ->
+        node
+    end)
+  end
+
   defp walk({name, meta, args}, seen, definitions, state)
        when is_atom(name) and is_list(args) do
     key = {name, length(args)}
@@ -94,6 +139,9 @@ defmodule ToolCall.LocalTypes do
     case Map.fetch(definitions, key) do
       {:ok, {params, body}} ->
         cond do
+          MapSet.member?(state.cyclic, key) ->
+            hoist(key, {name, meta, args}, {params, body}, seen, definitions, state)
+
           key in seen ->
             {{name, meta, args}, state}
 
@@ -110,6 +158,52 @@ defmodule ToolCall.LocalTypes do
         {args, state} = walk_all(args, seen, definitions, state)
         {{name, meta, args}, state}
     end
+  end
+
+  defp hoist(key, node, {params, body}, seen, definitions, state) do
+    args = node |> elem(2) |> strip_meta()
+    inst = {key, args}
+
+    case Map.fetch(state.by_inst, inst) do
+      {:ok, index} ->
+        {ref(index), state}
+
+      :error ->
+        if capped?(state, key) do
+          {node, %{state | truncated?: true}}
+        else
+          index = map_size(state.insts)
+
+          state = %{
+            state
+            | insts: Map.put(state.insts, index, %{key: key, args: args, body: nil}),
+              by_inst: Map.put(state.by_inst, inst, index),
+              per_key: Map.update(state.per_key, key, 1, &(&1 + 1))
+          }
+
+          {expanded, state} =
+            body
+            |> substitute(params, args)
+            |> walk([key | seen], definitions, state)
+
+          entry = %{key: key, args: args, body: expanded}
+          {ref(index), %{state | insts: Map.put(state.insts, index, entry)}}
+        end
+    end
+  end
+
+  defp capped?(state, key) do
+    map_size(state.insts) >= @max_defs or
+      Map.get(state.per_key, key, 0) >= @max_instantiations_per_key
+  end
+
+  defp ref(index), do: {{:., [], [:tool_call_ref, :ref]}, [], [index]}
+
+  defp strip_meta(ast) do
+    Macro.prewalk(ast, fn
+      {name, _meta, args} -> {name, [], args}
+      node -> node
+    end)
   end
 
   # A remote call is `{{:., _, [Mod, :fun]}, _, args}`; its arguments may still
