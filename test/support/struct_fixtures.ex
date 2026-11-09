@@ -50,6 +50,36 @@ defmodule ToolCall.TestFixtures.FriendB do
   @type t :: %__MODULE__{a: ToolCall.TestFixtures.FriendA.t() | nil}
 end
 
+defmodule ToolCall.TestFixtures.PathNode do
+  @moduledoc false
+  defstruct [:head, :tail]
+
+  @type path :: %{head: integer(), tail: path() | nil}
+  @type t :: %__MODULE__{head: integer(), tail: path() | nil}
+end
+
+defmodule ToolCall.TestFixtures.NoType do
+  @moduledoc false
+  defstruct [:x]
+end
+
+defmodule ToolCall.TestFixtures.WeirdType do
+  @moduledoc false
+  defstruct [:x]
+
+  @type t :: String.t()
+end
+
+defmodule ToolCall.TestFixtures.Shapes do
+  @moduledoc false
+  defstruct [:pair, :map]
+
+  @type t :: %__MODULE__{
+          pair: {ToolCall.TestFixtures.Address.t(), integer()},
+          map: %{a: ToolCall.TestFixtures.Address.t()}
+        }
+end
+
 defmodule ToolCall.TestFixtures.NotAStruct do
   @moduledoc false
   @type t :: String.t()

@@ -4,7 +4,7 @@ defmodule ToolCall.StructTypesTest do
   alias ToolCall.IR.{Param, Tool, Type}
   import ToolCall.TestModule
 
-  alias ToolCall.TestFixtures.{Address, FriendA, TreeNode}
+  alias ToolCall.TestFixtures.{Address, FriendA, NoType, PathNode, TreeNode, WeirdType}
 
   defp tool(source) do
     module = compile!(source)
@@ -169,6 +169,83 @@ defmodule ToolCall.StructTypesTest do
              fields |> Enum.find(&(&1.name == "next")) |> Map.fetch!(:type)
   end
 
+  test "a struct module's own cyclic local type is hoisted to defs" do
+    %Tool{defs: defs, params: [%Param{type: type}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(p :: ToolCall.TestFixtures.PathNode.t()) :: map()
+        def go(p), do: p
+      end
+      """)
+
+    assert %Type{kind: :object, struct: PathNode} = type
+
+    assert %Type{kind: :ref, ref: "ToolCall_TestFixtures_PathNode_path"} =
+             type.fields |> Enum.find(&(&1.name == "tail")) |> Map.fetch!(:type)
+
+    assert Map.has_key?(defs, "ToolCall_TestFixtures_PathNode_path")
+  end
+
+  test "a struct nested in a tuple or a map field is resolved" do
+    %Tool{params: [%Param{type: type}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(s :: ToolCall.TestFixtures.Shapes.t()) :: map()
+        def go(s), do: s
+      end
+      """)
+
+    assert Enum.map(type.fields, & &1.name) == ["map", "pair"]
+
+    assert %Type{
+             kind: :tuple,
+             items: [%Type{kind: :object, struct: Address}, %Type{kind: :integer}]
+           } =
+             type.fields |> Enum.find(&(&1.name == "pair")) |> Map.fetch!(:type)
+
+    assert %Type{
+             kind: :object,
+             fields: [%{name: "a", type: %Type{kind: :object, struct: Address}}]
+           } =
+             type.fields |> Enum.find(&(&1.name == "map")) |> Map.fetch!(:type)
+  end
+
+  test "a struct with no @type t, or a t that is not a struct, exposes untyped fields" do
+    %Tool{params: [%Param{type: no_type}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.NoType.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert %Type{kind: :object, struct: NoType, fields: [%{name: "x", type: %Type{kind: :any}}]} =
+             no_type
+
+    %Tool{params: [%Param{type: weird}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.WeirdType.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert %Type{
+             kind: :object,
+             struct: WeirdType,
+             fields: [%{name: "x", type: %Type{kind: :any}}]
+           } =
+             weird
+  end
+
   test "mutual struct recursion produces one definition per module" do
     %Tool{defs: defs, params: [%Param{type: root}]} =
       tool("""
@@ -206,7 +283,7 @@ defmodule ToolCall.StructTypesTest do
       end
       """)
 
-    assert length(String.split(warnings, "no JSON representation")) == 2
+    assert warnings |> String.split("no JSON representation") |> Enum.count_until(3) == 2
   end
 
   test "emitted schema closes the struct object" do

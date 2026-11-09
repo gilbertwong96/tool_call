@@ -245,4 +245,18 @@ defmodule ToolCall.RecursiveTypesTest do
                "root" => %{"value" => 1, "children" => [%{"value" => "x", "children" => []}]}
              })
   end
+
+  test "accepts_nil?/2 resolves refs" do
+    ref = %Type{kind: :ref, ref: "n"}
+
+    assert ToolCall.Coerce.accepts_nil?(ref, %{"n" => %Type{kind: :null}})
+    refute ToolCall.Coerce.accepts_nil?(ref, %{"n" => %Type{kind: :integer}})
+    refute ToolCall.Coerce.accepts_nil?(ref, %{})
+  end
+
+  test "coercing an unresolvable ref raises" do
+    assert_raise ArgumentError, ~r/unknown \$defs entry/, fn ->
+      ToolCall.Coerce.coerce(%Type{kind: :ref, ref: "missing"}, "x", :number, %{})
+    end
+  end
 end

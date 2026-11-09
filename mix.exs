@@ -28,7 +28,7 @@ defmodule ToolCall.MixProject do
         ]
       ],
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
-      test_coverage: [tool: ExCoveralls],
+      test_coverage: [tool: ExCoveralls, ignore_modules: [~r/^ToolCall\\.TestFixtures\\./]],
       aliases: aliases()
     ]
   end

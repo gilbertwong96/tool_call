@@ -226,7 +226,8 @@ defmodule ToolCall.LocalTypesTest do
     assert nodes(parameters) < 50
   end
 
-  defp quoted(source), do: Code.string_to_quoted!(source)
+  defp quoted(source),
+    do: source |> Code.string_to_quoted!() |> Macro.prewalk(&Macro.expand(&1, __ENV__))
 
   defp definitions do
     %{
@@ -282,6 +283,42 @@ defmodule ToolCall.LocalTypesTest do
     defs = %{{:grow, 1} => {[{:a, [], nil}], quoted("%{next: grow({a, a})}")}}
 
     {_ast, true, insts} = ToolCall.LocalTypes.expand(quoted("grow(integer())"), defs)
-    assert length(insts) <= 8
+    assert Enum.count_until(insts, 9) <= 8
+  end
+
+  test "name/2 renders instantiations readably" do
+    name = &ToolCall.LocalTypes.name(&1, &2)
+
+    assert name.({:tree, 0}, []) == "tree"
+    assert name.({:tree, 1}, [quoted("integer()")]) == "tree_integer"
+    assert name.({:tree, 1}, [quoted("[integer()]")]) == "tree_list_integer"
+    assert name.({:tree, 1}, [quoted("String.t()")]) == "tree_string"
+    assert name.({:tree, 1}, [quoted(":leaf")]) == "tree_leaf"
+    assert name.({:tree, 1}, [quoted("%{a: integer()}")]) == "tree_map"
+    assert name.({:tree, 1}, [quoted("{integer(), integer()}")]) == "tree_tuple"
+    assert name.({:tree, 1}, [quoted("integer() | String.t()")]) == "tree_integer_or_string"
+    assert name.({:tree, 1}, [quoted("Date.t()")]) == "tree_date"
+    assert name.({:tree, 1}, [quoted("%ToolCall.TestFixtures.Address{}")]) == "tree_address"
+    assert name.({:tree, 1}, [quoted("term()")]) == "tree_any"
+    assert name.({:tree, 1}, [quoted("pid()")]) == "tree_any"
+    assert name.({:tree, 1}, [{:.., [], [1, 10]}]) == "tree_integer"
+    assert name.({:tree, 1}, [quoted("7")]) == "tree_integer"
+    assert name.({:tree, 1}, [quoted("number()")]) == "tree_number"
+    assert name.({:tree, 1}, [quoted("float()")]) == "tree_number"
+    assert name.({:tree, 1}, [quoted("boolean()")]) == "tree_boolean"
+    assert name.({:tree, 1}, [quoted("atom()")]) == "tree_atom"
+    assert name.({:tree, 1}, [quoted("any()")]) == "tree_any"
+    assert name.({:tree, 1}, [quoted("binary()")]) == "tree_string"
+    assert name.({:tree, 1}, [quoted("list(integer())")]) == "tree_list_integer"
+    assert name.({:tree, 1}, [quoted("nonempty_list(integer())")]) == "tree_list_integer"
+    assert name.({:tree, 1}, [quoted("map()")]) == "tree_map"
+    assert name.({:tree, 1}, [quoted("{integer(), integer(), integer()}")]) == "tree_tuple"
+  end
+
+  test "name/2 sanitises and truncates" do
+    long = "a" <> String.duplicate("b", 100)
+
+    assert ToolCall.LocalTypes.name({String.to_atom(long), 0}, []) |> String.length() == 64
+    assert ToolCall.LocalTypes.name({:"weird-name?", 0}, []) == "weird_name"
   end
 end

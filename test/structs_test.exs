@@ -2,7 +2,16 @@ defmodule ToolCall.StructsTest do
   use ExUnit.Case, async: true
 
   alias ToolCall.Structs
-  alias ToolCall.TestFixtures.{Address, NotAStruct, OpaqueBox, Partial, PrivateField, TreeNode}
+
+  alias ToolCall.TestFixtures.{
+    Address,
+    NotAStruct,
+    OpaqueBox,
+    Partial,
+    PathNode,
+    PrivateField,
+    TreeNode
+  }
 
   test "struct?/1 recognises compiled structs" do
     assert Structs.struct?(Address)
@@ -18,6 +27,17 @@ defmodule ToolCall.StructsTest do
     assert {:ok, fields, []} = Structs.fields(Address)
     assert {String, :t, []} = unwrap_remote(fields.city)
     assert {String, :t, []} = unwrap_remote(fields.street)
+  end
+
+  test "fields/1 and enforced_keys/1 reject a non-struct" do
+    assert :error = Structs.fields(NotAStruct)
+    assert :error = Structs.enforced_keys(NotAStruct)
+  end
+
+  test "fields/1 returns the module's own cyclic types as instantiations" do
+    assert {:ok, fields, [inst]} = Structs.fields(PathNode)
+    assert inst.key == {:path, 0}
+    assert match?({:|, _, [_, nil]}, fields.tail)
   end
 
   test "fields/1 reports opaque types" do
