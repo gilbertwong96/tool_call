@@ -95,15 +95,16 @@ defmodule ToolCall.Structs.Resolve do
       :error ->
         put_cache(state, module, :error)
 
-      {:ok, field_asts, insts} ->
+      {:ok, field_asts, insts, truncated?} ->
         {names, state} = assign_inst_names(module, insts, state)
 
-        defs =
+        {defs, inst_types} =
           insts
           |> Enum.with_index()
-          |> Enum.reduce(state.defs, fn {inst, index}, defs ->
+          |> Enum.reduce({state.defs, []}, fn {inst, index}, {defs, types} ->
             name = Map.fetch!(names, index)
-            Map.put_new(defs, name, Typespec.to_type(rewrite(inst.body, names), providers))
+            type = Typespec.to_type(rewrite(inst.body, names), providers)
+            {Map.put_new(defs, name, type), [type | types]}
           end)
 
         fields =
@@ -119,11 +120,27 @@ defmodule ToolCall.Structs.Resolve do
             cache: Map.put(state.cache, module, %{fields: fields, required: required})
         }
 
-        Enum.reduce(fields, state, fn {_field, type}, st -> collect_type(type, providers, st) end)
+        state = maybe_warn_truncated(module, truncated?, state)
+
+        state =
+          Enum.reduce(fields, state, fn {_field, type}, st ->
+            collect_type(type, providers, st)
+          end)
+
+        Enum.reduce(inst_types, state, &collect_type(&1, providers, &2))
     end
   end
 
   defp rewrite(ast, names), do: LocalTypes.rewrite_refs(ast, names)
+
+  defp maybe_warn_truncated(module, true, state) do
+    add_warning(
+      state,
+      "#{inspect(module)}'s @type t hit the type expansion budget; some fields are treated as {}"
+    )
+  end
+
+  defp maybe_warn_truncated(_module, false, state), do: state
 
   defp required_fields(module, state) do
     case Structs.enforced_keys(module) do

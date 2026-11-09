@@ -20,7 +20,9 @@ defmodule ToolCall.Structs do
   end
 
   @spec fields(module()) ::
-          {:ok, %{atom() => term()}, [LocalTypes.instantiation()]} | :opaque | :error
+          {:ok, %{atom() => term()}, [LocalTypes.instantiation()], boolean()}
+          | :opaque
+          | :error
   def fields(module) when is_atom(module) do
     if struct?(module), do: do_fields(module), else: :error
   end
@@ -53,17 +55,17 @@ defmodule ToolCall.Structs do
   defp do_fields(module) do
     case fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
-      :error -> {:ok, any_fields(module), []}
+      :error -> {:ok, any_fields(module), [], false}
     end
   rescue
-    _exception -> {:ok, any_fields(module), []}
+    _exception -> {:ok, any_fields(module), [], false}
   end
 
   defp from_entries(module, entries) do
     case Enum.find(entries, &match?({_kind, {:t, _body, []}}, &1)) do
       {:opaque, {:t, _body, []}} -> :opaque
       {:type, {:t, body, []}} -> type_fields(module, body)
-      nil -> {:ok, any_fields(module), []}
+      nil -> {:ok, any_fields(module), [], false}
     end
   end
 
@@ -75,7 +77,7 @@ defmodule ToolCall.Structs do
       |> definitions()
       |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
 
-    {expanded, _truncated?, insts} = LocalTypes.expand(type_ast, definitions)
+    {expanded, truncated?, insts} = LocalTypes.expand(type_ast, definitions)
 
     types =
       case expanded do
@@ -88,7 +90,7 @@ defmodule ToolCall.Structs do
         {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
       end
 
-    {:ok, fields, insts}
+    {:ok, fields, insts, truncated?}
   end
 
   defp definitions(module) do

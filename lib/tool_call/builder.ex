@@ -75,7 +75,7 @@ defmodule ToolCall.Builder do
 
   defp unique_tool_names(entries, module) do
     {entries, _seen} =
-      Enum.flat_map_reduce(entries, MapSet.new(), fn {tool, location} = entry, seen ->
+      Enum.flat_map_reduce(entries, MapSet.new(), fn {tool, location, _truncated} = entry, seen ->
         if MapSet.member?(seen, tool.name) do
           warn(
             module,
@@ -94,7 +94,8 @@ defmodule ToolCall.Builder do
   end
 
   defp validate_names(module, entries) do
-    for {%Tool{name: name}, location} <- entries, not ToolCall.ProviderName.valid?(name) do
+    for {%Tool{name: name}, location, _truncated} <- entries,
+        not ToolCall.ProviderName.valid?(name) do
       warn(
         module,
         location,
@@ -123,7 +124,8 @@ defmodule ToolCall.Builder do
 
       {spec, count} ->
         warn_overloads(context.module, location, name, arity, count)
-        [{make_tool(name, head_args, doc, spec, context, location), location}]
+        {tool, truncated} = make_tool(name, head_args, doc, spec, context, location)
+        [{tool, location, truncated}]
     end
   end
 
@@ -204,10 +206,11 @@ defmodule ToolCall.Builder do
     doc_info = Doc.parse(doc_value(doc))
     arity = length(spec_args)
 
-    {params, {defs, _registry}} =
+    {params, {{defs, _registry}, truncated}} =
       spec_args
       |> Enum.with_index(1)
-      |> Enum.map_reduce({%{}, %{}}, fn {arg_ast, index}, defs_registry ->
+      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {arg_ast, index},
+                                                        {defs_registry, truncated} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
 
@@ -249,13 +252,16 @@ defmodule ToolCall.Builder do
           )
         end
 
+        truncated =
+          if truncated?, do: MapSet.put(truncated, param_name), else: truncated
+
         {%Param{
            name: param_name,
            type: type,
            default: default_value(default, context.env, type),
            required: default == :none,
            source: source_ast
-         }, defs_registry}
+         }, {defs_registry, truncated}}
       end)
 
     params =
@@ -270,15 +276,15 @@ defmodule ToolCall.Builder do
         |> drop_incompatible_default(context.module, location, name, arity)
       end)
 
-    %Tool{
-      name: Atom.to_string(name),
-      description: doc_info.description,
-      params: params,
-      module: context.module,
-      fun: name,
-      source: spec,
-      defs: defs
-    }
+    {%Tool{
+       name: Atom.to_string(name),
+       description: doc_info.description,
+       params: params,
+       module: context.module,
+       fun: name,
+       source: spec,
+       defs: defs
+     }, truncated}
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
@@ -444,18 +450,20 @@ defmodule ToolCall.Builder do
 
   defp validate_wire_type(%Param{} = param, _module, _location), do: param
 
-  defp resolve_and_warn({%Tool{} = tool, location}, context, module) do
+  defp resolve_and_warn({%Tool{} = tool, location, truncated}, context, module) do
     {tool, warnings} = Structs.Resolve.run(tool, context.providers)
     Enum.each(warnings, &warn(module, location, &1))
-    warn_tool(module, location, tool)
-    {tool, location}
+    warn_tool(module, location, tool, truncated)
+    {tool, location, truncated}
   end
 
-  defp warn_tool(module, location, %Tool{} = tool) do
+  defp warn_tool(module, location, %Tool{} = tool, truncated) do
     arity = length(tool.params)
 
     Enum.each(tool.params, fn param ->
-      warn_type(module, location, param.type, param.name, tool.fun, arity)
+      if not MapSet.member?(truncated, param.name) do
+        warn_type(module, location, param.type, param.name, tool.fun, arity)
+      end
     end)
 
     Enum.each(tool.defs, fn {name, type} ->

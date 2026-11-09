@@ -5,6 +5,7 @@ defmodule ToolCall.StructsTest do
 
   alias ToolCall.TestFixtures.{
     Address,
+    Deep,
     NotAStruct,
     OpaqueBox,
     Partial,
@@ -24,7 +25,7 @@ defmodule ToolCall.StructsTest do
   end
 
   test "fields/1 returns field types with the module's local types expanded" do
-    assert {:ok, fields, []} = Structs.fields(Address)
+    assert {:ok, fields, [], false} = Structs.fields(Address)
     assert {String, :t, []} = unwrap_remote(fields.city)
     assert {String, :t, []} = unwrap_remote(fields.street)
   end
@@ -35,9 +36,13 @@ defmodule ToolCall.StructsTest do
   end
 
   test "fields/1 returns the module's own cyclic types as instantiations" do
-    assert {:ok, fields, [inst]} = Structs.fields(PathNode)
+    assert {:ok, fields, [inst], false} = Structs.fields(PathNode)
     assert inst.key == {:path, 0}
     assert match?({:|, _, [_, nil]}, fields.tail)
+  end
+
+  test "fields/1 reports when the struct's own expansion hit the budget" do
+    assert {:ok, _fields, [], true} = Structs.fields(Deep)
   end
 
   test "fields/1 reports opaque types" do
@@ -45,19 +50,19 @@ defmodule ToolCall.StructsTest do
   end
 
   test "fields/1 lists defstruct fields missing from @type t" do
-    assert {:ok, fields, []} = Structs.fields(Partial)
+    assert {:ok, fields, [], false} = Structs.fields(Partial)
     assert Map.keys(fields) |> Enum.sort() == [:a, :b, :c]
     assert match?({:any, _, []}, fields.b)
   end
 
   test "fields/1 turns a self-referential t/0 into a struct marker" do
-    assert {:ok, fields, []} = Structs.fields(TreeNode)
+    assert {:ok, fields, [], false} = Structs.fields(TreeNode)
     assert [marker] = fields.children
     assert match?({:%, _, [TreeNode, {:%{}, _, []}]}, marker)
   end
 
   test "fields/1 leaves @typep references as local calls" do
-    assert {:ok, fields, []} = Structs.fields(PrivateField)
+    assert {:ok, fields, [], false} = Structs.fields(PrivateField)
     assert match?({:hidden, _, []}, fields.hidden)
   end
 

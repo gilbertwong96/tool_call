@@ -179,6 +179,7 @@ defmodule ToolCall.LocalTypesTest do
     {_us, {module, warnings}} = :timer.tc(fn -> compile_with_warnings!(source) end)
 
     assert warnings =~ "expansion"
+    refute warnings =~ "no JSON type"
     schema = param_schema(module, "go", "x")
     assert %{"type" => "array", "prefixItems" => [_, _]} = schema
     assert nodes(schema) < 5_000
@@ -320,5 +321,21 @@ defmodule ToolCall.LocalTypesTest do
 
     assert ToolCall.LocalTypes.name({String.to_atom(long), 0}, []) |> String.length() == 64
     assert ToolCall.LocalTypes.name({:"weird-name?", 0}, []) == "weird_name"
+  end
+
+  test "@max_defs bounds the number of hoisted definitions" do
+    count = 33
+
+    defs =
+      for i <- 0..(count - 1), into: %{} do
+        next = if i == count - 1, do: "{t0()}", else: "{t#{i + 1}()}"
+
+        {{:"t#{i}", 0}, {[], Code.string_to_quoted!(next)}}
+      end
+
+    {_ast, truncated?, insts} = ToolCall.LocalTypes.expand(Code.string_to_quoted!("t0()"), defs)
+
+    assert truncated?
+    assert Enum.count_until(insts, 33) == 32
   end
 end

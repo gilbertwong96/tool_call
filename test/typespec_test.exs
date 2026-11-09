@@ -505,4 +505,20 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :any} = ir({:some_unknown_type, [], []})
     assert %Type{kind: :string} = ir({:nonempty_binary, [], []})
   end
+
+  describe "struct validation" do
+    test "rejects an object whose struct is not a struct module" do
+      assert_raise ArgumentError, ~r/__struct__\/0/, fn ->
+        Typespec.validate_type!(%Type{kind: :object, struct: :not_a_module})
+      end
+    end
+
+    test "accepts a struct module and a plain map object" do
+      assert %Type{kind: :object, struct: Date} =
+               Typespec.validate_type!(%Type{kind: :object, struct: Date})
+
+      assert %Type{kind: :object, struct: nil} =
+               Typespec.validate_type!(%Type{kind: :object, struct: nil})
+    end
+  end
 end

@@ -4,7 +4,15 @@ defmodule ToolCall.StructTypesTest do
   alias ToolCall.IR.{Param, Tool, Type}
   import ToolCall.TestModule
 
-  alias ToolCall.TestFixtures.{Address, FriendA, NoType, PathNode, TreeNode, WeirdType}
+  alias ToolCall.TestFixtures.{
+    Address,
+    ChainHost,
+    FriendA,
+    NoType,
+    PathNode,
+    TreeNode,
+    WeirdType
+  }
 
   defp tool(source) do
     module = compile!(source)
@@ -244,6 +252,43 @@ defmodule ToolCall.StructTypesTest do
              fields: [%{name: "x", type: %Type{kind: :any}}]
            } =
              weird
+  end
+
+  test "a struct reachable only through a struct module's cyclic local type is resolved" do
+    %Tool{defs: defs, params: [%Param{type: type}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.ChainHost.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert %Type{kind: :object, struct: ChainHost} = type
+
+    assert %Type{kind: :ref, ref: "ToolCall_TestFixtures_ChainHost_chain"} =
+             type.fields |> Enum.find(&(&1.name == "node")) |> Map.fetch!(:type)
+
+    assert %Type{kind: :object, struct: Address} =
+             defs["ToolCall_TestFixtures_ChainHost_chain"].fields
+             |> Enum.find(&(&1.name == "node"))
+             |> Map.fetch!(:type)
+  end
+
+  test "a struct whose @type t hits the inlining budget warns" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.Deep.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert warnings =~ "expansion budget"
+    assert warnings =~ "ToolCall.TestFixtures.Deep"
   end
 
   test "mutual struct recursion produces one definition per module" do

@@ -80,6 +80,29 @@ defmodule ToolCall.TestFixtures.Shapes do
         }
 end
 
+defmodule ToolCall.TestFixtures.Deep do
+  @moduledoc false
+  defstruct [:v]
+
+  @type t0 :: {t1(), t1()}
+  @type t1 :: {t2(), t2()}
+  @type t2 :: {t3(), t3()}
+  @type t3 :: {t4(), t4()}
+  @type t4 :: {t5(), t5()}
+  @type t5 :: {t6(), t6()}
+  @type t6 :: {t7(), t7()}
+  @type t7 :: integer()
+  @type t :: %__MODULE__{v: t0()}
+end
+
+defmodule ToolCall.TestFixtures.ChainHost do
+  @moduledoc false
+  defstruct [:node]
+
+  @type chain :: %{node: ToolCall.TestFixtures.Address.t(), next: chain() | nil}
+  @type t :: %__MODULE__{node: chain()}
+end
+
 defmodule ToolCall.TestFixtures.NotAStruct do
   @moduledoc false
   @type t :: String.t()

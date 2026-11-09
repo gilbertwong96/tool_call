@@ -253,6 +253,7 @@ defmodule ToolCall.Typespec do
     end
 
     type = validate_ref!(type, provider, module, function, args)
+    type = validate_struct!(type, provider, module, function, args)
     type = validate_pattern!(type, provider, module, function, args)
     validate_transform!(type, provider, module, function, args)
     type = validate_metadata!(type, provider, module, function, args)
@@ -836,6 +837,35 @@ defmodule ToolCall.Typespec do
   end
 
   defp validate_ref!(type, _provider, _module, _function, _args), do: type
+
+  defp validate_struct!(%Type{kind: :object, struct: nil} = type, _p, _m, _f, _a), do: type
+
+  defp validate_struct!(%Type{kind: :object, struct: module} = type, provider, m, f, a) do
+    cond do
+      not is_atom(module) ->
+        provider_type_error!(
+          provider,
+          m,
+          f,
+          a,
+          "struct must be a module, got: #{inspect(module)}"
+        )
+
+      not Structs.struct?(module) ->
+        provider_type_error!(
+          provider,
+          m,
+          f,
+          a,
+          "struct #{inspect(module)} does not define __struct__/0"
+        )
+
+      true ->
+        type
+    end
+  end
+
+  defp validate_struct!(type, _provider, _module, _function, _args), do: type
 
   defp validate_defs!(defs) when is_map(defs) do
     Enum.reduce(defs, %{}, fn
