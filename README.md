@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/gilbertwong96/tool_call/graph/badge.svg)](https://codecov.io/gh/gilbertwong96/tool_call)
 [![Elixir](https://img.shields.io/badge/elixir-1.18+-purple.svg)](https://elixir-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Hex.pm](https://img.shields.io/hexpm/v/tool_call.svg)](https://hex.pm/packages/tool_call)
 
 Derive LLM tool-call schemas from Elixir `@spec` and `@doc`, then dispatch the
 call back to the function.
