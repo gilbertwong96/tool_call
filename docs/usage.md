@@ -18,8 +18,10 @@ defmodule MyApp.Tools.Weather do
     * `days` - how many days ahead (1-7)
   """
   @spec get_weather(city :: String.t(), days :: pos_integer() | nil) ::
-          {:ok, %{city: String.t(), days: pos_integer(), temp: float()}} | {:error, String.t()}
-  def get_weather(city, days \\ 3), do: {:ok, %{city: city, days: days, temp: 21.5}}
+          {:ok, map()} | {:error, String.t()}
+  def get_weather(city, days \\ 3) do
+    {:ok, %{city: city, days: days, temp: 21.5}}
+  end
 end
 ```
 
@@ -308,9 +310,10 @@ Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
 upgrade can reflow it without changing the JSON.
 Tool names outside `^[a-zA-Z0-9_-]{1,64}$` are refused.
 
-The task uses Elixir's built-in `JSON`, so the library itself still never depends
-on a JSON encoder. When the request is built somewhere else, `ToolCall.describe/2`
-returns `%{module, name, description, parameters}` for every tool — the same data
+The task currently formats with OTP's `json:format/1`, not Elixir's `JSON`; the
+library itself still has no runtime JSON dependency. When the request is built
+somewhere else, `ToolCall.describe/2` returns
+`%{module, name, description, parameters}` for every tool — the same data
 without a provider envelope.
 
 ## 6. The loop

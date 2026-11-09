@@ -15,8 +15,9 @@ names, so the library requires annotated arguments:
 ```
 
 The quoted AST for that argument is `{:"::", _, [{:city, _, nil}, type]}`, so the
-name survives compilation. Unannotated arguments fall back to `arg1`, `arg2`,
-… and produce a compile-time warning.
+name survives compilation. An unannotated argument can also take a name from a
+`@doc` parameter bullet; otherwise it falls back to the head variable, then
+`argN`, with a compile-time warning.
 
 ## `@spec` is an accumulative attribute
 

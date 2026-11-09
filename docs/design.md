@@ -17,7 +17,7 @@ defmodule MyApp.Tools.Weather do
     * `days` - how many days ahead
   """
   @spec get_weather(city :: String.t(), days :: pos_integer() | nil) ::
-          {:ok, %{temp: float()}} | {:error, String.t()}
+          {:ok, map()} | {:error, String.t()}
   def get_weather(city, days \\ 3)
 end
 ```
@@ -39,7 +39,7 @@ Two artefacts come out of that single declaration:
   stable on a given OTP version; the formatter is OTP's, so an upgrade may reflow
   the bytes. The plan is to move to Elixir's `JSON` once it can pretty-print.
 
-## Constraints that shaped the design
+## Design constraints
 
 These constraints shaped the design; compile-time traps are covered in
 [`pitfalls.md`](pitfalls.md).
@@ -54,8 +54,9 @@ names, so the library requires annotated arguments:
 ```
 
 The quoted AST for that argument is `{:"::", _, [{:city, _, nil}, type]}`, so the
-name survives compilation. Unannotated arguments fall back to `arg1`, `arg2`,
-… and produce a compile-time warning — a tool with `arg1` is nearly useless to a
+name survives compilation. An unannotated argument can take a name from a
+`@doc` parameter bullet; otherwise it falls back to the head variable, then
+`argN`, with a compile-time warning — a tool with `arg1` is nearly useless to a
 model, but silently degrading is worse than warning.
 
 ### 2. Runtime reflection is unavailable in releases
@@ -96,9 +97,9 @@ def f(a :: T, b)            @on_definition
                                  │
                  ┌───────────────┴───────────────┐
                  ▼                               ▼
-      ToolCall.Emit.precompile              ToolCall.Coerce
-      (openai / openai+strict /             ToolCall.Runner
-       anthropic, as literals)
+      ToolCall.Emit.precompile              ToolCall.Codegen
+      (openai / openai+strict /             per-tool dispatch, scalar
+       anthropic, as literals)              fast path; Runner fallback
 ```
 
 `@on_definition` is used instead of scanning `@spec` alone because only that
@@ -207,7 +208,8 @@ specs: :error
 
 The `docs` and `specs` lines show that the release stripped the chunks, while
 the companion beam is present. `emit/3` returns the typedoc description and
-`run/3` dispatches through the companion's tools; `run/3` returns the function
+`run/3` uses the generated per-tool dispatch and embedded IR; the typedoc
+companion affects descriptions, not dispatch. `run/3` returns the function
 result and does not read a description.
 
 ## Type mapping
@@ -288,7 +290,9 @@ collapsed by kind, because `[integer()] | [String.t()]` is not `[integer()]`.
 
 ## Provider subsets
 
-The same IR, three different realities:
+The same IR is normalized for the provider formats below. Runtime emitters exist
+for OpenAI and Anthropic; MCP is available through `mix tool_call.export`, and a
+Gemini emitter is planned.
 
 | | OpenAI | Anthropic | Gemini / MCP |
 |---|---|---|---|
@@ -345,7 +349,8 @@ wire form. Boolean and nil `atom()` defaults are omitted; booleans are rejected
 by the atom wire domain, and nil is omitted even when the type is nullable. A
 reduced-arity call receives every required
 argument plus a prefix
-of the optional arguments, which is what `ToolCall.Runner` constructs.
+of the optional arguments; the generated per-tool runner constructs that call,
+with `ToolCall.Runner` as the complex-tool fallback.
 
 **Schemas are precompiled, the IR stays the single source.** `@before_compile`
 renders the closed set of provider variants and embeds them as literals, so
@@ -423,9 +428,10 @@ belongs to because two tools may have a `user_id` that means different things:
 An override that matches no function or no argument warns at compile time — a
 silently ignored annotation is worse than a noisy one.
 
-**Validation and coercion are one pass.** The schema says `1.0` is a valid
+**Validation and coercion share the same IR.** The schema says `1.0` is a valid
 integer; Elixir disagrees; `ToolCall.Coerce` bridges the gap instead of letting
-the function crash.
+the function crash. Scalar tools use generated coercion; complex shapes fall
+back to the generic runner.
 
 **Unknown arguments are rejected.** The emitted schema says
 `additionalProperties: false`, so the dispatcher enforces the same rule and
