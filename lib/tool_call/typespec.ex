@@ -14,7 +14,7 @@ defmodule ToolCall.Typespec do
 
   @unrepresentable [:fun, :pid, :port, :reference, :mfa, :no_return, :none]
 
-  @builtin_providers [Stdlib]
+  @builtin_providers [Stdlib, ToolCall.Providers.MapSet, ToolCall.Providers.Regex]
 
   @doc false
   @spec builtin_providers() :: [module()]
