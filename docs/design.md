@@ -91,15 +91,18 @@ def f(a :: T, b)            @on_definition
       │                          │  {name, head_args, doc, file, line}
       ▼                          ▼
   @spec f(A, B) :: R  ───►  ToolCall.Builder (compile time)
-                                 │  alias expansion, default detection
+                                 │  alias expansion, default detection,
+                                 │  local-type inlining, $defs hoisting,
+                                 │  struct discovery and resolution
                                  ▼
-                          ToolCall.IR.Tool
+                        ToolCall.IR.Tool (params, defs)
                                  │
                  ┌───────────────┴───────────────┐
                  ▼                               ▼
       ToolCall.Emit.precompile              ToolCall.Codegen
       (openai / openai+strict /             per-tool dispatch, scalar
-       anthropic, as literals)              fast path; Runner fallback
+       anthropic, as literals;              fast path; Runner fallback
+       $ref + $defs)                        threads the tool defs
 ```
 
 `@on_definition` is used instead of scanning `@spec` alone because only that

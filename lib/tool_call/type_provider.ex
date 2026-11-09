@@ -6,8 +6,9 @@ defmodule ToolCall.TypeProvider do
   (`t:String.t/0`, `t:Keyword.t/0`, `t:Path.t/0` and the calendar types). It receives
   the remote module, the type name and the already-resolved argument types.
 
-  Return `{:ok, %ToolCall.IR.Type{}}` to describe the value, or `:error` to let
-  the type fall back to `{}`. A returned node is validated recursively at
+  Return `{:ok, %ToolCall.IR.Type{}}` to describe the value, or `:error` to fall
+  back: to `{}`, or to struct field extraction when `Mod` is a concrete struct
+  (see the Structs section of `docs/design.md`). A returned node is validated recursively at
   compile time: unknown kinds, non-string or uncompilable patterns, malformed
   transforms, enum values, bounds, bound ordering, array minimums, formats,
   nullability, field metadata, and malformed

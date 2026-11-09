@@ -1,16 +1,16 @@
 # Roadmap
 
-The `0.2`, `0.3` and `0.4` labels are planned minor releases. They are not the
-current version, fixed dates, or compatibility promises. The current line is
-`0.1.0`; the stages group work by capability.
+The `0.2`, `0.3` and `0.4` labels are planned minor releases. They are not
+fixed dates or compatibility promises. The published line is `0.1.0`; `0.2` is
+implemented and awaiting a release. The stages group work by capability.
 
-## 0.1 — current
+## 0.1 — published
 
 Compile-time derivation from `@spec`, `@doc` and local types, typedoc fallback
 descriptions, OpenAI and Anthropic emitters, custom type providers, coercion,
 and the runtime dispatcher.
 
-## 0.2 — type coverage (shipped)
+## 0.2 — type coverage (implemented, unreleased)
 
 - Recursive local types emit one `$defs` entry and a `$ref` at every
   occurrence, including the parameter. Cyclicity is decided statically, and
