@@ -26,6 +26,13 @@ defmodule ToolCall.TypeProvider do
   shorthand for a provider that resolves one type: a provider that handles
   several types can return `%ToolCall.IR.Type{transform: {Module, :fun}}`
   instead and leave `coerce/1` undefined.
+
+  Implement `validate/1` to describe the **value domain** of the types the
+  provider resolves: it receives the value the tool function returns (a
+  `%Date{}`, not an ISO 8601 string) and returns a boolean. Result validation
+  (`ToolCall.run/4` with `validate_result: true`) uses it instead of the wire
+  kind. A provider type with no `validate/1` and no explicit
+  `%ToolCall.IR.Type{validator: ...}` is accepted unchecked.
   """
 
   @callback resolve(module(), atom(), [ToolCall.IR.Type.t()]) ::
