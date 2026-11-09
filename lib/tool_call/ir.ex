@@ -40,6 +40,12 @@ defmodule ToolCall.IR do
 
     `kind: :ref` names an entry in the tool's `defs` map; emitters render it as
     `{"$ref": "#/$defs/<name>"}` and never resolve it.
+
+    `validator` is the value-domain counterpart of `transform`: a provider type
+    describes its wire form in `kind`, and `validator` answers whether a value
+    the function returns belongs to the declared type (for example a `%Date{}`
+    for `Date.t()`). Result validation uses it; a nil validator on a node with a
+    transform means "not checkable" and is accepted.
     """
     defstruct kind: :any,
               minimum: nil,
@@ -53,6 +59,7 @@ defmodule ToolCall.IR do
               pattern_regex: nil,
               format: nil,
               transform: nil,
+              validator: nil,
               ref: nil,
               struct: nil,
               nullable: false,

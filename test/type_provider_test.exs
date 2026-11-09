@@ -848,4 +848,22 @@ defmodule ToolCall.TypeProviderTest do
              items: %ToolCall.IR.Type{kind: :object, struct: ToolCall.TestFixtures.Address}
            } = param.type
   end
+
+  test "a provider exporting validate/1 gets a validator on the node it resolves" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.ValidatingProvider]
+
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.ValidateModule.t()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %ToolCall.IR.Type{validator: {ToolCall.TestFixtures.ValidatingProvider, :validate}} =
+             hd(tool.params).type
+  end
 end

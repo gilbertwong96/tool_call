@@ -213,6 +213,7 @@ defmodule ToolCall.Typespec do
       {:ok, %Type{} = type} ->
         type
         |> maybe_provider_coerce(provider)
+        |> maybe_provider_validate(provider)
         |> validate_provider_type!(provider, module, function, args)
 
       :error ->
@@ -234,6 +235,16 @@ defmodule ToolCall.Typespec do
       do: %{type | transform: {provider, :coerce}},
       else: type
   end
+
+  # An explicit validator always wins over the shorthand, mirroring how a
+  # provider can set a per-type transform.
+  defp maybe_provider_validate(%Type{validator: nil} = type, provider) do
+    if function_exported?(provider, :validate, 1),
+      do: %{type | validator: {provider, :validate}},
+      else: type
+  end
+
+  defp maybe_provider_validate(%Type{} = type, _provider), do: type
 
   # A provider may embed one of its resolved arguments, which can still be a
   # `:struct` marker waiting for the builder's resolution pass. A marker is only
@@ -265,6 +276,7 @@ defmodule ToolCall.Typespec do
     type = validate_struct!(type, provider, module, function, args)
     type = validate_pattern!(type, provider, module, function, args)
     validate_transform!(type, provider, module, function, args)
+    validate_validator!(type, provider, module, function, args)
     type = validate_metadata!(type, provider, module, function, args)
     validate_children!(type, provider, module, function, args)
   end
@@ -341,6 +353,34 @@ defmodule ToolCall.Typespec do
       function,
       args,
       "transform must be nil or {module, function}, got: #{inspect(transform)}"
+    )
+  end
+
+  defp validate_validator!(%Type{validator: nil}, _provider, _module, _function, _args), do: :ok
+
+  defp validate_validator!(
+         %Type{validator: {module, function}},
+         _provider,
+         _remote,
+         _fun,
+         _args
+       )
+       when is_atom(module) and is_atom(function) do
+    if Code.ensure_loaded?(module) and function_exported?(module, function, 1) do
+      :ok
+    else
+      raise ArgumentError,
+            "invalid ToolCall IR: validator #{inspect(module)}.#{function}/1 is not defined"
+    end
+  end
+
+  defp validate_validator!(%Type{validator: validator}, provider, module, function, args) do
+    provider_type_error!(
+      provider,
+      module,
+      function,
+      args,
+      "validator must be nil or {module, function}, got: #{inspect(validator)}"
     )
   end
 

@@ -521,4 +521,19 @@ defmodule ToolCall.TypespecTest do
                Typespec.validate_type!(%Type{kind: :object, struct: nil})
     end
   end
+
+  test "rejects a malformed validator on a hand-built type" do
+    assert_raise ArgumentError, ~r/validator/, fn ->
+      Typespec.validate_type!(%Type{kind: :string, validator: {Date, :nope}})
+    end
+
+    assert_raise ArgumentError, ~r/validator/, fn ->
+      Typespec.validate_type!(%Type{kind: :string, validator: :not_a_pair})
+    end
+  end
+
+  test "accepts a valid validator" do
+    assert %Type{validator: {Date, :to_iso8601}} =
+             Typespec.validate_type!(%Type{kind: :string, validator: {Date, :to_iso8601}})
+  end
 end

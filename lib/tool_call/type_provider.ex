@@ -33,5 +33,7 @@ defmodule ToolCall.TypeProvider do
 
   @callback coerce(term()) :: {:ok, term()} | {:error, term()}
 
-  @optional_callbacks coerce: 1
+  @callback validate(term()) :: boolean()
+
+  @optional_callbacks coerce: 1, validate: 1
 end
