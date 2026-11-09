@@ -26,12 +26,19 @@ defmodule ToolCall.Structs.Resolve do
       current: tool.module,
       defs: %{},
       warnings: [],
+      warn?: true,
       inst_names: %{},
       existing: existing
     }
 
-    roots = Enum.map(tool.params, & &1.type) ++ Map.values(tool.defs || %{}) ++ [tool.result]
-    state = Enum.reduce(roots, state, &collect_type(&1, providers, &2, normalize))
+    roots = Enum.map(tool.params, & &1.type) ++ Map.values(tool.defs || %{})
+
+    state =
+      Enum.reduce(roots, %{state | warn?: true}, fn type, state ->
+        collect_type(type, providers, state, normalize)
+      end)
+
+    state = collect_type(tool.result, providers, %{state | warn?: false}, normalize)
 
     ctx = %{
       cache: state.cache,
@@ -125,17 +132,18 @@ defmodule ToolCall.Structs.Resolve do
     end
   end
 
-  defp warn_introspection(module, :opaque, state) do
+  defp warn_introspection(module, :opaque, %{warn?: true} = state) do
     add_warning(
       state,
       "#{inspect(module)}.t() is @opaque; its fields are hidden and the type is treated as {}"
     )
   end
 
+  defp warn_introspection(_module, :opaque, state), do: state
   defp warn_introspection(_module, :error, state), do: state
 
   defp warn_introspection(module, {:ok, %{status: status, probe: probe}}, state) do
-    state = maybe_warn_struct_type(module, status, state)
+    state = if state.warn?, do: maybe_warn_struct_type(module, status, state), else: state
 
     case probe do
       {:ok, _keys} ->
