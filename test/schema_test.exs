@@ -68,7 +68,7 @@ defmodule ToolCall.SchemaTest do
     end
 
     test "a boolean mixed with an atom keeps both types" do
-      assert Schema.type(%Type{kind: :enum, values: [true, :a]}) == %{"enum" => [true, :a]}
+      assert Schema.type(%Type{kind: :enum, values: [true, :a]}) == %{"enum" => [true, "a"]}
     end
 
     test "an enum without values is a bare string" do
@@ -77,7 +77,7 @@ defmodule ToolCall.SchemaTest do
     end
 
     test "a mixed enum carries no type" do
-      assert Schema.type(%Type{kind: :enum, values: [:red, 1]}) == %{"enum" => [:red, 1]}
+      assert Schema.type(%Type{kind: :enum, values: [:red, 1]}) == %{"enum" => ["red", 1]}
     end
 
     test "a nullable enum accepts null" do
@@ -691,5 +691,22 @@ defmodule ToolCall.SchemaTest do
     assert_raise ArgumentError, ~r/strict must be a boolean/, fn ->
       Schema.strict?(strict: :yes)
     end
+  end
+
+  test "stringifies atoms in a mixed-type enum" do
+    tool = %ToolCall.IR.Tool{
+      name: "go",
+      description: "Go.",
+      params: [
+        %ToolCall.IR.Param{
+          name: "x",
+          type: %Type{kind: :enum, values: [true, :auto]},
+          required: true
+        }
+      ]
+    }
+
+    schema = ToolCall.Typespec.validate_tool!(tool) |> ToolCall.Emit.Schema.params()
+    assert schema["properties"]["x"] == %{"enum" => [true, "auto"]}
   end
 end

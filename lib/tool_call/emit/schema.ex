@@ -285,9 +285,16 @@ defmodule ToolCall.Emit.Schema do
         %{"type" => "integer", "enum" => values}
 
       true ->
-        %{"enum" => values}
+        %{"enum" => Enum.map(values, &enum_value/1)}
     end
   end
+
+  # A mixed enum can carry atoms next to booleans or integers; the schema term
+  # must be JSON-encodable by any encoder, not only Elixir's.
+  defp enum_value(atom) when is_atom(atom) and atom not in [true, false, nil],
+    do: Atom.to_string(atom)
+
+  defp enum_value(value), do: value
 
   defp array(%Type{} = type, opts) do
     %{
