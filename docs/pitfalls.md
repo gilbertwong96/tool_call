@@ -126,6 +126,52 @@ Unlike `@doc`, `@on_definition` is an accumulating attribute. A `use ToolCall`
 does not replace another library's definition hook; both callbacks fire,
 including for generated functions such as `__tools__/0`.
 
+## `@enforce_keys` is not readable for a compiled module
+
+`Module.get_attribute(Mod, :enforce_keys)` raises once the module is compiled;
+`__info__(:attributes)` returns only `vsn`, and the docs chunk has no entry.
+The only observable signal is `ArgumentError` from `__struct__/1` when a key is
+missing. The build therefore probes by removing one field at a time, which
+costs `n` raised exceptions per struct, once per compile. It does not parse the
+message, so a reworded error cannot change the result. A struct is not
+recompiled just because a tool module that consumes it changed, but the reverse
+holds: `Code.ensure_compiled/1` gives the tool module a compile dependency on
+the struct module, so editing `@type t` recompiles the tool.
+
+## A struct's field types come from its public `@type t`
+
+Field names always come from `__struct__/0`, but field types do not. Without a
+public `@type t` (or for a field it omits) a field is `{}`. A field typed with
+the struct module's own `@typep` also stays `{}`, because private types are not
+in the types chunk. `@opaque t` is deliberately not extracted at all: the
+author hid the shape, and a wrapper such as `MapSet` cannot be rebuilt from its
+fields. Add a `TypeProvider` when the fields are wanted anyway.
+
+## A struct type is a shape break in 0.2
+
+`Decimal.t()`, `Range.t()` and any other module with a public
+`@type t :: %__MODULE__{...}` used to reach the model as `{}` and accept any
+value. In 0.2 it is a closed object, and dispatch rebuilds the struct. A
+payload that previously passed may now be rejected. Declare a provider for such
+an argument if the scalar form was intended.
+
+## `$defs` names are derived, so treat them as opaque
+
+Names are a pure function of the type and its instantiation (`tree`,
+`tree_integer`), with `_2` suffixes on collisions. They are stable across
+compiles of the same source, but they are not a public API: do not depend on a
+particular name in a stored schema. Do not hand-write a `$ref` either;
+`ToolCall.Typespec.validate_tool!/1` rejects a dangling entry.
+
+## A recursive parameter pays for the nested key check
+
+The generated generic runner walks a recursive value to report
+`{:non_string_arguments, keys}` instead of a plain coercion error. That walk is
+the bulk of the roughly 3 µs `run/3` cost for a recursive parameter, against
+about 0.17 µs on the scalar fast path. It is a dispatch cost, not a provider
+cost. The 32-definition / 8-instantiation bounds are per parameter, not per
+module, so several parameters can each carry a small `$defs` set.
+
 ## Remaining design boundaries
 
 Some limits are intentional: nested/remote/provider typedoc inheritance,

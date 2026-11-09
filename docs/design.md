@@ -247,7 +247,10 @@ build warns. Depth 18 now compiles in 28 ms.
 | `1 \| 2` | `:enum` | `{"enum":[1,2]}` |
 | `nil` in a union | `nullable: true` | `{"type":["T","null"]}`; an enum becomes `anyOf` with a null branch |
 | `map()` | `:object` open | `"additionalProperties": true` |
-| `struct()` | `:object` open | no struct reconstruction; the function receives a map; use a TypeProvider for concrete fields |
+| `struct()` | `:object` open | the function receives a map; use a concrete struct type for fields |
+| `%Mod{}`, `Mod.t()` with a public `@type t` | `:object`, `struct: Mod` | closed object; `required` from `@enforce_keys`; dispatch returns `%Mod{}` |
+| `%Mod{}`, `Mod.t()` with `@opaque t` | `:any` | `{}` + warning; the field set is hidden |
+| recursive `@type` | `:ref` + `$defs` | one body in `$defs`, a `$ref` at every occurrence |
 | `%{k: t}` | `:object` | required fields; the function receives atom keys |
 | `%{optional(k) => t}` | `:object` | not in `required`; atom keys at dispatch |
 | `%{k() => t}` | `:object` | `additionalProperties: <t>`; keys stay strings |
@@ -279,14 +282,99 @@ set `format`/`transform`; `source` is provenance except for `:charlist`, which
 still drives charlist conversion and its schema default. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
-Not handled: recursive types (no `$ref`/`$defs`, so a recursive reference
-becomes `{}`), bitstrings with explicit sizes, and struct expansion (without a
-provider, remote types such as `URI.t()` stay `{}`).
+Not handled: bitstrings with explicit sizes, another module's non-struct types
+(without a provider they stay `{}`), and `@typep` field types inside a struct
+(the types chunk exposes public types only, so those fields stay `{}`).
+Recursive types and concrete structs are handled; see below.
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained
 range disappears, and ranges with a hole stay `anyOf`. Structural kinds are never
 collapsed by kind, because `[integer()] | [String.t()]` is not `[integer()]`.
+
+### Recursive types
+
+Cyclicity is decided **statically**, once per module, before any type is
+converted: build a graph over the module's local `@type`/`@typep`/`@opaque`
+definitions (an edge exists when one body mentions another key) and mark every
+key that can reach itself. A cyclic key is never inlined. Each instantiation
+becomes one `$defs` entry, and every occurrence — including the parameter that
+starts the cycle — is `$ref`:
+
+```json
+{
+  "type": "object",
+  "properties": { "root": { "$ref": "#/$defs/tree" } },
+  "required": ["root"],
+  "additionalProperties": false,
+  "$defs": {
+    "tree": {
+      "type": "object",
+      "properties": {
+        "value": { "type": "integer" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/tree" } }
+      },
+      "required": ["children", "value"],
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+`$defs` sits beside `properties` in the parameters object, per tool. Strict
+mode renders each definition with the same rules as a nested object (closed,
+every property required, optional values nullable). A nullable ref
+(`tree() | nil`) becomes `anyOf` with a null branch, because a `$ref` cannot
+carry a sibling `type` array. Non-recursive local types keep the inlining,
+budget and warning path described above, so their schemas do not change.
+
+Names are readable and derived from the instantiation: `tree`, `tree_integer`,
+`tree_list_integer`, sanitised to `[A-Za-z0-9_]`, truncated at 64 characters,
+with `_2`, `_3` on collision. Two compiles of the same source produce the same
+names. Two bounds keep a pathological parameterized cycle finite:
+`@max_defs 32` overall and `@max_instantiations_per_key 8` (a call that
+transforms its own arguments, `@type t(a) :: %{next: t({a, a})}`, grows the
+argument tree exponentially). Past either bound the reference degrades to `{}`
+and the compile warns.
+
+A cyclic value is coerced through the same `$defs` map at dispatch, so nested
+maps arrive with atom keys at every level. Coercion is driven by the value,
+which is finite, so the type-level cycle terminates.
+
+### Structs
+
+`Mod.t()` and `%Mod{}` are resolved for a module that exports
+`__struct__/0`, when no `TypeProvider` matches first. The result is a closed
+object:
+
+- field names come from `__struct__/0`, sorted by name;
+- field types come from the module's public `@type t`, with the module's own
+  local types expanded and a self-reference to `t/0` replaced by
+  `%__MODULE__{}`; a field missing from `t` keeps `{}`;
+- `required` comes from `@enforce_keys`.
+
+`@enforce_keys` is not readable for a compiled module: `Module.get_attribute/2`
+raises, and neither `__info__(:attributes)` nor the docs chunk carries it. The
+only signal is `ArgumentError` from `__struct__/1`, so the build removes one
+field at a time and treats a field whose removal raises as enforced. That is
+`n` probes per struct, once per compile, with no message parsing.
+
+`@opaque t` is **not** extracted: the author chose to hide the shape, and for a
+wrapper such as `MapSet` an extracted field set cannot be rebuilt correctly.
+Such a parameter stays `{}` with the untyped warning. A provider always wins,
+which is the escape hatch for a scalar wrapper (`Decimal.t()`, `Range.t()`) if
+its field shape is not what you want the model to see.
+
+Struct cycles are handled like type cycles: discovery resolves the struct graph
+through `@type t`, the strongly connected components decide which modules are
+cyclic, and a cyclic module becomes one `$defs` entry with a `$ref` at every
+occurrence, including the parameter. `Code.ensure_compiled/1` at compile time
+adds the compile dependency, so editing the struct's `@type t` recompiles the
+tool module.
+
+At dispatch, an object with `struct: Mod` is coerced field by field and then
+rebuilt with `struct/2`. Omitted optional fields are not inserted, so
+`defstruct` defaults apply; an unknown key is `{:unknown_keys, keys}`.
 
 ## Provider subsets
 
@@ -299,7 +387,7 @@ Gemini emitter is planned.
 | Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `inputSchema` |
 | Top level | must be an object | any JSON Schema | any JSON Schema |
 | `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | n/a |
-| `$ref` | limited | accepted but rarely useful | unsupported |
+| `$ref` / `$defs` | supported, strict mode included | supported | supported by the JSON export |
 | Who parses arguments | you (a JSON string) | the provider (`input` arrives decoded) | varies |
 
 The last row matters for large integers: when the provider parses, you inherit
@@ -364,6 +452,17 @@ wrapped as `<type>() | nil`, produces a typedoc key; `list(address())` and
 exists (with docs enabled), a `@typedoc` companion may exist, so the accessors
 check it with `Code.ensure_loaded?/1` and `function_exported?/3` before using
 it, which keeps a stale companion from serving old data.
+
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29), 0.2 line: adding
+one recursive type and one struct type to a 20-tool module changes `beam` size
+by about +5 KB (47 KB to 52 KB) and does not move compile time measurably
+(`Code.compile_string`, min of 5: 167 ms vs 158 ms, inside noise). `emit/3`
+costs about 0.13 µs for the non-recursive module and 0.31 µs when a `$defs`
+literal is present. On the generic runner, `run/3` costs about 1.4 µs for a
+struct parameter and about 3 µs for a recursive one, because the nested
+non-string-key check walks the value; the generated scalar fast path stays at
+about 0.17 µs. These are dispatch costs, three orders of magnitude below a
+provider round trip.
 
 Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module whose
 effective typedoc key map is empty reads the literals directly — `emit/3` costs
@@ -487,3 +586,8 @@ These are intentional limits rather than missing implementation:
 - `@doc` metadata-only entries have no description text. `@on_definition` is an
   accumulating hook shared with other libraries.
 - Type providers resolve types, not typedoc descriptions.
+- Another module's non-struct local types are not inlined, and a struct field
+  typed with that module's `@typep` stays `{}`: only public types are in the
+  types chunk.
+- Struct field order is alphabetical, not `defstruct` order, so `required` is
+  reproducible.

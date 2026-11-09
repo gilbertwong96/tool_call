@@ -151,6 +151,91 @@ and convert in the function.
   A `:description` of `nil` leaves the doc description in place; an empty string
   clears it.
 
+### Recursive types
+
+A local type that refers to itself becomes one `$defs` entry plus a `$ref`:
+
+```elixir
+@type tree :: %{value: integer(), children: [tree()]}
+
+@doc "Walk a tree."
+@spec walk(root :: tree()) :: map()
+```
+
+```json
+{
+  "properties": { "root": { "$ref": "#/$defs/tree" } },
+  "required": ["root"],
+  "$defs": {
+    "tree": {
+      "type": "object",
+      "properties": {
+        "value": { "type": "integer" },
+        "children": { "type": "array", "items": { "$ref": "#/$defs/tree" } }
+      },
+      "required": ["children", "value"],
+      "additionalProperties": false
+    }
+  }
+}
+```
+
+The parameter itself is a `$ref`, so the body appears once. Mutual recursion
+works the same way: every type on a cycle gets its own entry. A parameterized
+recursive type names each instantiation (`tree_integer`), and a collision gets
+a `_2` suffix. Passing the call back through `ToolCall.run/3` coerces the value
+at every level, so nested maps arrive with atom keys inside the function.
+
+Two bounds stop a pathological cycle (`@type t(a) :: %{next: t({a, a})}`):
+32 definitions per parameter and 8 instantiations per type. Past either bound
+that reference is treated as `{}` and the compile warns.
+
+Non-recursive local types are still inlined; their schemas are unchanged.
+
+### Struct types
+
+A concrete struct type becomes a closed object, and dispatch returns the
+struct:
+
+```elixir
+defmodule MyApp.Address do
+  @enforce_keys [:city]
+  defstruct [:city, :street, country: "NO"]
+
+  @type t :: %__MODULE__{city: String.t(), street: String.t() | nil, country: String.t()}
+end
+
+@doc "Ship to an address."
+@spec ship(to :: MyApp.Address.t()) :: map()
+```
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "city": { "type": "string" },
+    "country": { "type": "string" },
+    "street": { "type": ["string", "null"] }
+  },
+  "required": ["city"],
+  "additionalProperties": false
+}
+```
+
+- Field names come from `__struct__/0`; field types from the module's public
+  `@type t`. A field that `t` omits stays `{}`.
+- `required` comes from `@enforce_keys`.
+- Omitted optional fields are not inserted before `struct/2`, so `defstruct`
+  defaults apply. An unknown key is rejected with `{:unknown_keys, keys}`.
+- `@opaque t` is not extracted: it stays `{}` with the untyped warning.
+- A `TypeProvider` always wins over extraction. Use one when a struct should
+  travel as a scalar (`Decimal.t()` as a string, say) rather than as fields.
+- A recursive struct (`%Node{children: [Node.t()]}`) uses `$defs` like a
+  recursive local type.
+
+`struct()` with no module is still an open object; the function receives a
+plain map.
+
 ## 2. Emit a schema
 
 ```elixir
@@ -410,9 +495,15 @@ end
   and `1.0` as `1`. Open maps and `%{k() => v}` keep the string keys JSON gives
   them. `keyword/1` keys must already exist as atoms in the VM, like `atom()`:
   an unknown key is `{:unknown_atom, key}`.
-- **`struct()` is not reconstructed.** It is emitted as an open object and the
-  function receives a plain map. Use a concrete struct type with a type provider
-  when the function needs the struct itself.
+- **Bare `struct()` is not reconstructed.** It is emitted as an open object and
+  the function receives a plain map. A concrete `Mod.t()` is rebuilt into the
+  struct, unless a type provider claims it first.
+- **A struct type is a closed object.** Only its declared fields are accepted;
+  an unknown key is `{:unknown_keys, keys}`. A provider overrides this when a
+  struct should be sent as a scalar.
+- **Recursive parameters use `$defs`.** Strict mode renders the definitions
+  with the same rules as nested objects, so the schema stays valid for both
+  providers.
 - **Do not use a bare `atom()`.** The schema allows any string while the
   dispatcher only accepts atoms that already exist in the VM. Enumerate:
   `:red | :green`.

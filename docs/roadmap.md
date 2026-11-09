@@ -10,15 +10,16 @@ Compile-time derivation from `@spec`, `@doc` and local types, typedoc fallback
 descriptions, OpenAI and Anthropic emitters, custom type providers, coercion,
 and the runtime dispatcher.
 
-## 0.2 — type coverage
+## 0.2 — type coverage (shipped)
 
-- Recursive types with `$ref` / `$defs`. Recursive local type references
-  currently stop at the first re-entry and render as `{}`.
-- Struct field extraction. Concrete structs should expose their fields and
-  `@enforce_keys` should drive required fields instead of the current open
-  object representation.
-- Keep the existing local-type inlining budget and warning path for
-  non-recursive expansion.
+- Recursive local types emit one `$defs` entry and a `$ref` at every
+  occurrence, including the parameter. Cyclicity is decided statically, and
+  two bounds keep a parameterized cycle finite.
+- Concrete structs expose their fields as a closed object, with field types
+  from the public `@type t` and `required` from `@enforce_keys`; dispatch
+  rebuilds the struct. `@opaque` types are not extracted.
+- Non-recursive local types keep the existing inlining budget and warning
+  path.
 
 ## 0.3 — output and integrations
 
