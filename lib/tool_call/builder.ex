@@ -558,8 +558,12 @@ defmodule ToolCall.Builder do
       end
     end)
 
+    reachable = ToolCall.Defs.reachable(Enum.map(tool.params, & &1.type), tool.defs)
+
     Enum.each(tool.defs, fn {name, type} ->
-      warn_def(module, location, name, type, tool.fun, arity)
+      if MapSet.member?(reachable, name) do
+        warn_def(module, location, name, type, tool.fun, arity)
+      end
     end)
   end
 

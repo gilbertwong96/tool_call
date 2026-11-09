@@ -27,7 +27,10 @@ defmodule ToolCall.Emit.Schema do
       "additionalProperties" => false
     }
 
-    case tool.defs do
+    reachable = ToolCall.Defs.reachable(Enum.map(tool.params, & &1.type), tool.defs)
+    defs = Map.take(tool.defs, MapSet.to_list(reachable))
+
+    case defs do
       defs when defs == %{} ->
         schema
 

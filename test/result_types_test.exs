@@ -101,4 +101,60 @@ defmodule ToolCall.ResultTypesTest do
       })
     end
   end
+
+  test "a result-only recursive type is absent from the input schema" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type tree :: %{value: integer(), children: [tree()]}
+
+        @doc "Go."
+        @spec go(x :: integer()) :: tree()
+        def go(_x), do: %{value: 1, children: []}
+      end
+      """)
+
+    [function] = ToolCall.emit(module, :openai)
+    refute Map.has_key?(function["function"]["parameters"], "$defs")
+
+    [spec] = ToolCall.describe(module)
+    refute Map.has_key?(spec.parameters, "$defs")
+  end
+
+  test "a def shared by a parameter and the result is emitted once" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type tree :: %{value: integer(), children: [tree()]}
+
+        @doc "Go."
+        @spec go(x :: tree()) :: tree()
+        def go(x), do: x
+      end
+      """)
+
+    [function] = ToolCall.emit(module, :openai)
+    assert Map.keys(function["function"]["parameters"]["$defs"]) == ["tree"]
+  end
+
+  test "a result-only def never warns about what the model sees" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type nested_node :: %{value: pid(), children: [nested_node()]}
+
+        @doc "Go."
+        @spec go(x :: integer()) :: nested_node()
+        def go(_x), do: %{value: self(), children: []}
+      end
+      """)
+
+    refute warnings =~ "no JSON representation"
+  end
 end
