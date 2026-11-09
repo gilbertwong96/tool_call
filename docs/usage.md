@@ -74,8 +74,10 @@ end
 `resolve/3` receives the remote module, the type name and the already-resolved
 argument types. Return `{:ok, %ToolCall.IR.Type{}}`, or `:error` to fall back to
 `{}`. `coerce/1` is optional; it runs after the wire value has been coerced.
-Providers are tried after the built-ins (`String`, `Keyword`, `Path`, calendar),
-so a provider cannot replace them. `types:` is per module. The provider module
+Providers are tried after the built-ins (`String`, `Keyword`, `Path`, the calendar
+types, `MapSet`, `Regex`), so a provider cannot replace them; for one of those,
+declare the parameter as the wire shape you want (`String.t()`, `list(t)`) and
+convert in the function. `types:` is per module. The provider module
 must be compiled before the tool module; the generated `require` adds that
 compile dependency.
 

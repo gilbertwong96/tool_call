@@ -163,8 +163,10 @@ fields are the documented representation.
 `@type t :: %__MODULE__{...}` used to reach the model as `{}` and accept any
 value. In 0.2 it is a closed object, and dispatch rebuilds the struct. A
 payload that previously passed may now be rejected. Declare a provider for such
-an argument if the scalar form was intended; `MapSet` and `Regex` already have
-one.
+an argument if the scalar form was intended. `MapSet` and `Regex` already have a
+built-in provider, and a user provider cannot replace it — the built-ins are
+tried first. For those two, declare the parameter as `String.t()` or `list(t)`
+and convert in the function.
 
 ## A schema is per tool, so a shared recursive type is sent once per tool
 
