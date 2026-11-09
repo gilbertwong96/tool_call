@@ -826,4 +826,26 @@ defmodule ToolCall.TypeProviderTest do
     end
     """)
   end
+
+  test "a provider may embed an argument that resolves to a struct" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.EmbedProvider]
+
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.EmbedModule.t(ToolCall.TestFixtures.Address.t())) ::
+                map()
+        def go(x), do: x
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+    [param] = tool.params
+
+    assert %ToolCall.IR.Type{
+             kind: :array,
+             items: %ToolCall.IR.Type{kind: :object, struct: ToolCall.TestFixtures.Address}
+           } = param.type
+  end
 end

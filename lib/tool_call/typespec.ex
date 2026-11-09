@@ -235,6 +235,15 @@ defmodule ToolCall.Typespec do
       else: type
   end
 
+  # A provider may embed one of its resolved arguments, which can still be a
+  # `:struct` marker waiting for the builder's resolution pass. A marker is only
+  # invalid as a node handed to an emitter, so children accept it.
+  defp validate_child!(%Type{kind: :struct} = type, _provider, _module, _function, _args),
+    do: type
+
+  defp validate_child!(%Type{} = type, provider, module, function, args),
+    do: validate_provider_type!(type, provider, module, function, args)
+
   defp validate_provider_type!(%Type{kind: :struct}, _provider, _module, _function, _args) do
     raise ArgumentError,
           "invalid ToolCall IR: :struct is an internal resolution marker; " <>
@@ -536,7 +545,7 @@ defmodule ToolCall.Typespec do
          function,
          args
        ) do
-    %{type | items: validate_provider_type!(items, provider, module, function, args)}
+    %{type | items: validate_child!(items, provider, module, function, args)}
   end
 
   defp validate_items!(%Type{kind: :array, items: items}, provider, module, function, args),
@@ -589,7 +598,7 @@ defmodule ToolCall.Typespec do
         %Field{type: %Type{} = field_type, name: name, key: key, required: required} = field
         when is_binary(name) and is_atom(key) and is_boolean(required) ->
           validate_name!(name, "field")
-          %{field | type: validate_provider_type!(field_type, provider, module, function, args)}
+          %{field | type: validate_child!(field_type, provider, module, function, args)}
 
         other ->
           provider_type_error!(
@@ -645,7 +654,7 @@ defmodule ToolCall.Typespec do
          function,
          args
        ) do
-    %{type | additional: validate_provider_type!(additional, provider, module, function, args)}
+    %{type | additional: validate_child!(additional, provider, module, function, args)}
   end
 
   defp validate_additional!(
@@ -697,7 +706,7 @@ defmodule ToolCall.Typespec do
 
   defp validate_type_list!(types, provider, module, function, args) do
     Enum.map(types, fn
-      %Type{} = type -> validate_provider_type!(type, provider, module, function, args)
+      %Type{} = type -> validate_child!(type, provider, module, function, args)
       other -> invalid_child!(provider, module, function, args, "nested type", other)
     end)
   end
