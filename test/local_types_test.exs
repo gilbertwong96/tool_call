@@ -210,4 +210,22 @@ defmodule ToolCall.LocalTypesTest do
              "minItems" => 3
            } = param_schema(module, "go", "t")
   end
+
+  defp quoted(source), do: Code.string_to_quoted!(source)
+
+  defp definitions do
+    %{
+      {:tree, 0} => {[], quoted("%{value: integer(), children: [tree()]}")},
+      {:a, 0} => {[], quoted("b()")},
+      {:b, 0} => {[], quoted("a()")},
+      {:pair, 1} => {[{:x, [], nil}], quoted("%{left: x, right: x}")},
+      {:rec, 1} => {[{:x, [], nil}], quoted("%{next: rec(x)}")},
+      {:plain, 0} => {[], quoted("String.t()")}
+    }
+  end
+
+  test "cyclic_keys/1 finds self and mutual recursion" do
+    assert ToolCall.LocalTypes.cyclic_keys(definitions()) ==
+             MapSet.new([{:tree, 0}, {:a, 0}, {:b, 0}, {:rec, 1}])
+  end
 end

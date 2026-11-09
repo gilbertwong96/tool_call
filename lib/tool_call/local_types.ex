@@ -46,6 +46,47 @@ defmodule ToolCall.LocalTypes do
     end
   end
 
+  @doc false
+  @spec cyclic_keys(map()) :: MapSet.t({atom(), non_neg_integer()})
+  def cyclic_keys(definitions) when is_map(definitions) do
+    edges =
+      Map.new(definitions, fn {key, {_params, body}} ->
+        {key, referenced_keys(body, definitions)}
+      end)
+
+    for key <- Map.keys(edges), cyclic?(edges, key), into: MapSet.new(), do: key
+  end
+
+  defp referenced_keys(ast, definitions) do
+    {_ast, keys} =
+      Macro.prewalk(ast, [], fn
+        {name, _meta, args} = node, acc when is_atom(name) and is_list(args) ->
+          key = {name, length(args)}
+          if Map.has_key?(definitions, key), do: {node, [key | acc]}, else: {node, acc}
+
+        node, acc ->
+          {node, acc}
+      end)
+
+    MapSet.new(keys)
+  end
+
+  defp cyclic?(edges, key) do
+    Map.get(edges, key, MapSet.new())
+    |> reachable(edges, MapSet.new())
+    |> MapSet.member?(key)
+  end
+
+  defp reachable(frontier, edges, seen) do
+    Enum.reduce(frontier, seen, fn node, seen ->
+      if MapSet.member?(seen, node) do
+        seen
+      else
+        reachable(Map.get(edges, node, MapSet.new()), edges, MapSet.put(seen, node))
+      end
+    end)
+  end
+
   defp walk({name, meta, args}, seen, definitions, state)
        when is_atom(name) and is_list(args) do
     key = {name, length(args)}
