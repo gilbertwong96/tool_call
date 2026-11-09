@@ -250,6 +250,12 @@ end
   travel as a scalar (`Decimal.t()` as a string, say) rather than as fields.
 - A recursive struct (`%Node{children: [Node.t()]}`) uses `$defs` like a
   recursive local type.
+- `Address.t() | nil` keeps the null branch in the schema and in result
+  validation. Put `| nil` at the spec site, not inside the struct's `t`: a
+  union there makes `t` non-literal, so every field becomes `{}` and the nil
+  branch is ignored. Only `Mod.t()` is resolved as a struct;
+  `Mod.t(integer())` stays `{}` (a parameter hides the tool, a result is
+  unvalidated).
 - Field properties carry no description: a typespec has no per-field doc. Put the
   field meaning in the tool description, or flatten the shape into parameters
   with `@doc` bullets.

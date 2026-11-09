@@ -178,6 +178,17 @@ an `elixir` script) succeeds, but the companion is skipped with a warning and
 the phase-one descriptions are used. Everything else — including `$defs` and
 struct extraction — is compile-time and works without Mix.
 
+## A runtime-compiled struct has no readable `@type t`
+
+`Structs` reads `t/0` from the module's typespec chunk, which exists only in a
+beam file. A struct module compiled by `Code.compile_string/1` — a Livebook
+cell, an eval — has no object code, so `Code.Typespec.fetch_types/1` answers
+`:error`: every field silently becomes `{}`, and the only signal is the generic
+"no JSON type" warning on the parameter. A struct defined in the same module as
+its tools is exempt (the field map and `t/0` are read
+from module attributes). Compile the struct through Mix or
+`Kernel.ParallelCompiler.compile_to_path/2` when field types matter.
+
 ## Struct defaults are not sent to the model
 
 A `defstruct` default is not emitted as `default` in the schema: the model sees
@@ -217,6 +228,25 @@ an argument if the scalar form was intended. `MapSet` and `Regex` already have a
 built-in provider, and a user provider cannot replace it — the built-ins are
 tried first. For those two, declare the parameter as `String.t()` or `list(t)`
 and convert in the function.
+
+## A struct type with arguments is not a struct type
+
+Only `Mod.t()` with no arguments becomes a struct marker. `Mod.t(integer())`
+has no provider, so it is `{}` (`:any`): as a parameter that hides the tool
+with the untyped-argument warning, and as a return type it leaves the result
+unvalidated without a warning of its own. A struct whose `t` is parameterized
+(`@type t(a)`) works only as `Mod.t()` — every field is `{}` and a warning names
+the module — or through a separate non-parametric `@type`.
+
+## `@type t :: %__MODULE__{} | nil` is not a struct `t`
+
+Field extraction reads a `%__MODULE__{}` literal, so a union — even just `| nil`
+— makes `t/0` non-literal: every field becomes `{}`, the nil branch is ignored,
+and the compile warns. A parameter of that type still rejects null and a result
+still fails `{:expected_struct, nil}`. Keep the struct's `t/0` a literal and put
+`| nil` where the type is used: `@spec ship(to :: Address.t() | nil)`. The
+nullable struct then keeps its null branch in the schema and in result
+validation.
 
 ## A schema is per tool, so a shared recursive type is sent once per tool
 

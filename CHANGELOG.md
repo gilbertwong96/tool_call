@@ -44,6 +44,8 @@
   `defstruct`'s `__struct__/0,1` no longer warn about a missing `@spec`.
 - An enum value that is a boolean no longer accepts its string form (`"true"`);
   booleans are JSON literals, not atoms on the wire.
+- `Address.t() | nil` keeps the null branch for a struct parameter and for
+  result validation; the resolved struct object previously dropped `nullable`.
 - An enum that mixes atoms with booleans or integers stringifies the atoms, so
   the schema term is JSON-encodable by any encoder.
 
