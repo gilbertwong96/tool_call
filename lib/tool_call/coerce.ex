@@ -407,11 +407,18 @@ defmodule ToolCall.Coerce do
   end
 
   defp enum_atom(values, value) do
-    case Enum.find(values, &(is_atom(&1) and Atom.to_string(&1) == value)) do
+    case Enum.find(values, &enum_atom_value?(&1, value)) do
       nil -> {:error, {:invalid_enum, value, values}}
       atom -> {:ok, atom}
     end
   end
+
+  # Booleans and nil are JSON literals, not atoms on the wire; a string never
+  # stands for them.
+  defp enum_atom_value?(atom, value) when is_atom(atom) and atom not in [true, false, nil],
+    do: Atom.to_string(atom) == value
+
+  defp enum_atom_value?(_candidate, _value), do: false
 
   # An empty enum renders as an unconstrained string schema; keep dispatch in
   # sync instead of rejecting every value the schema advertises.

@@ -604,6 +604,17 @@ defmodule ToolCall.CoerceTest do
     end
   end
 
+  test "a boolean enum does not accept its string form" do
+    assert {:error, {:invalid_enum, "true", [true]}} =
+             Coerce.coerce(%Type{kind: :enum, values: [true]}, "true")
+
+    assert {:error, {:invalid_enum, "true", [true, :auto]}} =
+             Coerce.coerce(%Type{kind: :enum, values: [true, :auto]}, "true")
+
+    assert {:ok, :auto} = Coerce.coerce(%Type{kind: :enum, values: [true, :auto]}, "auto")
+    assert {:ok, true} = Coerce.coerce(%Type{kind: :enum, values: [true, :auto]}, true)
+  end
+
   describe "simple scalar fast path" do
     test "coerces strings, numbers, booleans and null" do
       huge = 10 ** 400
