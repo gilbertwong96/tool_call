@@ -104,8 +104,6 @@ defmodule ToolCall.Structs do
     end
   end
 
-  defp current_fields(_module, _type, nil, _normalize), do: :error
-
   defp current_fields(module, {:ok, body}, pairs, normalize) do
     definitions =
       module
@@ -118,18 +116,25 @@ defmodule ToolCall.Structs do
     case expanded do
       {:%, _, [^module, {:%{}, _, type_pairs}]} ->
         types = Map.new(type_pairs)
+        field_pairs = pairs || type_pairs
 
         fields =
-          for {field, _default} <- pairs, into: %{} do
+          for {field, _default} <- field_pairs, into: %{} do
             {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
           end
 
         {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
 
+      _other when is_nil(pairs) ->
+        :error
+
       _other ->
         {:ok, any_from_pairs(pairs), [], :non_literal_t}
     end
   end
+
+  # Without the captured `__struct__/0` map there is no field list to use.
+  defp current_fields(_module, _status, nil, _normalize), do: :error
 
   defp current_fields(_module, status, pairs, _normalize) do
     status = if status == :absent, do: :ok, else: status

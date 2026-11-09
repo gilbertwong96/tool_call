@@ -643,4 +643,25 @@ defmodule ToolCall.StructTypesTest do
       assert warnings =~ warning
     end
   end
+
+  test "defstruct before use ToolCall still resolves through @type t" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        defstruct [:city]
+        use ToolCall
+
+        @type t :: %__MODULE__{city: String.t()}
+
+        @doc "Go."
+        @spec go(a :: %__MODULE__{}) :: map()
+        def go(a), do: a
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Type{kind: :object, struct: ^module, fields: [%{name: "city"}]} =
+             hd(tool.params).type
+  end
 end
