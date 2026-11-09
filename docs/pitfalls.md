@@ -141,26 +141,70 @@ the struct module, so editing `@type t` recompiles the tool.
 ## A struct's field types come from its public `@type t`
 
 Field names always come from `__struct__/0`, but field types do not. Without a
-public `@type t` (or for a field it omits) a field is `{}`. A field typed with
+public `@type t/0` (or for a field it omits) a field is `{}`. A field typed with
 the struct module's own `@typep` also stays `{}`, because private types are not
-in the types chunk. `@opaque t` is deliberately not extracted at all: the
-author hid the shape, and a wrapper such as `MapSet` cannot be rebuilt from its
-fields. Add a `TypeProvider` when the fields are wanted anyway.
+in the types chunk. Only `@type t(a)` with no `t/0` is skipped: extraction reads
+`t/0` alone, so every field of such a struct is `{}`.
+
+`@opaque t` is deliberately not extracted: the author hid the shape. Note that
+most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
+are public types whose fields are internal representation, which is why they
+have built-in providers (a set travels as an array, a regex as its source
+string). `URI.t/0`, `Range.t/0` and `Version.t/0` are extracted, because their
+fields are the documented representation.
 
 ## A struct type is a shape break in 0.2
 
-`Decimal.t()`, `Range.t()` and any other module with a public
+`Decimal.t()`, `URI.t()`, `Range.t()` and any other module with a public
 `@type t :: %__MODULE__{...}` used to reach the model as `{}` and accept any
 value. In 0.2 it is a closed object, and dispatch rebuilds the struct. A
 payload that previously passed may now be rejected. Declare a provider for such
-an argument if the scalar form was intended.
+an argument if the scalar form was intended; `MapSet` and `Regex` already have
+one.
+
+## A schema is per tool, so a shared recursive type is sent once per tool
+
+`describe/2` returns one parameters object per tool, so `$defs` sits per tool
+rather than per module. Two tools that share a recursive type each carry an
+identical `$defs` block, and a request with N such tools sends N copies; a
+non-recursive struct is inlined into every parameter that names it, which also
+grows the beam per tool. Both are deliberate (a tool must be self-contained),
+but they are prompt-token and compile-size costs worth knowing when one type is
+shared widely.
+
+## A ref-only alias cycle fails the compile
+
+`@type a :: b()` with `@type b :: a()` (or an alias that reaches itself through
+a union with no constructor) raises `invalid ToolCall IR: $defs cycle ...` at
+compile time. A cycle that consumes a value — a ref under an object, array or
+tuple, as in `@type tree :: %{children: [tree()]}` — is fine and terminates at
+dispatch because the value is finite.
+
+## A hand-built `:ref` needs its `$defs` entry
+
+`ToolCall.IR.Tool.defs` must hold every name a `:ref` points at.
+`ToolCall.Typespec.validate_tool!/1` rejects a dangling ref, and
+`ToolCall.Coerce` raises `ArgumentError` if it is given one anyway. Call
+`validate_tool!/1` on runtime IR before dispatching it; without it,
+`Coerce.accepts_nil?/2` can also follow a ref-only cycle forever. The `:struct`
+kind is an internal build marker and is not accepted from a hand-built tool.
+
+## An exception struct is an ordinary struct to extraction
+
+`ArgumentError.t()` and friends extract `__exception__` and `message` as
+fields, with no enforced keys. It works — `struct/2` keeps the default
+`__exception__: true` — but the model is being asked to build an exception
+value. Declare a provider if an exception type is a real argument.
 
 ## `$defs` names are derived, so treat them as opaque
 
 Names are a pure function of the type and its instantiation (`tree`,
 `tree_integer`), with `_2` suffixes on collisions. They are stable across
 compiles of the same source, but they are not a public API: do not depend on a
-particular name in a stored schema. Do not hand-write a `$ref` either;
+particular name in a stored schema. Collisions are suffixed in declaration
+order, so adding an earlier parameter that derives the same readable name moves
+an existing entry from `tree_integer` to `tree_integer_2`. Store schemas, not
+names. Do not hand-write a `$ref` either;
 `ToolCall.Typespec.validate_tool!/1` rejects a dangling entry.
 
 ## A recursive parameter pays for the nested key check
@@ -170,7 +214,9 @@ The generated generic runner walks a recursive value to report
 the bulk of the roughly 3 µs `run/3` cost for a recursive parameter, against
 about 0.17 µs on the scalar fast path. It is a dispatch cost, not a provider
 cost. The 32-definition / 8-instantiation bounds are per parameter, not per
-module, so several parameters can each carry a small `$defs` set.
+module, so several parameters can each carry a small `$defs` set. Depth is
+linear, not a cliff: a 100 000-level value coerces in about 0.3 s without
+raising.
 
 ## Remaining design boundaries
 

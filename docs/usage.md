@@ -79,8 +79,10 @@ so a provider cannot replace them. `types:` is per module. The provider module
 must be compiled before the tool module; the generated `require` adds that
 compile dependency.
 
-`Decimal.t()` is not built in; implement a provider for it, or use `String.t()`
-and convert in the function.
+`MapSet.t/0`, `MapSet.t/1` and `Regex.t/0` are built in: a set travels as an
+array of its elements and a regex as its source string (compiled with `u` at
+dispatch). `Decimal.t()` is not built in; implement a provider for it, or use
+`String.t()` and convert in the function.
 
 ### Compile-time conventions
 

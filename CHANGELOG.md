@@ -12,14 +12,18 @@
   `@enforce_keys`. Dispatch reconstructs the struct and keeps `defstruct`
   defaults for omitted fields.
 - Recursive struct types use the same `$defs`/`$ref` path.
+- Built-in providers for `MapSet.t/0`, `MapSet.t/1` (an array of elements,
+  rebuilt with `MapSet.new/1`) and `Regex.t/0` (its source string, compiled with
+  `u` at dispatch), so a set or a regex no longer exposes its internal fields.
 
 ### Changed
 
 - **Compatibility break:** a struct type with a public `@type t` is now a closed
   object that dispatch rebuilds, where 0.1 emitted `{}` and passed any value.
-  This covers scalar wrappers such as `Decimal.t()` and `Range.t()`; add a
-  `ToolCall.TypeProvider` to keep the old permissive shape or to send the
-  value as a scalar. `@opaque` types are unchanged.
+  This covers scalar wrappers such as `Decimal.t()`, `URI.t()` and `Range.t()`;
+  add a `ToolCall.TypeProvider` to keep the old permissive shape or to send the
+  value as a scalar. `MapSet` and `Regex` have built-in providers, and
+  `@opaque` types are unchanged.
 
 ## 0.1.0 - 2026-11-09
 

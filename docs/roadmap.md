@@ -43,8 +43,8 @@ and the runtime dispatcher.
 
 These are useful additions without a target release yet:
 
-- Additional built-in type providers such as `Decimal`, `URI`, `MapSet`,
-  `Range` and `Regex`.
+- Additional built-in type providers such as `Decimal`, `URI`, `Range` and
+  `Version`.
 - Nested or remote typedoc inheritance if a description-composition model is
   chosen.
 

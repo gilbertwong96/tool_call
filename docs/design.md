@@ -265,12 +265,14 @@ build warns. Depth 18 now compiles in 28 ms.
 | `Date.t()`, `DateTime.t()`, `Time.t()` | `:string` | `+ "format": "date" / "time" / "date-time"`; parsed from ISO 8601 at dispatch |
 | `NaiveDateTime.t()` | `:string` | no `format`: RFC 3339 `date-time` needs an offset; parsed at dispatch |
 | `Path.t()` | `:string` | `{"type":"string"}`; already a binary |
+| `MapSet.t()`, `MapSet.t(t)` | `:array` | elements at the wire; dispatch returns a `MapSet` |
+| `Regex.t()` | `:string` | the source string, compiled with `u` at dispatch |
 | `fun()`, `fun(...)`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning |
 | `term()`, `any()` | `:any` | `{}` |
 | unknown remote type without a provider | `:any` | `{}` |
 
-**Remote types are provider-driven.** `String`, `Keyword`, `Path` and the
-calendar types come from the built-in stdlib provider.
+**Remote types are provider-driven.** `String`, `Keyword`, `Path`, the calendar
+types, `MapSet` and `Regex` come from built-in providers.
 `use ToolCall, types: [...]` prepends the built-ins before user providers; a
 provider receives the argument types already resolved to IR and returns an IR
 node, or `:error` to fall back to `:any`. The returned node is validated
@@ -362,8 +364,11 @@ only signal is `ArgumentError` from `__struct__/1`, so the build removes one
 field at a time and treats a field whose removal raises as enforced. That is
 `n` probes per struct, once per compile, with no message parsing.
 
-`@opaque t` is **not** extracted: the author chose to hide the shape, and for a
-wrapper such as `MapSet` an extracted field set cannot be rebuilt correctly.
+`@opaque t` is **not** extracted: the author chose to hide the shape. Note that
+most standard-library structs are public, not opaque; `MapSet` and `Regex` are
+claimed by built-in providers before extraction, because their fields are
+internal representation. `URI`, `Range` and `Version` are extracted, because
+their fields are the documented representation.
 Such a parameter stays `{}` with the untyped warning. A provider always wins,
 which is the escape hatch for a scalar wrapper (`Decimal.t()`, `Range.t()`) if
 its field shape is not what you want the model to see.
