@@ -203,6 +203,12 @@ defmodule ToolCall do
 
     Generated.prune()
     :ok
+  catch
+    # Companion management asks Mix for the compile path. A module compiled
+    # outside a Mix project (a plain `elixirc` or an `elixir` script) has no
+    # `Mix.ProjectStack`, and the call exits rather than raising; keep the
+    # compile total and serve the phase-one literals instead.
+    :exit, _reason -> :ok
   end
 
   defp enrich(env, bytecode, tools, typedoc_keys, generation) do
