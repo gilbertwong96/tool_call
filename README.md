@@ -84,8 +84,7 @@ mix coveralls.html
 
 `mix ci` runs compile/format checks, tests, `spec_lint`, Credo, Dialyzer,
 ExDNA and Reach. `mix coveralls.html` writes the HTML coverage report to
-`cover/` and fails below 100%. CI uploads the report to Codecov when
-`CODECOV_TOKEN` is configured.
+`cover/`. CI uploads the report to Codecov when `CODECOV_TOKEN` is configured.
 
 ## License
 
