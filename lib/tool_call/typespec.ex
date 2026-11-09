@@ -59,6 +59,9 @@ defmodule ToolCall.Typespec do
 
   # --- compound forms -------------------------------------------------------
 
+  def to_type({{:., _, [:tool_call_ref, :ref]}, _, [ref]}, _providers) when is_binary(ref),
+    do: %Type{kind: :ref, ref: ref}
+
   def to_type({:|, _, [left, right]}, providers) do
     [left, right]
     |> Enum.flat_map(&flatten_union(&1, providers))
@@ -234,6 +237,7 @@ defmodule ToolCall.Typespec do
       )
     end
 
+    type = validate_ref!(type, provider, module, function, args)
     type = validate_pattern!(type, provider, module, function, args)
     validate_transform!(type, provider, module, function, args)
     type = validate_metadata!(type, provider, module, function, args)
@@ -747,9 +751,11 @@ defmodule ToolCall.Typespec do
       when is_binary(name) do
     validate_name!(name, "tool")
     validate_description!(description, "tool")
+    defs = validate_defs!(tool.defs || %{})
     params = Enum.map(params || [], &prepare_param!/1)
     validate_unique_params!(params)
-    %{tool | params: params}
+    validate_refs!(params, defs)
+    %{tool | params: params, defs: defs}
   end
 
   def validate_tool!(%Tool{} = tool) do
@@ -793,6 +799,73 @@ defmodule ToolCall.Typespec do
           "invalid ToolCall IR: wire :string_integer requires an integer parameter, " <>
             "got #{inspect(kind)} for #{inspect(name)}"
   end
+
+  defp validate_ref!(%Type{kind: :ref} = type, provider, _module, _function, _args) do
+    cond do
+      provider != nil ->
+        raise ArgumentError, "type provider #{inspect(provider)} cannot return a ref"
+
+      is_binary(type.ref) and type.ref != "" ->
+        type
+
+      true ->
+        provider_type_error!(
+          nil,
+          nil,
+          nil,
+          nil,
+          "ref must be a non-empty string, got: #{inspect(type.ref)}"
+        )
+    end
+  end
+
+  defp validate_ref!(type, _provider, _module, _function, _args), do: type
+
+  defp validate_defs!(defs) when is_map(defs) do
+    Enum.reduce(defs, %{}, fn
+      {name, %Type{} = type}, acc when is_binary(name) and name != "" ->
+        Map.put(acc, name, validate_type!(type))
+
+      {name, other}, _acc ->
+        raise ArgumentError,
+              "invalid ToolCall IR: invalid $defs entry #{inspect(name)}, got: #{inspect(other)}"
+    end)
+  end
+
+  defp validate_defs!(other) do
+    raise ArgumentError, "invalid ToolCall IR: defs must be a map, got: #{inspect(other)}"
+  end
+
+  defp validate_refs!(params, defs) do
+    refs =
+      Enum.flat_map(params, &type_refs(&1.type)) ++
+        Enum.flat_map(Map.values(defs), &type_refs/1)
+
+    case Enum.reject(refs, &Map.has_key?(defs, &1)) do
+      [] ->
+        :ok
+
+      [missing | _rest] ->
+        raise ArgumentError,
+              "invalid ToolCall IR: unknown $defs entry #{inspect(missing)}"
+    end
+  end
+
+  defp type_refs(%Type{kind: :ref, ref: ref}), do: [ref]
+  defp type_refs(%Type{kind: :array, items: items}), do: type_refs(items)
+
+  defp type_refs(%Type{kind: :tuple, items: items}),
+    do: Enum.flat_map(items || [], &type_refs/1)
+
+  defp type_refs(%Type{kind: :union, variants: variants}),
+    do: Enum.flat_map(variants || [], &type_refs/1)
+
+  defp type_refs(%Type{kind: :object, fields: fields, additional: additional}) do
+    Enum.flat_map(fields || [], &type_refs(&1.type)) ++ type_refs(additional)
+  end
+
+  defp type_refs(nil), do: []
+  defp type_refs(%Type{}), do: []
 
   defp validate_unique_params!(params) do
     params
@@ -1098,7 +1171,6 @@ defmodule ToolCall.Typespec do
 
   def untyped?(nil), do: false
   def untyped?(%Type{}), do: false
-
   # --- helpers --------------------------------------------------------------
 
   defp int_literal(int) when is_integer(int), do: {:ok, int}

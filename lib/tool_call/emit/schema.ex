@@ -17,12 +17,20 @@ defmodule ToolCall.Emit.Schema do
     params = tool.params
     params = if strict?(opts), do: Enum.map(params, &force_required/1), else: params
 
-    %{
+    schema = %{
       "type" => "object",
       "properties" => Map.new(params, &{&1.name, param(&1, opts)}),
       "required" => for(p <- params, p.required, do: p.name),
       "additionalProperties" => false
     }
+
+    case tool.defs do
+      defs when defs == %{} ->
+        schema
+
+      defs ->
+        Map.put(schema, "$defs", Map.new(defs, fn {name, type} -> {name, type(type, opts)} end))
+    end
   end
 
   @doc false
@@ -68,6 +76,8 @@ defmodule ToolCall.Emit.Schema do
   defp base(%Type{kind: :array} = type, opts), do: array(type, opts)
   defp base(%Type{kind: :tuple} = type, opts), do: tuple(type, opts)
   defp base(%Type{kind: :object} = type, opts), do: object(type, opts)
+
+  defp base(%Type{kind: :ref, ref: ref}, _opts), do: %{"$ref" => "#/$defs/" <> ref}
 
   defp base(%Type{kind: :union} = type, opts),
     do: %{"anyOf" => Enum.map(type.variants, &do_type(&1, opts))}

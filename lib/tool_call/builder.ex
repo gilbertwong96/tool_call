@@ -203,10 +203,10 @@ defmodule ToolCall.Builder do
     doc_info = Doc.parse(doc_value(doc))
     arity = length(spec_args)
 
-    params =
+    {params, {defs, _registry}} =
       spec_args
       |> Enum.with_index(1)
-      |> Enum.map(fn {arg_ast, index} ->
+      |> Enum.map_reduce({%{}, %{}}, fn {arg_ast, index}, defs_registry ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
 
@@ -216,7 +216,10 @@ defmodule ToolCall.Builder do
           |> expand_aliases(context.env)
           |> localize_module_types(context.module)
 
-        {type_ast, truncated?, _insts} = LocalTypes.expand(source_ast, context.definitions)
+        {type_ast, truncated?, insts} = LocalTypes.expand(source_ast, context.definitions)
+
+        {type_ast, defs_registry} =
+          hoist_instantiations(type_ast, insts, defs_registry, context)
 
         type_ast =
           type_ast
@@ -247,14 +250,17 @@ defmodule ToolCall.Builder do
           warn_type(context.module, location, type, param_name, name, arity)
         end
 
-        %Param{
-          name: param_name,
-          type: type,
-          default: default_value(default, context.env, type),
-          required: default == :none,
-          source: source_ast
-        }
+        {%Param{
+           name: param_name,
+           type: type,
+           default: default_value(default, context.env, type),
+           required: default == :none,
+           source: source_ast
+         }, defs_registry}
       end)
+
+    params =
+      params
       |> Enum.map(&apply_doc_description(&1, doc_info))
       |> unique_names(context.module, location, name, arity)
       |> Enum.map(fn param ->
@@ -271,8 +277,53 @@ defmodule ToolCall.Builder do
       params: params,
       module: context.module,
       fun: name,
-      source: spec
+      source: spec,
+      defs: defs
     }
+  end
+
+  defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
+    {names, registry} =
+      insts
+      |> Enum.with_index()
+      |> Enum.map_reduce(registry, fn {inst, index}, registry ->
+        {ref_name, registry} = assign_name(inst, registry)
+        {{index, ref_name}, registry}
+      end)
+
+    names = Map.new(names)
+
+    defs =
+      insts
+      |> Enum.with_index()
+      |> Enum.reduce(defs, fn {inst, index}, defs ->
+        ref_name = Map.fetch!(names, index)
+        body = LocalTypes.rewrite_refs(inst.body, names)
+        Map.put_new(defs, ref_name, Typespec.to_type(body, context.providers))
+      end)
+
+    {LocalTypes.rewrite_refs(type_ast, names), {defs, registry}}
+  end
+
+  defp assign_name(%{key: key, args: args}, registry) do
+    instantiation = {key, args}
+
+    case Map.fetch(registry, instantiation) do
+      {:ok, ref_name} ->
+        {ref_name, registry}
+
+      :error ->
+        ref_name = unique_ref_name(LocalTypes.name(key, args), registry, 1)
+        {ref_name, Map.put(registry, instantiation, ref_name)}
+    end
+  end
+
+  defp unique_ref_name(base, registry, counter) do
+    candidate = if counter == 1, do: base, else: "#{base}_#{counter}"
+
+    if Enum.any?(registry, fn {_instantiation, name} -> name == candidate end),
+      do: unique_ref_name(base, registry, counter + 1),
+      else: candidate
   end
 
   defp drop_incompatible_default(%Param{default: nil} = param, _module, _location, _name, _arity),

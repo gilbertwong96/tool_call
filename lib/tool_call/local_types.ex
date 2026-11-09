@@ -132,6 +132,70 @@ defmodule ToolCall.LocalTypes do
     end)
   end
 
+  @doc false
+  @spec name({atom(), non_neg_integer()}, [term()]) :: String.t()
+  def name({type_name, _arity}, args) do
+    name =
+      case Enum.map(args, &arg_name/1) do
+        [] -> Atom.to_string(type_name)
+        parts -> Atom.to_string(type_name) <> "_" <> Enum.join(parts, "_")
+      end
+
+    sanitized =
+      name
+      |> String.replace(~r/[^A-Za-z0-9_]/, "_")
+      |> String.slice(0, 64)
+      |> String.trim_trailing("_")
+
+    if sanitized == "", do: "type", else: sanitized
+  end
+
+  defp arg_name({name, _, _}) when name in [:non_neg_integer, :pos_integer, :neg_integer, :byte],
+    do: "integer"
+
+  defp arg_name({:integer, _, _}), do: "integer"
+  defp arg_name({:.., _, _}), do: "integer"
+  defp arg_name(int) when is_integer(int), do: "integer"
+  defp arg_name({:number, _, _}), do: "number"
+  defp arg_name({:float, _, _}), do: "number"
+
+  defp arg_name({name, _, _})
+       when name in [
+              :string,
+              :binary,
+              :bitstring,
+              :charlist,
+              :char,
+              :nonempty_string,
+              :nonempty_binary
+            ],
+       do: "string"
+
+  defp arg_name({:boolean, _, _}), do: "boolean"
+  defp arg_name({:atom, _, _}), do: "atom"
+  defp arg_name({:term, _, _}), do: "any"
+  defp arg_name({:any, _, _}), do: "any"
+  defp arg_name({:list, _, [inner]}), do: "list_" <> arg_name(inner)
+  defp arg_name([inner]), do: "list_" <> arg_name(inner)
+  defp arg_name({:nonempty_list, _, [inner]}), do: "list_" <> arg_name(inner)
+  defp arg_name({:map, _, _}), do: "map"
+  defp arg_name({:%{}, _, _}), do: "map"
+  defp arg_name({:{}, _, _}), do: "tuple"
+  defp arg_name({:|, _, [left, right]}), do: arg_name(left) <> "_or_" <> arg_name(right)
+
+  defp arg_name({{:., _, [module, function]}, _, _args}) when is_atom(module) do
+    base = module |> Module.split() |> List.last() |> String.downcase()
+    if function == :t, do: base, else: base <> "_" <> Atom.to_string(function)
+  end
+
+  defp arg_name({:%, _, [module, {:%{}, _, _}]}) when is_atom(module),
+    do: module |> Module.split() |> List.last() |> String.downcase()
+
+  defp arg_name(atom) when is_atom(atom) and atom not in [true, false, nil],
+    do: Atom.to_string(atom)
+
+  defp arg_name(_other), do: "any"
+
   defp walk({name, meta, args}, seen, definitions, state)
        when is_atom(name) and is_list(args) do
     key = {name, length(args)}
@@ -158,6 +222,35 @@ defmodule ToolCall.LocalTypes do
         {args, state} = walk_all(args, seen, definitions, state)
         {{name, meta, args}, state}
     end
+  end
+
+  # A remote call is `{{:., _, [Mod, :fun]}, _, args}`; its arguments may still
+  # contain a local type, e.g. `Keyword.t(my_type())`.
+  defp walk({head, meta, args}, seen, definitions, state) when is_list(args) do
+    {args, state} = walk_all(args, seen, definitions, state)
+    {{head, meta, args}, state}
+  end
+
+  defp walk({left, right}, seen, definitions, state) do
+    {left, state} = walk(left, seen, definitions, state)
+    {right, state} = walk(right, seen, definitions, state)
+    {{left, right}, state}
+  end
+
+  defp walk(list, seen, definitions, state) when is_list(list) do
+    walk_all(list, seen, definitions, state)
+  end
+
+  defp walk(other, _seen, _definitions, state), do: {other, state}
+
+  defp walk_all(nodes, seen, definitions, state) do
+    {reversed, state} =
+      Enum.reduce(nodes, {[], state}, fn node, {acc, state} ->
+        {node, state} = walk(node, seen, definitions, state)
+        {[node | acc], state}
+      end)
+
+    {Enum.reverse(reversed), state}
   end
 
   defp hoist(key, node, {params, body}, seen, definitions, state) do
@@ -204,35 +297,6 @@ defmodule ToolCall.LocalTypes do
       {name, _meta, args} -> {name, [], args}
       node -> node
     end)
-  end
-
-  # A remote call is `{{:., _, [Mod, :fun]}, _, args}`; its arguments may still
-  # contain a local type, e.g. `Keyword.t(my_type())`.
-  defp walk({head, meta, args}, seen, definitions, state) when is_list(args) do
-    {args, state} = walk_all(args, seen, definitions, state)
-    {{head, meta, args}, state}
-  end
-
-  defp walk({left, right}, seen, definitions, state) do
-    {left, state} = walk(left, seen, definitions, state)
-    {right, state} = walk(right, seen, definitions, state)
-    {{left, right}, state}
-  end
-
-  defp walk(list, seen, definitions, state) when is_list(list) do
-    walk_all(list, seen, definitions, state)
-  end
-
-  defp walk(other, _seen, _definitions, state), do: {other, state}
-
-  defp walk_all(nodes, seen, definitions, state) do
-    {reversed, state} =
-      Enum.reduce(nodes, {[], state}, fn node, {acc, state} ->
-        {node, state} = walk(node, seen, definitions, state)
-        {[node | acc], state}
-      end)
-
-    {Enum.reverse(reversed), state}
   end
 
   @doc false

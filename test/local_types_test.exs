@@ -204,9 +204,26 @@ defmodule ToolCall.LocalTypesTest do
       end
       """)
 
-    schema = param_schema(module, "go", "t")
-    refute Map.has_key?(schema, "prefixItems")
-    assert nodes(schema) < 50
+    parameters =
+      module
+      |> ToolCall.emit(:openai)
+      |> Enum.find(&(&1["function"]["name"] == "go"))
+      |> get_in(["function", "parameters"])
+
+    assert %{"anyOf" => [%{"$ref" => "#/$defs/tree"}, %{"type" => "null"}]} =
+             parameters["properties"]["t"]
+
+    assert %{
+             "type" => "array",
+             "prefixItems" => [
+               %{"type" => "string", "enum" => ["node"]},
+               %{"$ref" => "#/$defs/tree"},
+               %{"$ref" => "#/$defs/tree"}
+             ],
+             "minItems" => 3
+           } = parameters["$defs"]["tree"]
+
+    assert nodes(parameters) < 50
   end
 
   defp quoted(source), do: Code.string_to_quoted!(source)

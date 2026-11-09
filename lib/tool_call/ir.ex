@@ -37,6 +37,9 @@ defmodule ToolCall.IR do
     `ToolCall.Typespec.validate_type!/1` to build a validated copy of a
     hand-written type. `source` is provenance except for `:charlist`, which
     still drives charlist conversion and its schema default.
+
+    `kind: :ref` names an entry in the tool's `defs` map; emitters render it as
+    `{"$ref": "#/$defs/<name>"}` and never resolve it.
     """
     defstruct kind: :any,
               minimum: nil,
@@ -50,6 +53,7 @@ defmodule ToolCall.IR do
               pattern_regex: nil,
               format: nil,
               transform: nil,
+              ref: nil,
               nullable: false,
               source: nil
 
@@ -65,6 +69,7 @@ defmodule ToolCall.IR do
       :tuple,
       :enum,
       :union,
+      :ref,
       :null,
       :any,
       :unsupported
@@ -82,6 +87,7 @@ defmodule ToolCall.IR do
             | :tuple
             | :enum
             | :union
+            | :ref
             | :null
             | :any
             | :unsupported
@@ -102,8 +108,19 @@ defmodule ToolCall.IR do
   end
 
   defmodule Tool do
-    @moduledoc "A compiled tool, as embedded into the defining module."
-    defstruct name: nil, description: nil, params: [], module: nil, fun: nil, source: nil
+    @moduledoc """
+    A compiled tool, as embedded into the defining module.
+
+    `defs` holds the `$defs` entries the tool's parameters reference by
+    `kind: :ref`. It is empty for a tool without recursive types.
+    """
+    defstruct name: nil,
+              description: nil,
+              params: [],
+              module: nil,
+              fun: nil,
+              source: nil,
+              defs: %{}
 
     @type t :: %__MODULE__{}
   end
