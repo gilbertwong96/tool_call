@@ -91,10 +91,53 @@ defmodule ToolCall.Structs do
 
   defp current_fields(module, normalize) do
     case current_type(module) do
-      {:ok, body} -> current_type_fields(module, body, normalize)
-      :opaque -> :opaque
-      _absent_or_unusable -> :error
+      :opaque ->
+        :opaque
+
+      type ->
+        current_fields(
+          module,
+          type,
+          Module.get_attribute(module, :tool_call_struct_fields),
+          normalize
+        )
     end
+  end
+
+  defp current_fields(_module, _type, nil, _normalize), do: :error
+
+  defp current_fields(module, {:ok, body}, pairs, normalize) do
+    definitions =
+      module
+      |> LocalTypes.definitions()
+      |> Map.new(fn {key, {params, type}} -> {key, {params, normalize.(type)}} end)
+      |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
+
+    {expanded, truncated?, insts} = LocalTypes.expand(normalize.(body), definitions)
+
+    case expanded do
+      {:%, _, [^module, {:%{}, _, type_pairs}]} ->
+        types = Map.new(type_pairs)
+
+        fields =
+          for {field, _default} <- pairs, into: %{} do
+            {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
+          end
+
+        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
+
+      _other ->
+        {:ok, any_from_pairs(pairs), [], :non_literal_t}
+    end
+  end
+
+  defp current_fields(_module, status, pairs, _normalize) do
+    status = if status == :absent, do: :ok, else: status
+    {:ok, any_from_pairs(pairs), [], status}
+  end
+
+  defp any_from_pairs(pairs) do
+    Map.new(pairs, fn {field, _default} -> {field, {:any, [], []}} end)
   end
 
   defp current_type(module) do
@@ -123,31 +166,6 @@ defmodule ToolCall.Structs do
       found = Enum.find_value(types, t0) -> found
       parameterized? -> :parameterized_t
       true -> :absent
-    end
-  end
-
-  defp current_type_fields(module, body, normalize) do
-    definitions =
-      module
-      |> LocalTypes.definitions()
-      |> Map.new(fn {key, {params, type}} -> {key, {params, normalize.(type)}} end)
-      |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
-
-    {expanded, truncated?, insts} = LocalTypes.expand(normalize.(body), definitions)
-
-    case expanded do
-      {:%, _, [^module, {:%{}, _, pairs}]} ->
-        types = Map.new(pairs)
-
-        fields =
-          for {field, _type} <- pairs, into: %{} do
-            {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
-          end
-
-        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
-
-      _other ->
-        :error
     end
   end
 

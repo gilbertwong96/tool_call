@@ -57,6 +57,7 @@ defmodule ToolCall do
     quote do
       @tool_call_type_providers unquote(providers)
       Module.register_attribute(__MODULE__, :tool_call_defs, accumulate: true)
+      Module.register_attribute(__MODULE__, :tool_call_struct_fields, [])
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
       @on_definition ToolCall
       @before_compile ToolCall
@@ -82,8 +83,17 @@ defmodule ToolCall do
   end
 
   @doc false
-  # `defstruct` generates `__struct__/0` and `__struct__/1`; they are not tools
-  # and would otherwise warn about a missing @spec.
+  # `defstruct` generates `__struct__/0` with the full field map as its body.
+  # The module is not compiled yet when its tools resolve, so capture that map:
+  # it is the only way to know every field of a struct defined here.
+  def __on_definition__(env, :def, :__struct__, [], _guards, [{:do, {:%{}, _, pairs}}]) do
+    fields = Enum.reject(pairs, fn {key, _default} -> key in [:__struct__, :__exception__] end)
+    Module.put_attribute(env.module, :tool_call_struct_fields, fields)
+    :ok
+  end
+
+  # `__struct__/0` and `__struct__/1` are not tools; they would otherwise warn
+  # about a missing @spec.
   def __on_definition__(_env, :def, :__struct__, _args, _guards, _body), do: :ok
 
   def __on_definition__(env, :def, name, args, _guards, _body) do

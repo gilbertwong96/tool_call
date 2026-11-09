@@ -549,9 +549,9 @@ defmodule ToolCall.StructTypesTest do
     assert MapSet.to_list(children) == [%SetNode{value: 2, children: MapSet.new()}]
   end
 
-  test "a same-module struct without @type t is not exposed" do
-    {module, warnings} =
-      compile_with_warnings!("""
+  test "a same-module struct without @type t exposes untyped fields" do
+    module =
+      compile!("""
       defmodule FIXTURE do
         use ToolCall
 
@@ -563,15 +563,65 @@ defmodule ToolCall.StructTypesTest do
       end
       """)
 
+    [tool] = ToolCall.tools(module)
+
+    assert %Type{
+             kind: :object,
+             struct: ^module,
+             fields: [%{name: "city", type: %Type{kind: :any}}]
+           } = hd(tool.params).type
+  end
+
+  test "a same-module t/0 may omit a field; the struct's fields still appear" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @enforce_keys [:city]
+        defstruct [:city, :country]
+
+        @type t :: %__MODULE__{country: String.t()}
+
+        @doc "Go."
+        @spec go(a :: t()) :: map()
+        def go(a), do: a
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+    assert %Type{kind: :object, struct: ^module, fields: fields} = hd(tool.params).type
+    assert Enum.map(fields, & &1.name) == ["city", "country"]
+
+    city = Enum.find(fields, &(&1.name == "city"))
+    assert city.required
+    assert %Type{kind: :any} = city.type
+  end
+
+  test "a same-module @opaque struct is not exposed" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        defstruct [:city]
+
+        @opaque t :: %__MODULE__{city: String.t()}
+
+        @doc "Go."
+        @spec go(a :: %__MODULE__{}) :: map()
+        def go(a), do: a
+      end
+      """)
+
     assert ToolCall.tools(module) == []
     assert warnings =~ ~s(tool "go" is not exposed: parameter "a")
   end
 
-  test "a same-module struct whose t/0 is unusable is not exposed" do
-    for type <- [
-          "@opaque t :: %__MODULE__{city: String.t()}",
-          "@type t :: String.t()",
-          "@type t(a) :: %__MODULE__{city: a}"
+  test "a same-module t/0 that is not a struct literal still exposes untyped fields" do
+    for {type, warning} <- [
+          {"@type t :: String.t()", "is not a %__MODULE__{} literal"},
+          {"@type t(a) :: %__MODULE__{city: a}", "only a parameterized @type t/N"}
         ] do
       {module, warnings} =
         compile_with_warnings!("""
@@ -588,8 +638,9 @@ defmodule ToolCall.StructTypesTest do
         end
         """)
 
-      assert ToolCall.tools(module) == []
-      assert warnings =~ ~s(tool "go" is not exposed)
+      [tool] = ToolCall.tools(module)
+      assert %Type{kind: :object, struct: ^module} = hd(tool.params).type
+      assert warnings =~ warning
     end
   end
 end
