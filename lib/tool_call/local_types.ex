@@ -80,12 +80,9 @@ defmodule ToolCall.LocalTypes do
   @doc false
   @spec cyclic_keys(map()) :: MapSet.t({atom(), non_neg_integer()})
   def cyclic_keys(definitions) when is_map(definitions) do
-    edges =
-      Map.new(definitions, fn {key, {_params, body}} ->
-        {key, referenced_keys(body, definitions)}
-      end)
-
-    for key <- Map.keys(edges), cyclic?(edges, key), into: MapSet.new(), do: key
+    definitions
+    |> Map.new(fn {key, {_params, body}} -> {key, referenced_keys(body, definitions)} end)
+    |> ToolCall.Graph.cyclic_keys()
   end
 
   defp referenced_keys(ast, definitions) do
@@ -100,22 +97,6 @@ defmodule ToolCall.LocalTypes do
       end)
 
     MapSet.new(keys)
-  end
-
-  defp cyclic?(edges, key) do
-    Map.get(edges, key, MapSet.new())
-    |> reachable(edges, MapSet.new())
-    |> MapSet.member?(key)
-  end
-
-  defp reachable(frontier, edges, seen) do
-    Enum.reduce(frontier, seen, fn node, seen ->
-      if MapSet.member?(seen, node) do
-        seen
-      else
-        reachable(Map.get(edges, node, MapSet.new()), edges, MapSet.put(seen, node))
-      end
-    end)
   end
 
   @doc false
@@ -181,6 +162,7 @@ defmodule ToolCall.LocalTypes do
   defp arg_name({:map, _, _}), do: "map"
   defp arg_name({:%{}, _, _}), do: "map"
   defp arg_name({:{}, _, _}), do: "tuple"
+  defp arg_name({_left, _right}), do: "tuple"
   defp arg_name({:|, _, [left, right]}), do: arg_name(left) <> "_or_" <> arg_name(right)
 
   defp arg_name({{:., _, [module, function]}, _, _args}) when is_atom(module) do

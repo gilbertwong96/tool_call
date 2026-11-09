@@ -85,7 +85,7 @@ defmodule ToolCall.Structs do
 
     fields =
       for field <- struct_keys(module), into: %{} do
-        {field, normalize_field_ast(Map.get(types, field, :any))}
+        {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
       end
 
     {:ok, fields, insts}
@@ -93,32 +93,24 @@ defmodule ToolCall.Structs do
 
   defp definitions(module) do
     case fetch_types(module) do
-      {:ok, entries} ->
-        Enum.reduce(entries, %{}, fn
-          {:type, {name, body, params}}, acc ->
-            case Code.Typespec.type_to_quoted({name, body, params}) do
-              {:"::", _, [{^name, _, vars}, type_ast]} ->
-                Map.put(acc, {name, length(params)}, {vars, type_ast})
-
-              _other ->
-                acc
-            end
-
-          _entry, acc ->
-            acc
-        end)
-
-      :error ->
-        %{}
+      {:ok, entries} -> Enum.reduce(entries, %{}, &definition_entry/2)
+      :error -> %{}
     end
   end
 
-  defp fetch_types(module) do
-    case Code.Typespec.fetch_types(module) do
-      {:ok, entries} -> {:ok, entries}
-      :error -> :error
+  defp definition_entry({:type, {name, body, params}}, acc) do
+    case Code.Typespec.type_to_quoted({name, body, params}) do
+      {:"::", _, [{^name, _, vars}, type_ast]} ->
+        Map.put(acc, {name, length(params)}, {vars, type_ast})
+
+      _other ->
+        acc
     end
   end
+
+  defp definition_entry(_entry, acc), do: acc
+
+  defp fetch_types(module), do: Code.Typespec.fetch_types(module)
 
   defp struct_keys(module) do
     module.__struct__() |> Map.delete(:__struct__) |> Map.keys()
@@ -128,6 +120,7 @@ defmodule ToolCall.Structs do
     Map.new(struct_keys(module), &{&1, {:any, [], []}})
   end
 
+  defp normalize_field_ast(:any), do: {:any, [], []}
   defp normalize_field_ast({name, _, []}) when name in [:term, :any], do: {:any, [], []}
   defp normalize_field_ast(ast), do: ast
 end

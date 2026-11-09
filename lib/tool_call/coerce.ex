@@ -436,10 +436,7 @@ defmodule ToolCall.Coerce do
     values
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, []}, fn {value, index}, {:ok, acc} ->
-      case coerce(type, value, :number, defs) do
-        {:ok, coerced} -> {:cont, {:ok, [coerced | acc]}}
-        {:error, reason} -> {:halt, {:error, {index, reason}}}
-      end
+      coerce_indexed(type, value, index, acc, defs)
     end)
     |> case do
       {:ok, reversed} -> {:ok, Enum.reverse(reversed)}
@@ -454,14 +451,18 @@ defmodule ToolCall.Coerce do
     |> Enum.zip(values)
     |> Enum.with_index()
     |> Enum.reduce_while({:ok, []}, fn {{item_type, value}, index}, {:ok, acc} ->
-      case coerce(item_type, value, :number, defs) do
-        {:ok, coerced} -> {:cont, {:ok, [coerced | acc]}}
-        {:error, reason} -> {:halt, {:error, {index, reason}}}
-      end
+      coerce_indexed(item_type, value, index, acc, defs)
     end)
     |> case do
       {:ok, reversed} -> {:ok, reversed |> Enum.reverse() |> List.to_tuple()}
       error -> error
+    end
+  end
+
+  defp coerce_indexed(type, value, index, acc, defs) do
+    case coerce(type, value, :number, defs) do
+      {:ok, coerced} -> {:cont, {:ok, [coerced | acc]}}
+      {:error, reason} -> {:halt, {:error, {index, reason}}}
     end
   end
 

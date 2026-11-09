@@ -182,7 +182,7 @@ defmodule ToolCall.Structs.Resolve do
         {module, _other} -> {module, MapSet.new()}
       end)
 
-    for module <- Map.keys(edges), cyclic?(edges, module), into: MapSet.new(), do: module
+    ToolCall.Graph.cyclic_keys(edges)
   end
 
   defp struct_markers(fields) do
@@ -203,23 +203,6 @@ defmodule ToolCall.Structs.Resolve do
   end
 
   defp markers(_type), do: []
-
-  defp cyclic?(edges, module) do
-    edges
-    |> Map.get(module, MapSet.new())
-    |> reachable(edges, MapSet.new())
-    |> MapSet.member?(module)
-  end
-
-  defp reachable(frontier, edges, seen) do
-    Enum.reduce(frontier, seen, fn node, seen ->
-      if MapSet.member?(seen, node) do
-        seen
-      else
-        reachable(Map.get(edges, node, MapSet.new()), edges, MapSet.put(seen, node))
-      end
-    end)
-  end
 
   # --- build ----------------------------------------------------------------
 
@@ -264,39 +247,35 @@ defmodule ToolCall.Structs.Resolve do
 
   defp build_struct(module, ctx) do
     case Map.get(ctx.cache, module) do
-      %{fields: fields, required: required} ->
-        if MapSet.member?(ctx.cyclic, module) do
-          {name, ctx} = struct_def_name(module, ctx)
+      %{fields: fields, required: required} -> build_cached_struct(module, fields, required, ctx)
+      :opaque -> {%Type{kind: :any, source: {:opaque_struct, module}}, ctx}
+      _error_or_absent -> {%Type{kind: :any, source: {:unresolved_struct, module}}, ctx}
+    end
+  end
 
-          case Map.fetch(ctx.struct_defs, name) do
-            {:ok, _type} ->
-              {%Type{kind: :ref, ref: name}, ctx}
+  defp build_cached_struct(module, fields, required, ctx) do
+    if MapSet.member?(ctx.cyclic, module) do
+      build_cyclic_struct(module, fields, required, ctx)
+    else
+      {built, ctx} = build_fields(fields, required, ctx)
+      {%Type{kind: :object, struct: module, fields: built, additional: nil}, ctx}
+    end
+  end
 
-            :error ->
-              ctx = %{ctx | struct_defs: Map.put(ctx.struct_defs, name, :building)}
-              {built, ctx} = build_fields(fields, required, ctx)
+  defp build_cyclic_struct(module, fields, required, ctx) do
+    {name, ctx} = struct_def_name(module, ctx)
 
-              object = %Type{
-                kind: :object,
-                struct: module,
-                fields: built,
-                additional: nil
-              }
+    case Map.fetch(ctx.struct_defs, name) do
+      {:ok, _type} ->
+        {%Type{kind: :ref, ref: name}, ctx}
 
-              {%Type{kind: :ref, ref: name},
-               %{ctx | struct_defs: Map.put(ctx.struct_defs, name, object)}}
-          end
-        else
-          {built, ctx} = build_fields(fields, required, ctx)
+      :error ->
+        ctx = %{ctx | struct_defs: Map.put(ctx.struct_defs, name, :building)}
+        {built, ctx} = build_fields(fields, required, ctx)
+        object = %Type{kind: :object, struct: module, fields: built, additional: nil}
 
-          {%Type{kind: :object, struct: module, fields: built, additional: nil}, ctx}
-        end
-
-      :opaque ->
-        {%Type{kind: :any, source: {:opaque_struct, module}}, ctx}
-
-      _error_or_absent ->
-        {%Type{kind: :any, source: {:unresolved_struct, module}}, ctx}
+        {%Type{kind: :ref, ref: name},
+         %{ctx | struct_defs: Map.put(ctx.struct_defs, name, object)}}
     end
   end
 

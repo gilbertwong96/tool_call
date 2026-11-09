@@ -9,8 +9,8 @@ defmodule ToolCall.Typespec do
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
   alias ToolCall.Patterns
-  alias ToolCall.Structs
   alias ToolCall.Providers.Stdlib
+  alias ToolCall.Structs
 
   @unrepresentable [:fun, :pid, :port, :reference, :mfa, :no_return, :none]
 
