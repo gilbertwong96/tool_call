@@ -146,6 +146,10 @@ the struct module's own `@typep` also stays `{}`, because private types are not
 in the types chunk. Only `@type t(a)` with no `t/0` is skipped: extraction reads
 `t/0` alone, so every field of such a struct is `{}`.
 
+A struct whose only type is `@type t/N` (no `t/0`), or whose `t/0` is not a
+`%__MODULE__{}` literal, keeps `{}` for every field **and warns**: extraction
+reads `t/0` alone, so the shape you wrote is not being used.
+
 `@opaque t` is deliberately not extracted: the author hid the shape. Note that
 most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
 are public types whose fields are internal representation, which is why they
@@ -184,28 +188,33 @@ dispatch because the value is finite.
 
 `ToolCall.IR.Tool.defs` must hold every name a `:ref` points at.
 `ToolCall.Typespec.validate_tool!/1` rejects a dangling ref, and
-`ToolCall.Coerce` raises `ArgumentError` if it is given one anyway. Call
-`validate_tool!/1` on runtime IR before dispatching it; without it,
-`Coerce.accepts_nil?/2` can also follow a ref-only cycle forever. The `:struct`
-kind is an internal build marker and is not accepted from a hand-built tool.
+`ToolCall.Coerce` raises `ArgumentError` if it is given one anyway. A ref chain
+that never crosses an object, array or tuple is capped at 64 hops and then
+raises the same `$ref chain` error from both `Coerce.coerce/4` and
+`Coerce.accepts_nil?/2`, so an unvalidated non-productive cycle fails loudly
+instead of hanging. A productive cycle resets the count when it consumes a
+value, so a 200-level tree is unaffected. Call `validate_tool!/1` on runtime IR
+before dispatching it. The `:struct` kind is an internal build marker and is not
+accepted from a hand-built tool.
 
-## An exception struct is an ordinary struct to extraction
+## An exception struct exposes its payload, not `__exception__`
 
-`ArgumentError.t()` and friends extract `__exception__` and `message` as
-fields, with no enforced keys. It works — `struct/2` keeps the default
-`__exception__: true` — but the model is being asked to build an exception
-value. Declare a provider if an exception type is a real argument.
+`ArgumentError.t()` and friends extract their payload fields (`message`, plus
+any custom field) but not `__exception__`: that sentinel is left at its default
+`true`, so dispatch builds a usable exception and `Exception.message/1` works.
+An exception type as a tool argument is still unusual; declare a provider if the
+exception should travel as a scalar.
 
 ## `$defs` names are derived, so treat them as opaque
 
-Names are a pure function of the type and its instantiation (`tree`,
-`tree_integer`), with `_2` suffixes on collisions. They are stable across
-compiles of the same source, but they are not a public API: do not depend on a
-particular name in a stored schema. Collisions are suffixed in declaration
-order, so adding an earlier parameter that derives the same readable name moves
-an existing entry from `tree_integer` to `tree_integer_2`. Store schemas, not
-names. Do not hand-write a `$ref` either;
-`ToolCall.Typespec.validate_tool!/1` rejects a dangling entry.
+Names are a pure function of the type and its instantiation: `tree` for a
+zero-argument type, `tree_integer_40ca` for a parameterized one, where the suffix
+is a signature of the instantiation. They do not depend on any other parameter,
+so adding one cannot rename an existing entry, and two compiles of the same
+source produce the same names. They are still not a public API: do not depend on
+a particular name in a stored schema. Store schemas, not names. Do not
+hand-write a `$ref` either; `ToolCall.Typespec.validate_tool!/1` rejects a
+dangling entry.
 
 ## A recursive parameter pays for the nested key check
 

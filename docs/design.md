@@ -333,10 +333,14 @@ every property required, optional values nullable). A nullable ref
 carry a sibling `type` array. Non-recursive local types keep the inlining,
 budget and warning path described above, so their schemas do not change.
 
-Names are readable and derived from the instantiation: `tree`, `tree_integer`,
-`tree_list_integer`, sanitised to `[A-Za-z0-9_]`, truncated at 64 characters,
-with `_2`, `_3` on collision. Two compiles of the same source produce the same
-names. Two bounds keep a pathological parameterized cycle finite:
+Names are readable and derived from the instantiation: `tree` for a zero-argument
+type; a parameterized one renders its arguments by kind and appends a
+four-hex-digit signature of the instantiation (`tree_integer_40ca`). Sanitised to
+`[A-Za-z0-9_]`, truncated at 64 characters, with `_2`, `_3` on a collision after
+truncation. The name is a pure function of `{key, args}` and of nothing else, so
+adding a parameter cannot rename an existing entry, and two compiles of the same
+source produce the same names. Two bounds keep a pathological parameterized
+cycle finite:
 `@max_defs 32` overall and `@max_instantiations_per_key 8` (a call that
 transforms its own arguments, `@type t(a) :: %{next: t({a, a})}`, grows the
 argument tree exponentially). Past either bound the reference degrades to `{}`

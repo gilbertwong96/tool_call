@@ -184,8 +184,8 @@ A local type that refers to itself becomes one `$defs` entry plus a `$ref`:
 
 The parameter itself is a `$ref`, so the body appears once. Mutual recursion
 works the same way: every type on a cycle gets its own entry. A parameterized
-recursive type names each instantiation (`tree_integer`), and a collision gets
-a `_2` suffix. Passing the call back through `ToolCall.run/3` coerces the value
+recursive type names each instantiation with a short signature
+(`tree_integer_40ca`), and a collision after truncation gets a `_2` suffix. Passing the call back through `ToolCall.run/3` coerces the value
 at every level, so nested maps arrive with atom keys inside the function.
 
 Two bounds stop a pathological cycle (`@type t(a) :: %{next: t({a, a})}`):

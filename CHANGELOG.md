@@ -15,6 +15,11 @@
 - Built-in providers for `MapSet.t/0`, `MapSet.t/1` (an array of elements,
   rebuilt with `MapSet.new/1`) and `Regex.t/0` (its source string, compiled with
   `u` at dispatch), so a set or a regex no longer exposes its internal fields.
+- A struct whose only type is `@type t/N`, or whose `t/0` is not a
+  `%__MODULE__{}` literal, warns at compile time instead of silently untyping
+  every field. An exception struct exposes its payload but not `__exception__`.
+- `$defs` names for a parameterized instantiation carry a short signature
+  (`tree_integer_40ca`), so adding a parameter never renames an existing entry.
 
 ### Changed
 
