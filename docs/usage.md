@@ -155,6 +155,18 @@ dispatch). `Decimal.t()` is not built in; implement a provider for it, or use
   A `:description` of `nil` leaves the doc description in place; an empty string
   clears it.
 
+- **An argument with no JSON type hides the tool.** `term()`, `any()`, a remote
+  type with no provider, or an `@opaque` struct makes the schema undescribable,
+  so the function is skipped like `@doc false` and the compile warns with the
+  parameter name. Narrow the argument, add a `TypeProvider`, or opt out with
+  `@doc false`. An untyped field *inside* an object or array keeps the tool and
+  renders as `{}`.
+- **Typedoc companions are written through Mix.** `@typedoc` fallback
+  descriptions are stored next to the compiled beam via
+  `Mix.Project.compile_path/0`. Compiling outside a Mix project (`elixirc`, an
+  `elixir` script) still succeeds, but the companion is skipped with a warning
+  and the phase-one descriptions are used.
+
 ### Recursive types
 
 A local type that refers to itself becomes one `$defs` entry plus a `$ref`:

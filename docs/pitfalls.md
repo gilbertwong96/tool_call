@@ -143,12 +143,12 @@ the struct module, so editing `@type t` recompiles the tool.
 Field names always come from `__struct__/0`, but field types do not. Without a
 public `@type t/0` (or for a field it omits) a field is `{}`. A field typed with
 the struct module's own `@typep` also stays `{}`, because private types are not
-in the types chunk. Only `@type t(a)` with no `t/0` is skipped: extraction reads
-`t/0` alone, so every field of such a struct is `{}`.
+in the types chunk.
 
 A struct whose only type is `@type t/N` (no `t/0`), or whose `t/0` is not a
-`%__MODULE__{}` literal, keeps `{}` for every field **and warns**: extraction
-reads `t/0` alone, so the shape you wrote is not being used.
+`%__MODULE__{}` literal, warns at compile time: extraction reads `t/0` alone, so
+the shape you wrote is not being used. If that leaves the *argument* untyped,
+the tool is not exposed either; see the next entry.
 
 `@opaque t` is deliberately not extracted: the author hid the shape. Note that
 most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
@@ -156,6 +156,26 @@ are public types whose fields are internal representation, which is why they
 have built-in providers (a set travels as an array, a regex as its source
 string). `URI.t/0`, `Range.t/0` and `Version.t/0` are extracted, because their
 fields are the documented representation.
+
+## A tool with an untyped argument is not exposed
+
+A parameter whose type has no JSON type — `term()`, `any()`, a remote type with
+no provider, or an `@opaque` struct — cannot be described, so the function is
+skipped the way `@doc false` skips it, and the compile warns with the parameter
+name. The function is absent from `tools/1`, `emit/3` and `describe/2`, and
+`run/3` answers `{:unknown_tool, name, exposed_names}`. Narrow the argument, add
+a `TypeProvider`, or hide the function with `@doc false`. An untyped *field*
+inside an object, array or tuple is different: it renders as `{}` and keeps the
+tool. Runtime IR (`ToolCall.IR.Tool`) may still carry `:any`; the skip is a
+compile-time decision.
+
+## A typedoc companion needs Mix at compile time
+
+`@typedoc` fallback descriptions are persisted next to the compiled beam through
+`Mix.Project.compile_path/0`. Compiling outside a Mix project (plain `elixirc`,
+an `elixir` script) succeeds, but the companion is skipped with a warning and
+the phase-one descriptions are used. Everything else — including `$defs` and
+struct extraction — is compile-time and works without Mix.
 
 ## A struct type is a shape break in 0.2
 

@@ -287,10 +287,11 @@ set `format`/`transform`; `source` is provenance except for `:charlist`, which
 still drives charlist conversion and its schema default. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
-Not handled: bitstrings with explicit sizes, another module's non-struct types
-(without a provider they stay `{}`), and `@typep` field types inside a struct
-(the types chunk exposes public types only, so those fields stay `{}`).
-Recursive types and concrete structs are handled; see below.
+Not handled: bitstrings with explicit sizes and `@typep` field types inside a
+struct (the types chunk exposes public types only). Another module's non-struct
+type without a provider leaves the *argument* untyped, and a tool with an untyped
+argument is not exposed; the same applies to `term()`, `any()` and `@opaque`
+structs. Recursive types and concrete structs are handled; see below.
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained

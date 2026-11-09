@@ -20,8 +20,15 @@
   every field. An exception struct exposes its payload but not `__exception__`.
 - `$defs` names for a parameterized instantiation carry a short signature
   (`tree_integer_40ca`), so adding a parameter never renames an existing entry.
+- Compiling outside a Mix project no longer exits; the typedoc companion is
+  skipped with a warning and the phase-one descriptions are used.
 
 ### Changed
+
+- **A tool with an untyped argument is not exposed.** `term()`, `any()`, a
+  remote type without a provider and an `@opaque` struct leave the argument
+  undescribable, so the function is skipped with a compile-time warning instead
+  of shipping a `{}` schema. Runtime IR may still use `:any`.
 
 - **Compatibility break:** a struct type with a public `@type t` is now a closed
   object that dispatch rebuilds, where 0.1 emitted `{}` and passed any value.
