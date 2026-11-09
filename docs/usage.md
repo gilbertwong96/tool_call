@@ -420,8 +420,14 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"},
 Validation is strict to the value domain: `float()` rejects `1`, `String.t()`
 requires valid UTF-8, `char()` is a codepoint and `charlist()` a list, while
 `binary()`/`bitstring()` accept raw bytes. `nil` is valid for a `T | nil` return.
-A provider type (`Date.t()`, `MapSet.t()`, …) is checked through the provider's
-optional `validate/1`; a provider without one is accepted unchecked.
+`keyword(t)` and `MapSet.t(t)` also check their element types. A provider type
+(`Date.t()`, `MapSet.t()`, …) is checked through the provider's optional
+`validate(type, value, defs)`; a provider type with a transform and no
+`validate/3` is accepted unchecked. `Path.t()` is a UTF-8 string here: a
+non-UTF-8 path fails validation. `atom()` results follow the value domain
+(booleans are atoms), unlike `atom()` arguments, which follow the wire domain.
+A `no_return()` result is never validated. An improper list or an exotic map key
+(a tuple, a map) is `{:invalid_result, ...}`, not a raise.
 
 ## 5. Export the schemas
 

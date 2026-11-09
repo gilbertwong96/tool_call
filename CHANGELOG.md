@@ -9,8 +9,10 @@
   validates the raw return value against it and answers
   `{:error, {:invalid_result, reason}}` on a mismatch. Opt-in; `run/3` never
   validates.
-- `ToolCall.TypeProvider` gains an optional `validate/1` for the value domain;
-  the built-ins cover the calendar types, `Keyword`, `MapSet` and `Regex`.
+- `ToolCall.TypeProvider` gains an optional `validate(type, value, defs)` for
+  the value domain; the built-ins cover the calendar types, `Keyword` and
+  `MapSet` (including element types) and `Regex`. An improper list or an exotic
+  map key in a result is `{:invalid_result, ...}`, not a raise.
 
 - `ToolCall.emit/3` supports `:mcp`, returning `{name, description, inputSchema}`
   tool objects for an MCP `tools/list` result. MCP renders on demand from the

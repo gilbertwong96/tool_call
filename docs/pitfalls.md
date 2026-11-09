@@ -294,14 +294,17 @@ returning `{:ok, "not a map"}` fails even though the tool would have answered
 skips validation. Validation uses the generic runner path, so it is slower than
 the generated fast path.
 
-## A provider type without `validate/1` is accepted
+## A provider type without `validate/3` is accepted
 
 The IR describes a provider type in its **wire** domain (`Date.t()` is a
-string), so result validation asks the provider's optional `validate/1` about
-the value instead. A provider that does not implement it — and does not set
+string), so result validation asks the provider's optional
+`validate(type, value, defs)` about the value instead. A provider node with a
+`transform` that does not implement it — and does not set
 `%ToolCall.IR.Type{validator: {Module, :fun}}` — is accepted unchecked. The
-built-ins cover the calendar types, `Keyword`, `MapSet` and `Regex`; everything
-else is the provider author's call.
+built-ins cover the calendar types, `Keyword` and `MapSet` (both including
+element types) and `Regex`; everything else is the provider author's call. A
+provider node with neither a transform nor a validator is still checked by its
+kind.
 
 ## Result validation is strict to the value domain
 
@@ -310,7 +313,30 @@ else is the provider author's call.
 `bitstring()` and `nonempty_binary()` accept raw bytes without the UTF-8 or
 pattern requirement. `nil` is valid on any `nullable: true` node before every
 other rule. A closed plain object rejects unknown keys; a struct is checked by
-`is_struct/2` plus its declared fields.
+`is_struct/2` plus its declared fields. `keyword(t)` and `MapSet.t(t)` validate
+their elements. An improper list or an exotic map key is an
+`{:invalid_result, ...}`, not a raise.
+
+## `atom()` means two different domains
+
+An `atom()` **argument** is checked on the wire: a JSON `true` is a boolean, not
+an atom, so it is rejected. An `atom()` **result** is checked in the value
+domain, where `true`, `false` and `nil` are atoms and pass. Declare an enum
+(`:a | :b`) if both directions must agree.
+
+## `Path.t()` results must be UTF-8
+
+`Path.t()` has no provider transform or validator, so result validation treats
+it as a text string: a path with non-UTF-8 bytes (legal on Unix) fails with
+`{:invalid_result, {:invalid_utf8, ...}}`. Declare `binary()` if such a path can
+be returned.
+
+## `no_return()` results are not validated
+
+A `no_return()` (or `none()`) spec leaves `result: nil`, so `run/4` with
+`validate_result: true` accepts whatever the function returns. The same holds
+for an aliased `no_return()`. Hide the function with `@doc false` if it must not
+be a tool.
 
 ## Result-only `$defs` stay out of the input schema
 

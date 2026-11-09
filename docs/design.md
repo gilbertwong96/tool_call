@@ -421,10 +421,18 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
 `ToolCall.Validate.valid?/3` checks the value domain:
 
 - `nil` on a `nullable: true` node is valid before any other rule.
-- A node with `validator: {M, f}` is checked by `f`; the validator **replaces**
-  the kind rule, because a provider type's kind describes its wire form.
+- A node with `validator: {M, f}` is checked by `f(type, value, defs)`; the
+  validator **replaces** the kind rule, because a provider type's kind describes
+  its wire form. It receives the resolved node and the tool's `$defs`, so it can
+  validate element types (`MapSet`, `Keyword`) through `Validate.valid?/3`.
 - A node with a `transform` and no `validator` describes a domain the library
   cannot see, so it is accepted.
+- A non-productive `$ref` chain raises after 64 same-level hops, mirroring
+  `Coerce`; a productive cycle (a ref under an object/array/tuple) resets and
+  terminates on the value.
+- A value the library cannot even index — an improper list, or a map key that is
+  not an atom or a binary — is reported as `{:invalid_result, ...}`, never a
+  raise.
 - `binary()`/`bitstring()`/`nonempty_binary()` use their real value domains (no
   UTF-8 or pattern requirement); `String.t()` requires valid UTF-8 and its
   pattern; `char()` is a codepoint and `charlist()` a list.
@@ -434,10 +442,13 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
 - Arrays and tuples check length and elements with index paths; unions accept any
   matching variant; `:ref` resolves through `defs`.
 
-`ToolCall.TypeProvider` gains an optional `validate/1` (value domain, boolean).
-The built-ins implement it for the calendar types, `Keyword`, `MapSet` and
-`Regex`. A provider type with neither `validate/1` nor an explicit `validator` is
-accepted unchecked — the documented hole.
+`ToolCall.TypeProvider` gains an optional `validate/3`:
+`validate(type, value, defs)`, answering in the value domain. The built-ins
+implement it for the calendar types, `Keyword` (element types included),
+`MapSet` (element types included) and `Regex`. A provider type with a
+`transform` and neither `validate/3` nor an explicit `validator` is accepted
+unchecked — the documented hole. A provider node with neither a transform nor a
+validator is still checked by its kind.
 
 Measured locally on a 20-tool module returning `ToolCall.TestFixtures.Address.t()`
 versus `map()`: 87,672 B versus 61,620 B of beam, with compile time unchanged
