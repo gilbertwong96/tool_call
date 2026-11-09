@@ -54,6 +54,7 @@ defmodule ToolCall.IR do
               format: nil,
               transform: nil,
               ref: nil,
+              struct: nil,
               nullable: false,
               source: nil
 
@@ -88,6 +89,7 @@ defmodule ToolCall.IR do
             | :enum
             | :union
             | :ref
+            | :struct
             | :null
             | :any
             | :unsupported

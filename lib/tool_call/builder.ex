@@ -9,7 +9,7 @@ defmodule ToolCall.Builder do
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
   # docs/design.md release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Typedoc, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Structs, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
 
   @wire_formats [:number, :string_integer]
@@ -36,6 +36,7 @@ defmodule ToolCall.Builder do
       |> Enum.uniq_by(fn {name, args, _doc, _file, _line} -> {name, length(args)} end)
       |> Enum.flat_map(&build_one(&1, context))
       |> unique_tool_names(module)
+      |> Enum.map(&resolve_and_warn(&1, context, module))
 
     tools = Enum.map(entries, &elem(&1, 0))
 
@@ -246,8 +247,6 @@ defmodule ToolCall.Builder do
             "parameter \"#{param_name}\" of #{name}/#{arity} hit the type expansion " <>
               "budget; the rest of the type is treated as {}. Flatten the type hierarchy."
           )
-        else
-          warn_type(context.module, location, type, param_name, name, arity)
         end
 
         {%Param{
@@ -444,6 +443,59 @@ defmodule ToolCall.Builder do
   end
 
   defp validate_wire_type(%Param{} = param, _module, _location), do: param
+
+  defp resolve_and_warn({%Tool{} = tool, location}, context, module) do
+    {tool, warnings} = Structs.Resolve.run(tool, context.providers)
+    Enum.each(warnings, &warn(module, location, &1))
+    warn_tool(module, location, tool)
+    {tool, location}
+  end
+
+  defp warn_tool(module, location, %Tool{} = tool) do
+    arity = length(tool.params)
+
+    Enum.each(tool.params, fn param ->
+      warn_type(module, location, param.type, param.name, tool.fun, arity)
+    end)
+
+    Enum.each(tool.defs, fn {name, type} ->
+      warn_def(module, location, name, type, tool.fun, arity)
+    end)
+  end
+
+  defp warn_def(module, location, name, type, fun, arity) do
+    where = "$defs entry \"#{name}\" of #{fun}/#{arity}"
+
+    cond do
+      Typespec.unrepresentable?(type) ->
+        warn(
+          module,
+          location,
+          where <> " has no JSON representation; the model will see {} for it."
+        )
+
+      Typespec.open_object?(type) ->
+        warn(
+          module,
+          location,
+          where <>
+            " has an open object; emit(..., strict: true) closes it, so the model " <>
+            "can only send {}. Use a fixed-shape map, or do not use strict."
+        )
+
+      Typespec.untyped?(type) ->
+        warn(
+          module,
+          location,
+          where <>
+            " has no JSON type; emit(..., strict: true) cannot express it. " <>
+            "Narrow the type to give the model a schema it can follow."
+        )
+
+      true ->
+        :ok
+    end
+  end
 
   defp warn_type(module, location, type, param_name, name, arity) do
     cond do

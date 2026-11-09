@@ -9,6 +9,7 @@ defmodule ToolCall.Typespec do
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
   alias ToolCall.Patterns
+  alias ToolCall.Structs
   alias ToolCall.Providers.Stdlib
 
   @unrepresentable [:fun, :pid, :port, :reference, :mfa, :no_return, :none]
@@ -192,12 +193,20 @@ defmodule ToolCall.Typespec do
   defp remote(module, function, args, providers) do
     resolved_args = Enum.map(args, &to_type(&1, providers))
 
-    Enum.find_value(
-      providers,
-      %Type{kind: :any, source: {module, function, args}},
-      &resolve_provider(&1, module, function, resolved_args)
-    )
+    case Enum.find_value(providers, &resolve_provider(&1, module, function, resolved_args)) do
+      nil -> unresolved_remote(module, function, args)
+      type -> type
+    end
   end
+
+  defp unresolved_remote(module, :t, []) do
+    if Structs.struct?(module),
+      do: %Type{kind: :struct, struct: module},
+      else: %Type{kind: :any, source: {module, :t, []}}
+  end
+
+  defp unresolved_remote(module, function, args),
+    do: %Type{kind: :any, source: {module, function, args}}
 
   defp resolve_provider(provider, module, function, args) do
     case provider.resolve(module, function, args) do
@@ -224,6 +233,12 @@ defmodule ToolCall.Typespec do
     if function_exported?(provider, :coerce, 1),
       do: %{type | transform: {provider, :coerce}},
       else: type
+  end
+
+  defp validate_provider_type!(%Type{kind: :struct}, _provider, _module, _function, _args) do
+    raise ArgumentError,
+          "invalid ToolCall IR: :struct is an internal resolution marker; " <>
+            "resolve the tool before validating it"
   end
 
   defp validate_provider_type!(%Type{} = type, provider, module, function, args) do
@@ -1169,6 +1184,7 @@ defmodule ToolCall.Typespec do
     Enum.any?(type.fields || [], &untyped?(&1.type)) or untyped?(type.additional)
   end
 
+  def untyped?(%Type{kind: :struct}), do: true
   def untyped?(nil), do: false
   def untyped?(%Type{}), do: false
   # --- helpers --------------------------------------------------------------
