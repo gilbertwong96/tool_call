@@ -288,7 +288,8 @@ raising.
 `validate_result: true` validates the **raw** value, before `{:ok, value}` /
 `{:error, reason}` is unwrapped: a spec `{:ok, map()} | {:error, String.t()}`
 returning `{:ok, "not a map"}` fails even though the tool would have answered
-`{:ok, "not a map"}` without validation. A mismatch is
+`{:ok, "not a map"}` without validation; a spec `map()` whose function returns
+`{:ok, %{}}` fails the same way. A mismatch is
 `{:error, {:invalid_result, path}}`; a function that raises keeps
 `{:error, {:raised, message}}`. A `no_return()` spec has no result type and
 skips validation. Validation uses the generic runner path, so it is slower than
@@ -316,6 +317,32 @@ other rule. A closed plain object rejects unknown keys; a struct is checked by
 `is_struct/2` plus its declared fields. `keyword(t)` and `MapSet.t(t)` validate
 their elements. An improper list or an exotic map key is an
 `{:invalid_result, ...}`, not a raise.
+
+## A result struct must satisfy `@type t`, including nil defaults
+
+`defstruct [:city, :country]` gives `country: nil`, while a common `@type t`
+declares `country: String.t()`. Result validation enforces the declared type, so
+returning `%ToolStruct{city: "Oslo"}` fails with
+`{:invalid_result, {"country", {:expected_string, nil}}}` even though the struct
+is the one the code builds. `@enforce_keys` does not help: it marks a field
+required, it does not make nil valid. Declare `String.t() | nil` for any field
+whose default is nil, or set the default.
+
+## A fixed-shape map type is closed, so it rejects a struct
+
+`%{city: String.t()}` builds a closed object. A struct value carries
+`__struct__` and its other fields, so a result declared as
+`%{city: String.t()}` is rejected with `{:unknown_keys, ["__struct__", ...]}` —
+the same rule that rejects an unknown argument key. Declare the struct type
+(`Address.t()`) or `map()` when the value may be a struct.
+
+## The result type shares the tool's definition budget
+
+The 32-definition budget is per tool and the parameters consume it first. When
+they already use all 32, the result degrades to `{}`/`any` and the compile
+warns about the return type, but `run/4` with `validate_result: true` then
+accepts any return value. Inspect `tool.result` or the warning when a recursive
+result type seems unchecked.
 
 ## `atom()` means two different domains
 

@@ -427,7 +427,12 @@ requires valid UTF-8, `char()` is a codepoint and `charlist()` a list, while
 non-UTF-8 path fails validation. `atom()` results follow the value domain
 (booleans are atoms), unlike `atom()` arguments, which follow the wire domain.
 A `no_return()` result is never validated. An improper list or an exotic map key
-(a tuple, a map) is `{:invalid_result, ...}`, not a raise.
+(a tuple, a map) is `{:invalid_result, ...}`, not a raise. A struct result is
+checked field by field against its `@type t`, so a field whose `defstruct`
+default is nil must be declared `T | nil`. A fixed-shape map type is closed and
+rejects a struct value. The result also shares the tool's 32-definition budget
+with the parameters: if they exhaust it, the result degrades to `:any` and
+validation accepts anything.
 
 ## 5. Export the schemas
 
