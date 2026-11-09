@@ -9,7 +9,7 @@ defmodule ToolCall.TestFixtures.ValidatingProvider do
   def resolve(_module, _function, _args), do: :error
 
   @impl true
-  def validate(value), do: is_binary(value)
+  def validate(_type, value, _defs), do: is_binary(value)
 end
 
 defmodule ToolCall.TestFixtures.EmbedProvider do

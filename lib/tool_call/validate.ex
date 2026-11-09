@@ -12,16 +12,22 @@ defmodule ToolCall.Validate do
 
   alias ToolCall.IR.{Field, Type}
 
-  @spec valid?(Type.t(), term(), %{String.t() => Type.t()}) :: :ok | {:error, term()}
-  def valid?(%Type{nullable: true}, nil, _defs), do: :ok
+  @max_ref_hops 64
 
-  def valid?(%Type{validator: {module, function}}, value, _defs) do
-    check_validator(module, function, value)
+  @spec valid?(Type.t(), term(), %{String.t() => Type.t()}) :: :ok | {:error, term()}
+  def valid?(%Type{} = type, value, defs), do: do_valid?(type, value, defs, 0)
+
+  defp do_valid?(%Type{nullable: true}, nil, _defs, _hops), do: :ok
+
+  defp do_valid?(%Type{validator: {module, function}} = type, value, defs, _hops) do
+    check_validator(module, function, type, value, defs)
   end
 
-  def valid?(%Type{transform: transform}, _value, _defs) when not is_nil(transform), do: :ok
+  defp do_valid?(%Type{transform: transform}, _value, _defs, _hops)
+       when not is_nil(transform),
+       do: :ok
 
-  def valid?(%Type{kind: :integer} = type, value, _defs) do
+  defp do_valid?(%Type{kind: :integer} = type, value, _defs, _hops) do
     if is_integer(value) do
       check_bounds(type, value)
     else
@@ -29,25 +35,25 @@ defmodule ToolCall.Validate do
     end
   end
 
-  def valid?(%Type{kind: :float}, value, _defs) do
+  defp do_valid?(%Type{kind: :float}, value, _defs, _hops) do
     if is_float(value), do: :ok, else: {:error, {:expected_float, value}}
   end
 
-  def valid?(%Type{kind: :number}, value, _defs) do
+  defp do_valid?(%Type{kind: :number}, value, _defs, _hops) do
     if is_number(value), do: :ok, else: {:error, {:expected_number, value}}
   end
 
-  def valid?(%Type{kind: :string} = type, value, _defs), do: check_string(type, value)
+  defp do_valid?(%Type{kind: :string} = type, value, _defs, _hops), do: check_string(type, value)
 
-  def valid?(%Type{kind: :boolean}, value, _defs) do
+  defp do_valid?(%Type{kind: :boolean}, value, _defs, _hops) do
     if is_boolean(value), do: :ok, else: {:error, {:expected_boolean, value}}
   end
 
-  def valid?(%Type{kind: :atom}, value, _defs) do
+  defp do_valid?(%Type{kind: :atom}, value, _defs, _hops) do
     if is_atom(value), do: :ok, else: {:error, {:expected_atom, value}}
   end
 
-  def valid?(%Type{kind: :enum} = type, value, _defs) do
+  defp do_valid?(%Type{kind: :enum} = type, value, _defs, _hops) do
     cond do
       type.values in [nil, []] -> :ok
       value in type.values -> :ok
@@ -55,32 +61,27 @@ defmodule ToolCall.Validate do
     end
   end
 
-  def valid?(%Type{kind: :null}, value, _defs) do
+  defp do_valid?(%Type{kind: :null}, value, _defs, _hops) do
     if is_nil(value), do: :ok, else: {:error, {:expected_null, value}}
   end
 
-  def valid?(%Type{kind: kind}, _value, _defs) when kind in [:any, :unsupported], do: :ok
+  defp do_valid?(%Type{kind: kind}, _value, _defs, _hops)
+       when kind in [:any, :unsupported],
+       do: :ok
 
-  def valid?(%Type{kind: :array} = type, value, defs) when is_list(value) do
-    item_type = type.items || %Type{kind: :any}
-    minimum = type.minimum || 0
-    maximum = type.maximum
-    length = length(value)
-
-    cond do
-      length < minimum -> {:error, {:too_few_items, length, minimum}}
-      not is_nil(maximum) and length > maximum -> {:error, {:too_many_items, length, maximum}}
-      true -> check_each(item_type, value, defs)
+  defp do_valid?(%Type{kind: :array} = type, value, defs, _hops) do
+    if is_list(value) and proper_list?(value) do
+      check_array(type, value, defs)
+    else
+      {:error, {:expected_array, value}}
     end
   end
 
-  def valid?(%Type{kind: :array}, value, _defs), do: {:error, {:expected_array, value}}
-
-  def valid?(%Type{kind: :tuple, items: nil}, value, _defs) do
+  defp do_valid?(%Type{kind: :tuple, items: nil}, value, _defs, _hops) do
     if is_tuple(value), do: :ok, else: {:error, {:expected_tuple, value}}
   end
 
-  def valid?(%Type{kind: :tuple} = type, value, defs) when is_tuple(value) do
+  defp do_valid?(%Type{kind: :tuple} = type, value, defs, _hops) when is_tuple(value) do
     items = type.items || []
     values = Tuple.to_list(value)
 
@@ -91,10 +92,11 @@ defmodule ToolCall.Validate do
     end
   end
 
-  def valid?(%Type{kind: :tuple}, value, _defs), do: {:error, {:expected_tuple, value}}
+  defp do_valid?(%Type{kind: :tuple}, value, _defs, _hops),
+    do: {:error, {:expected_tuple, value}}
 
-  def valid?(%Type{kind: :object, struct: struct} = type, value, defs)
-      when not is_nil(struct) do
+  defp do_valid?(%Type{kind: :object, struct: struct} = type, value, defs, _hops)
+       when not is_nil(struct) do
     if is_struct(value, struct) do
       check_fields(type.fields || [], value, defs)
     else
@@ -102,7 +104,7 @@ defmodule ToolCall.Validate do
     end
   end
 
-  def valid?(%Type{kind: :object} = type, value, defs) do
+  defp do_valid?(%Type{kind: :object} = type, value, defs, _hops) do
     if is_map(value) do
       check_fields_with_extra(type, value, defs)
     else
@@ -110,29 +112,36 @@ defmodule ToolCall.Validate do
     end
   end
 
-  def valid?(%Type{kind: :union} = type, value, defs) do
-    if Enum.any?(type.variants || [], &(valid?(&1, value, defs) == :ok)) do
+  defp do_valid?(%Type{kind: :union} = type, value, defs, hops) do
+    if Enum.any?(type.variants || [], &(do_valid?(&1, value, defs, hops) == :ok)) do
       :ok
     else
       {:error, {:no_variant_matched, value}}
     end
   end
 
-  def valid?(%Type{kind: :ref, ref: ref}, value, defs) do
+  defp do_valid?(%Type{kind: :ref, ref: ref}, value, defs, hops)
+       when hops < @max_ref_hops do
     case Map.fetch(defs, ref) do
-      {:ok, type} -> valid?(type, value, defs)
+      {:ok, type} -> do_valid?(type, value, defs, hops + 1)
       :error -> raise ArgumentError, "invalid ToolCall IR: unknown $defs entry #{inspect(ref)}"
     end
   end
 
-  def valid?(%Type{kind: kind}, _value, _defs) do
+  defp do_valid?(%Type{kind: :ref, ref: ref}, _value, _defs, _hops) do
+    raise ArgumentError,
+          "invalid ToolCall IR: $ref chain through #{inspect(ref)} does not consume a value; " <>
+            "the $defs cycle is not productive"
+  end
+
+  defp do_valid?(%Type{kind: kind}, _value, _defs, _hops) do
     raise ArgumentError, "invalid ToolCall IR: cannot validate kind #{inspect(kind)}"
   end
 
   # --- validators -----------------------------------------------------------
 
-  defp check_validator(module, function, value) do
-    case apply(module, function, [value]) do
+  defp check_validator(module, function, type, value, defs) do
+    case apply(module, function, [type, value, defs]) do
       true -> :ok
       _other -> {:error, {:validator, {module, function}, value}}
     end
@@ -175,7 +184,7 @@ defmodule ToolCall.Validate do
   end
 
   defp check_string(%Type{source: :charlist}, value) do
-    if is_list(value) and Enum.all?(value, &is_integer/1),
+    if is_list(value) and proper_list?(value) and Enum.all?(value, &is_integer/1),
       do: :ok,
       else: {:error, {:expected_charlist, value}}
   end
@@ -197,6 +206,18 @@ defmodule ToolCall.Validate do
   end
 
   defp check_string(%Type{}, value), do: {:error, {:expected_string, value}}
+
+  defp check_array(%Type{} = type, value, defs) do
+    minimum = type.minimum || 0
+    maximum = type.maximum
+    length = length(value)
+
+    cond do
+      length < minimum -> {:error, {:too_few_items, length, minimum}}
+      not is_nil(maximum) and length > maximum -> {:error, {:too_many_items, length, maximum}}
+      true -> check_each(type.items || %Type{kind: :any}, value, defs)
+    end
+  end
 
   defp check_each(types, values, defs) when is_list(types) do
     types
@@ -227,7 +248,7 @@ defmodule ToolCall.Validate do
 
     extra =
       if is_nil(type.additional) do
-        Map.keys(value) |> Enum.reject(&MapSet.member?(known, &1)) |> Enum.map(&to_string/1)
+        Map.keys(value) |> Enum.reject(&MapSet.member?(known, &1)) |> Enum.map(&key_label/1)
       else
         []
       end
@@ -270,10 +291,18 @@ defmodule ToolCall.Validate do
     |> Enum.reduce_while(:ok, fn {key, raw}, :ok ->
       case valid?(additional, raw, defs) do
         :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, {to_string(key), reason}}}
+        {:error, reason} -> {:halt, {:error, {key_label(key), reason}}}
       end
     end)
   end
+
+  defp proper_list?([]), do: true
+  defp proper_list?([_head | tail]), do: proper_list?(tail)
+  defp proper_list?(_other), do: false
+
+  defp key_label(key) when is_binary(key), do: key
+  defp key_label(key) when is_atom(key), do: Atom.to_string(key)
+  defp key_label(key), do: inspect(key)
 
   defp field_key(%Field{key: nil, name: name}), do: name
   defp field_key(%Field{key: key}), do: key

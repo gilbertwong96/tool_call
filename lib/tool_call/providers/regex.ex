@@ -13,7 +13,8 @@ defmodule ToolCall.Providers.Regex do
   def resolve(_module, _function, _args), do: :error
 
   @impl true
-  def validate(value), do: is_struct(value, Regex)
+  def validate(_type, %Regex{}, _defs), do: true
+  def validate(_type, _value, _defs), do: false
 
   @impl true
   def coerce(source) when is_binary(source) do

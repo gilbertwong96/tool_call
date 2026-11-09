@@ -74,13 +74,14 @@ defmodule ToolCall.Runner do
   def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
       when is_map(args) do
     known = known || Enum.map(tool.params || [], & &1.name)
+    validate_result? = validate_result_opt!(opts)
 
     with :ok <- reject_non_string_keys(args),
          :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
          :ok <- reject_unknown_arguments(args, known),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
-      invoke(module, tool, positional, Keyword.get(opts, :validate_result, false))
+      invoke(module, tool, positional, validate_result?)
     end
   end
 
@@ -320,6 +321,13 @@ defmodule ToolCall.Runner do
   catch
     :throw, value -> caught(:throw, value)
     :exit, reason -> caught(:exit, reason)
+  end
+
+  defp validate_result_opt!(opts) do
+    case Keyword.get(opts, :validate_result, false) do
+      value when is_boolean(value) -> value
+      other -> raise ArgumentError, "validate_result must be a boolean, got: #{inspect(other)}"
+    end
   end
 
   defp maybe_validate_result(_tool, _value, false), do: :ok

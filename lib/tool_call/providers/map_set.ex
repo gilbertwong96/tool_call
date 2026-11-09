@@ -14,7 +14,17 @@ defmodule ToolCall.Providers.MapSet do
   def resolve(_module, _function, _args), do: :error
 
   @impl true
-  def validate(value), do: is_struct(value, MapSet)
+  def validate(%ToolCall.IR.Type{items: items}, %MapSet{} = value, defs) do
+    Enum.all?(MapSet.to_list(value), &element_valid?(items, &1, defs))
+  end
+
+  def validate(_type, _value, _defs), do: false
+
+  defp element_valid?(nil, _item, _defs), do: true
+  defp element_valid?(%ToolCall.IR.Type{kind: :any}, _item, _defs), do: true
+
+  defp element_valid?(%ToolCall.IR.Type{} = type, item, defs),
+    do: ToolCall.Validate.valid?(type, item, defs) == :ok
 
   @impl true
   def coerce(values) when is_list(values), do: {:ok, MapSet.new(values)}

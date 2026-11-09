@@ -297,4 +297,23 @@ defmodule ToolCall.ResultTypesTest do
       refute warnings =~ "is @opaque"
     end
   end
+
+  test "Runner.run/5 rejects a non-boolean validate_result" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: integer()
+        def go(x), do: x
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert_raise ArgumentError, ~r/validate_result/, fn ->
+      ToolCall.Runner.run(module, [tool], :go, %{"x" => 1}, validate_result: :yes)
+    end
+  end
 end

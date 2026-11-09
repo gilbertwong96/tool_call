@@ -533,7 +533,9 @@ defmodule ToolCall.TypespecTest do
   end
 
   test "accepts a valid validator" do
-    assert %Type{validator: {Date, :to_iso8601}} =
-             Typespec.validate_type!(%Type{kind: :string, validator: {Date, :to_iso8601}})
+    validator = {ToolCall.Providers.Stdlib, :validate_date}
+
+    assert %Type{validator: ^validator} =
+             Typespec.validate_type!(%Type{kind: :string, validator: validator})
   end
 end

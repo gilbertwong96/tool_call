@@ -239,7 +239,7 @@ defmodule ToolCall.Typespec do
   # An explicit validator always wins over the shorthand, mirroring how a
   # provider can set a per-type transform.
   defp maybe_provider_validate(%Type{validator: nil} = type, provider) do
-    if function_exported?(provider, :validate, 1),
+    if function_exported?(provider, :validate, 3),
       do: %{type | validator: {provider, :validate}},
       else: type
   end
@@ -366,11 +366,11 @@ defmodule ToolCall.Typespec do
          _args
        )
        when is_atom(module) and is_atom(function) do
-    if Code.ensure_loaded?(module) and function_exported?(module, function, 1) do
+    if Code.ensure_loaded?(module) and function_exported?(module, function, 3) do
       :ok
     else
       raise ArgumentError,
-            "invalid ToolCall IR: validator #{inspect(module)}.#{function}/1 is not defined"
+            "invalid ToolCall IR: validator #{inspect(module)}.#{function}/3 is not defined"
     end
   end
 

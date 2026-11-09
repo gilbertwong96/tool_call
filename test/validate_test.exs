@@ -5,7 +5,7 @@ defmodule ToolCall.ValidateTest do
   alias ToolCall.Validate
 
   defmodule Raising do
-    def validate(_value), do: raise("boom")
+    def validate(_type, _value, _defs), do: raise("boom")
   end
 
   defp int(min \\ nil, max \\ nil), do: %Type{kind: :integer, minimum: min, maximum: max}
@@ -43,12 +43,12 @@ defmodule ToolCall.ValidateTest do
   end
 
   test "a validator replaces the kind rule" do
-    node = %Type{kind: :string, validator: {String, :valid?}}
+    node = %Type{kind: :string, validator: {ToolCall.Providers.Stdlib, :validate_date}}
 
-    assert :ok = Validate.valid?(node, "ok", %{})
+    assert :ok = Validate.valid?(node, ~D[2024-01-01], %{})
 
-    assert {:error, {:validator, {String, :valid?}, <<255>>}} =
-             Validate.valid?(node, <<255>>, %{})
+    assert {:error, {:validator, {ToolCall.Providers.Stdlib, :validate_date}, "2024-01-01"}} =
+             Validate.valid?(node, "2024-01-01", %{})
   end
 
   test "a transform-only provider node is accepted" do
@@ -236,7 +236,7 @@ defmodule ToolCall.ValidateTest do
 
   test "a throwing validator is reported" do
     defmodule Throwing do
-      def validate(_value), do: throw(:nope)
+      def validate(_type, _value, _defs), do: throw(:nope)
     end
 
     node = %Type{kind: :string, validator: {Throwing, :validate}}
@@ -249,5 +249,62 @@ defmodule ToolCall.ValidateTest do
     assert %Type{source: :nonempty_binary} = node
     assert {:error, _} = Validate.valid?(node, "", %{})
     assert :ok = Validate.valid?(node, "x", %{})
+  end
+
+  test "a non-atom/string map key does not raise" do
+    closed = %Type{kind: :object, fields: [], additional: nil}
+
+    assert {:error, {:unknown_keys, ["{:a}"]}} =
+             Validate.valid?(closed, %{{:a} => 1}, %{})
+
+    open = %Type{kind: :object, fields: [], additional: int()}
+
+    assert {:error, {"{:a}", {:expected_integer, "x"}}} =
+             Validate.valid?(open, %{{:a} => "x"}, %{})
+  end
+
+  test "improper lists are argument errors, not raises" do
+    assert {:error, {:expected_array, [1 | 2]}} =
+             Validate.valid?(%Type{kind: :array, items: int()}, [1 | 2], %{})
+
+    assert {:error, {:expected_charlist, [97 | 98]}} =
+             Validate.valid?(str(:charlist), [97 | 98], %{})
+  end
+
+  test "MapSet elements are validated" do
+    assert :ok = Validate.valid?(mapset_t(), MapSet.new([1, 2]), %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.MapSet, :validate}, _value}} =
+             Validate.valid?(mapset_t(), MapSet.new(["x"]), %{})
+  end
+
+  test "keyword elements are validated" do
+    assert :ok = Validate.valid?(keyword_t(), [a: 1], %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.Stdlib, :validate_keyword}, _value}} =
+             Validate.valid?(keyword_t(), [a: "x"], %{})
+
+    any = type({:keyword, [], []})
+    assert :ok = Validate.valid?(any, [a: "x"], %{})
+  end
+
+  test "a non-productive ref cycle raises instead of looping" do
+    straight = %{
+      "a" => %Type{kind: :ref, ref: "b"},
+      "b" => %Type{kind: :ref, ref: "a"}
+    }
+
+    assert_raise ArgumentError, ~r/\$ref chain/, fn ->
+      Validate.valid?(%Type{kind: :ref, ref: "a"}, 1, straight)
+    end
+
+    through_union = %{
+      "a" => %Type{kind: :union, variants: [%Type{kind: :ref, ref: "b"}]},
+      "b" => %Type{kind: :ref, ref: "a"}
+    }
+
+    assert_raise ArgumentError, ~r/\$ref chain/, fn ->
+      Validate.valid?(%Type{kind: :ref, ref: "a"}, 1, through_union)
+    end
   end
 end

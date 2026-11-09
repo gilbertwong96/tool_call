@@ -56,26 +56,37 @@ defmodule ToolCall.Providers.Stdlib do
   defp validate_fun(NaiveDateTime), do: :validate_naive_datetime
 
   @doc false
-  def validate_date(value), do: is_struct(value, Date)
+  def validate_date(_type, value, _defs), do: is_struct(value, Date)
 
   @doc false
-  def validate_time(value), do: is_struct(value, Time)
+  def validate_time(_type, value, _defs), do: is_struct(value, Time)
 
   @doc false
-  def validate_datetime(value), do: is_struct(value, DateTime)
+  def validate_datetime(_type, value, _defs), do: is_struct(value, DateTime)
 
   @doc false
-  def validate_naive_datetime(value), do: is_struct(value, NaiveDateTime)
+  def validate_naive_datetime(_type, value, _defs), do: is_struct(value, NaiveDateTime)
 
   @doc false
-  def validate_keyword(value) when is_list(value) do
-    Enum.all?(value, fn
-      {key, _value} when is_atom(key) -> true
-      _other -> false
-    end)
+  def validate_keyword(%Type{additional: additional}, value, defs) when is_list(value) do
+    proper_list?(value) and
+      Enum.all?(value, fn
+        {key, item} when is_atom(key) -> element_valid?(additional, item, defs)
+        _other -> false
+      end)
   end
 
-  def validate_keyword(_value), do: false
+  def validate_keyword(_type, _value, _defs), do: false
+
+  defp element_valid?(nil, _item, _defs), do: true
+  defp element_valid?(%Type{kind: :any}, _item, _defs), do: true
+
+  defp element_valid?(%Type{} = type, item, defs),
+    do: ToolCall.Validate.valid?(type, item, defs) == :ok
+
+  defp proper_list?([]), do: true
+  defp proper_list?([_head | tail]), do: proper_list?(tail)
+  defp proper_list?(_other), do: false
 
   defp coerce_fun(Date), do: :coerce_date
   defp coerce_fun(Time), do: :coerce_time
