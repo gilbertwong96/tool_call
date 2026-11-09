@@ -301,6 +301,7 @@ defmodule ToolCall.Codegen do
   defp accepts_nil?(%Type{kind: :null}), do: true
   defp accepts_nil?(_type), do: false
 
+  defp nested_key_check?(%Type{kind: :ref}), do: true
   defp nested_key_check?(%Type{kind: :object}), do: true
   defp nested_key_check?(%Type{kind: :array}), do: true
   defp nested_key_check?(%Type{kind: :tuple}), do: true

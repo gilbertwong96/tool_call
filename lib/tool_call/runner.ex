@@ -127,10 +127,12 @@ defmodule ToolCall.Runner do
   end
 
   defp reject_nested_non_string_keys(%Tool{} = tool, args) do
+    defs = tool.defs || %{}
+
     keys =
       Enum.flat_map(tool.params, fn param ->
         case Map.fetch(args, param.name) do
-          {:ok, value} -> nested_non_string_keys(param.type, value)
+          {:ok, value} -> nested_non_string_keys(param.type, value, defs)
           :error -> []
         end
       end)
@@ -142,16 +144,16 @@ defmodule ToolCall.Runner do
     end
   end
 
-  defp nested_non_string_keys(%Type{kind: :object, source: :keyword} = type, value)
+  defp nested_non_string_keys(%Type{kind: :object, source: :keyword} = type, value, defs)
        when is_map(value) do
     additional = type.additional
 
     Enum.flat_map(value, fn {_key, item} ->
-      nested_non_string_keys(additional || %Type{kind: :any}, item)
+      nested_non_string_keys(additional || %Type{kind: :any}, item, defs)
     end)
   end
 
-  defp nested_non_string_keys(%Type{kind: :object} = type, value) when is_map(value) do
+  defp nested_non_string_keys(%Type{kind: :object} = type, value, defs) when is_map(value) do
     fields = type.fields || []
     bad_keys = value |> Map.keys() |> Enum.reject(&is_binary/1)
 
@@ -161,18 +163,19 @@ defmodule ToolCall.Runner do
         nested_type = if field, do: field.type, else: type.additional
 
         if nested_type,
-          do: nested_non_string_keys(nested_type, item),
+          do: nested_non_string_keys(nested_type, item, defs),
           else: []
       end)
 
     bad_keys ++ nested
   end
 
-  defp nested_non_string_keys(%Type{kind: :array, items: items}, value) when is_list(value) do
-    Enum.flat_map(value, &nested_non_string_keys(items || %Type{kind: :any}, &1))
+  defp nested_non_string_keys(%Type{kind: :array, items: items}, value, defs)
+       when is_list(value) do
+    Enum.flat_map(value, &nested_non_string_keys(items || %Type{kind: :any}, &1, defs))
   end
 
-  defp nested_non_string_keys(%Type{kind: :tuple, items: items}, value)
+  defp nested_non_string_keys(%Type{kind: :tuple, items: items}, value, defs)
        when is_list(value) or is_tuple(value) do
     values = if is_tuple(value), do: Tuple.to_list(value), else: value
     items = items || []
@@ -182,24 +185,31 @@ defmodule ToolCall.Runner do
     |> Enum.flat_map(fn {item, index} ->
       case Enum.at(items, index) do
         nil -> []
-        type -> nested_non_string_keys(type, item)
+        type -> nested_non_string_keys(type, item, defs)
       end
     end)
   end
 
-  defp nested_non_string_keys(%Type{kind: :union} = type, value) do
+  defp nested_non_string_keys(%Type{kind: :ref, ref: ref}, value, defs) do
+    case Map.fetch(defs, ref) do
+      {:ok, type} -> nested_non_string_keys(type, value, defs)
+      :error -> []
+    end
+  end
+
+  defp nested_non_string_keys(%Type{kind: :union} = type, value, defs) do
     variants = type.variants || []
 
     if Enum.any?(variants, &(&1.kind in [:any, :unsupported])) do
       []
     else
       variants
-      |> Enum.flat_map(&nested_non_string_keys(&1, value))
+      |> Enum.flat_map(&nested_non_string_keys(&1, value, defs))
       |> Enum.uniq()
     end
   end
 
-  defp nested_non_string_keys(%Type{}, _value), do: []
+  defp nested_non_string_keys(%Type{}, _value, _defs), do: []
 
   defp fetch(tools, name) do
     case Enum.find(tools, &(&1.name == name)) do
@@ -217,7 +227,7 @@ defmodule ToolCall.Runner do
 
   defp coerce(%Tool{} = tool, args) do
     Enum.reduce_while(tool.params, {:ok, %{}}, fn param, {:ok, acc} ->
-      case coerce_param(param, args) do
+      case coerce_param(param, args, tool.defs || %{}) do
         {:ok, :missing} -> {:cont, {:ok, acc}}
         {:ok, value} -> {:cont, {:ok, Map.put(acc, param.name, value)}}
         {:error, reason} -> {:halt, {:error, reason}}
@@ -225,23 +235,23 @@ defmodule ToolCall.Runner do
     end)
   end
 
-  defp coerce_param(%Param{} = param, args) do
+  defp coerce_param(%Param{} = param, args, defs) do
     case Map.fetch(args, param.name) do
       {:ok, nil} when not param.required ->
-        if Coerce.accepts_nil?(param.type),
-          do: coerce_value(param, nil),
+        if Coerce.accepts_nil?(param.type, defs),
+          do: coerce_value(param, nil, defs),
           else: {:ok, :missing}
 
       {:ok, raw} ->
-        coerce_value(param, raw)
+        coerce_value(param, raw, defs)
 
       :error ->
         missing_param(param)
     end
   end
 
-  defp coerce_value(%Param{} = param, raw) do
-    case Coerce.param(param, raw) do
+  defp coerce_value(%Param{} = param, raw, defs) do
+    case Coerce.param(param, raw, defs) do
       {:ok, value} -> {:ok, value}
       {:error, reason} -> {:error, {:invalid_argument, reason}}
     end

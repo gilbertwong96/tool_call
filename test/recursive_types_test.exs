@@ -220,4 +220,29 @@ defmodule ToolCall.RecursiveTypesTest do
     assert spec.parameters["properties"]["root"] == %{"$ref" => "#/$defs/tree"}
     assert Map.has_key?(spec.parameters, "$defs")
   end
+
+  defp run(source, name, args) do
+    module = compile!(source)
+    ToolCall.run(module, name, args)
+  end
+
+  test "coerces a recursive value at every level" do
+    assert {:ok, %{value: 1, children: [%{value: 2, children: []}]}} =
+             run(@tree, :walk, %{
+               "root" => %{"value" => 1, "children" => [%{"value" => 2, "children" => []}]}
+             })
+  end
+
+  test "rejects atom keys deep inside a recursive value" do
+    assert {:error, {:non_string_arguments, [:value]}} =
+             run(@tree, :walk, %{"root" => %{"value" => 1, "children" => [%{value: 2}]}})
+  end
+
+  test "rejects a malformed deep value" do
+    assert {:error,
+            {:invalid_argument, {"root", {"children", {0, {"value", {:expected_integer, "x"}}}}}}} =
+             run(@tree, :walk, %{
+               "root" => %{"value" => 1, "children" => [%{"value" => "x", "children" => []}]}
+             })
+  end
 end
