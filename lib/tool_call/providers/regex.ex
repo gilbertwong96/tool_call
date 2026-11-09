@@ -13,6 +13,9 @@ defmodule ToolCall.Providers.Regex do
   def resolve(_module, _function, _args), do: :error
 
   @impl true
+  def validate(value), do: is_struct(value, Regex)
+
+  @impl true
   def coerce(source) when is_binary(source) do
     case Regex.compile(source, "u") do
       {:ok, regex} -> {:ok, regex}

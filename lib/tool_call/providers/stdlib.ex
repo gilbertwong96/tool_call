@@ -30,7 +30,8 @@ defmodule ToolCall.Providers.Stdlib do
       fields: [],
       additional: value,
       source: :keyword,
-      transform: {__MODULE__, :coerce_keyword}
+      transform: {__MODULE__, :coerce_keyword},
+      validator: {__MODULE__, :validate_keyword}
     }
   end
 
@@ -39,7 +40,8 @@ defmodule ToolCall.Providers.Stdlib do
       kind: :string,
       source: {module, :t},
       format: format(module),
-      transform: {__MODULE__, coerce_fun(module)}
+      transform: {__MODULE__, coerce_fun(module)},
+      validator: {__MODULE__, validate_fun(module)}
     }
   end
 
@@ -47,6 +49,33 @@ defmodule ToolCall.Providers.Stdlib do
   defp format(Time), do: "time"
   defp format(DateTime), do: "date-time"
   defp format(NaiveDateTime), do: nil
+
+  defp validate_fun(Date), do: :validate_date
+  defp validate_fun(Time), do: :validate_time
+  defp validate_fun(DateTime), do: :validate_datetime
+  defp validate_fun(NaiveDateTime), do: :validate_naive_datetime
+
+  @doc false
+  def validate_date(value), do: is_struct(value, Date)
+
+  @doc false
+  def validate_time(value), do: is_struct(value, Time)
+
+  @doc false
+  def validate_datetime(value), do: is_struct(value, DateTime)
+
+  @doc false
+  def validate_naive_datetime(value), do: is_struct(value, NaiveDateTime)
+
+  @doc false
+  def validate_keyword(value) when is_list(value) do
+    Enum.all?(value, fn
+      {key, _value} when is_atom(key) -> true
+      _other -> false
+    end)
+  end
+
+  def validate_keyword(_value), do: false
 
   defp coerce_fun(Date), do: :coerce_date
   defp coerce_fun(Time), do: :coerce_time

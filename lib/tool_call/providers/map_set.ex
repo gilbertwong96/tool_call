@@ -14,6 +14,9 @@ defmodule ToolCall.Providers.MapSet do
   def resolve(_module, _function, _args), do: :error
 
   @impl true
+  def validate(value), do: is_struct(value, MapSet)
+
+  @impl true
   def coerce(values) when is_list(values), do: {:ok, MapSet.new(values)}
   def coerce(other), do: {:error, {:expected_array, other}}
 

@@ -186,4 +186,39 @@ defmodule ToolCall.ValidateTest do
       Validate.valid?(%Type{kind: :ref, ref: "missing"}, 1, %{})
     end
   end
+
+  defp type(ast), do: ToolCall.Typespec.to_type(ast)
+
+  defp date_t, do: type({{:., [], [Date, :t]}, [], []})
+  defp mapset_t, do: type({{:., [], [MapSet, :t]}, [], [{:integer, [], []}]})
+  defp keyword_t, do: type({:keyword, [], [{:integer, [], []}]})
+
+  test "Date.t() accepts a struct and rejects its string form" do
+    assert :ok = Validate.valid?(date_t(), ~D[2024-01-01], %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.Stdlib, :validate_date}, "2024-01-01"}} =
+             Validate.valid?(date_t(), "2024-01-01", %{})
+  end
+
+  test "MapSet.t() accepts the struct and rejects a list" do
+    assert :ok = Validate.valid?(mapset_t(), MapSet.new([1, 2]), %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.MapSet, :validate}, [1, 2]}} =
+             Validate.valid?(mapset_t(), [1, 2], %{})
+  end
+
+  test "Keyword.t() accepts a keyword list and rejects a map" do
+    assert :ok = Validate.valid?(keyword_t(), [a: 1], %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.Stdlib, :validate_keyword}, %{"a" => 1}}} =
+             Validate.valid?(keyword_t(), %{"a" => 1}, %{})
+  end
+
+  test "Regex.t() validates a compiled regex" do
+    regex_t = type({{:., [], [Regex, :t]}, [], []})
+    assert :ok = Validate.valid?(regex_t, ~r/a/, %{})
+
+    assert {:error, {:validator, {ToolCall.Providers.Regex, :validate}, "a"}} =
+             Validate.valid?(regex_t, "a", %{})
+  end
 end
