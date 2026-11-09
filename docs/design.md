@@ -393,15 +393,16 @@ rebuilt with `struct/2`. Omitted optional fields are not inserted, so
 ## Provider subsets
 
 The same IR is normalized for the provider formats below. Runtime emitters exist
-for OpenAI and Anthropic; MCP is available through `mix tool_call.export`, and a
-Gemini emitter is planned.
+for OpenAI, Anthropic and MCP. OpenAI and Anthropic are precompiled per module;
+MCP renders on demand from the tool IR, because its schema is the same
+parameters object the other targets embed. A Gemini emitter is planned.
 
-| | OpenAI | Anthropic | Gemini / MCP |
+| | OpenAI | Anthropic | MCP |
 |---|---|---|---|
-| Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `inputSchema` |
-| Top level | must be an object | any JSON Schema | any JSON Schema |
-| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | n/a |
-| `$ref` / `$defs` | supported, strict mode included | supported | supported by the JSON export |
+| Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` |
+| Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) |
+| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | renders the closed subset; MCP has no flag |
+| `$ref` / `$defs` | supported, strict mode included | supported | supported |
 | Who parses arguments | you (a JSON string) | the provider (`input` arrives decoded) | varies |
 
 The last row matters for large integers: when the provider parses, you inherit

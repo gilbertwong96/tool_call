@@ -263,6 +263,7 @@ plain map.
 ToolCall.emit(MyApp.Tools.Weather, :openai)
 ToolCall.emit(MyApp.Tools.Weather, :openai, strict: true)
 ToolCall.emit(MyApp.Tools.Weather, :anthropic)
+ToolCall.emit(MyApp.Tools.Weather, :mcp)
 
 # several modules: concatenate the lists
 tools = ToolCall.emit(A, :openai, strict: true) ++ ToolCall.emit(B, :openai, strict: true)

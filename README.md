@@ -50,7 +50,8 @@ compile time; there are no runtime dependencies.
 
 ## What you get
 
-- `ToolCall.emit/3` — OpenAI and Anthropic schemas, precompiled per module.
+- `ToolCall.emit/3` — OpenAI, Anthropic and MCP schemas; the provider-call
+  targets are precompiled per module.
 - `ToolCall.run/3` — required/unknown argument checks, coercion, exception
   wrapping, and dispatch to the real function.
 - `ToolCall.tools/1` and `ToolCall.describe/2` — the IR and provider-neutral

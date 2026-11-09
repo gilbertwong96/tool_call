@@ -4,6 +4,10 @@
 
 ### Added
 
+- `ToolCall.emit/3` supports `:mcp`, returning `{name, description, inputSchema}`
+  tool objects for an MCP `tools/list` result. MCP renders on demand from the
+  tool IR; `strict: true` renders the closed schema subset without a flag.
+
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one
   canonical body.

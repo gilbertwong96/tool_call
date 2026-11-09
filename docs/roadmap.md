@@ -26,8 +26,8 @@ and the runtime dispatcher.
 - Result encoding: bring the `@spec` return type into the IR and use it for
   result validation/encoding. Return values are currently passed through
   without checking.
-- MCP `emit/3` target. `mix tool_call.export --format mcp` already exists, but
-  `ToolCall.emit(module, :mcp)` does not.
+- MCP `emit/3` target: done. `ToolCall.emit/3` renders `{name, description,
+  inputSchema}` on demand, and `mix tool_call.export --format mcp` uses it.
 - Gemini `emit/3` target.
 - Streaming helpers for aggregating `tool_calls` deltas. The current runtime
   operates on complete tool calls.
