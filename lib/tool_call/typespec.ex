@@ -770,6 +770,7 @@ defmodule ToolCall.Typespec do
     params = Enum.map(params || [], &prepare_param!/1)
     validate_unique_params!(params)
     validate_refs!(params, defs)
+    validate_productive!(defs)
     %{tool | params: params, defs: defs}
   end
 
@@ -865,6 +866,30 @@ defmodule ToolCall.Typespec do
               "invalid ToolCall IR: unknown $defs entry #{inspect(missing)}"
     end
   end
+
+  defp validate_productive!(defs) do
+    edges = Map.new(defs, fn {name, type} -> {name, MapSet.new(same_level_refs(type))} end)
+
+    case edges |> ToolCall.Graph.cyclic_keys() |> Enum.sort() do
+      [] ->
+        :ok
+
+      [name | _rest] ->
+        raise ArgumentError,
+              "invalid ToolCall IR: $defs cycle through #{inspect(name)} does not consume " <>
+                "a value, so coercion would not terminate; break the alias cycle"
+    end
+  end
+
+  # A ref reached without crossing an object, array or tuple is followed at the
+  # same value level, so a cycle there never terminates. A ref under a consuming
+  # constructor is productive: the value is finite.
+  defp same_level_refs(%Type{kind: :ref, ref: ref}), do: [ref]
+
+  defp same_level_refs(%Type{kind: :union, variants: variants}),
+    do: Enum.flat_map(variants || [], &same_level_refs/1)
+
+  defp same_level_refs(_type), do: []
 
   defp type_refs(%Type{kind: :ref, ref: ref}), do: [ref]
   defp type_refs(%Type{kind: :array, items: items}), do: type_refs(items)

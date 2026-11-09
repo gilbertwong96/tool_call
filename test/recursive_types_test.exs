@@ -259,4 +259,51 @@ defmodule ToolCall.RecursiveTypesTest do
       ToolCall.Coerce.coerce(%Type{kind: :ref, ref: "missing"}, "x", :number, %{})
     end
   end
+
+  test "a recursive tuple warns about strict mode once" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @type tree :: {:node, tree(), tree()}
+        @doc "Go."
+        @spec go(x :: tree()) :: map()
+        def go(x), do: x
+      end
+      """)
+
+    assert warnings =~ "prefixItems"
+    assert warnings |> String.split("prefixItems") |> Enum.count_until(3) == 2
+  end
+
+  test "a ref-only alias cycle fails the compile" do
+    assert_raise ArgumentError, ~r/\$defs cycle/, fn ->
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @type a :: b()
+        @type b :: a()
+        @doc "Go."
+        @spec go(x :: a()) :: map()
+        def go(x), do: x
+      end
+      """)
+    end
+  end
+
+  test "validate_tool!/1 rejects a ref-only cycle in hand-built IR" do
+    assert_raise ArgumentError, ~r/\$defs cycle/, fn ->
+      ToolCall.Typespec.validate_tool!(%Tool{
+        name: "go",
+        description: "Go.",
+        params: [
+          %Param{name: "x", type: %Type{kind: :ref, ref: "a"}, required: true}
+        ],
+        defs: %{
+          "a" => %Type{kind: :ref, ref: "b"},
+          "b" => %Type{kind: :ref, ref: "a"}
+        }
+      })
+    end
+  end
 end

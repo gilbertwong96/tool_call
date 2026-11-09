@@ -492,6 +492,16 @@ defmodule ToolCall.Builder do
             "Narrow the type to give the model a schema it can follow."
         )
 
+      Typespec.tuple?(type) ->
+        warn(
+          module,
+          location,
+          where <>
+            " is a tuple; emit(..., strict: true) cannot express positions (the API " <>
+            "rejects prefixItems), so the model sees a fixed-size array with unconstrained " <>
+            "items. Use a fixed-shape object, or do not use strict."
+        )
+
       true ->
         :ok
     end

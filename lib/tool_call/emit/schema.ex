@@ -2,8 +2,11 @@ defmodule ToolCall.Emit.Schema do
   @moduledoc """
   JSON Schema rendering shared by the provider emitters.
 
-  Deliberately emits a conservative subset: no `$ref`, no `$defs`, no
-  `oneOf`. Recursive types are not supported yet (see `docs/design.md`).
+  Emits a conservative subset both providers accept: no `$id`, no external
+  `$ref`, no `oneOf`. A recursive type is rendered once per tool under `$defs`,
+  beside `properties`, and referenced by `{"$ref": "#/$defs/<name>"}`. Strict
+  mode applies the same rules to a definition as to a nested object. See the
+  Recursive types section of `docs/design.md`.
   """
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
