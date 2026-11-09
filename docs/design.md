@@ -345,7 +345,8 @@ cycle finite: `@max_defs 32` per tool, shared by its parameters in declaration
 order, and `@max_instantiations_per_key 8` (a call that transforms its own
 arguments, `@type t(a) :: %{next: t({a, a})}`, grows the argument tree
 exponentially). Past either bound the reference degrades to `{}` and the compile
-warns.
+warns. Definitions a struct module contributes are budgeted per struct, not by
+the tool budget.
 
 A cyclic value is coerced through the same `$defs` map at dispatch, so nested
 maps arrive with atom keys at every level. Coercion is driven by the value,

@@ -243,7 +243,8 @@ end
   not `t`, decides the field set.
 - `required` comes from `@enforce_keys`.
 - Omitted optional fields are not inserted before `struct/2`, so `defstruct`
-  defaults apply. An unknown key is rejected with `{:unknown_keys, keys}`.
+  defaults apply. The schema does not carry the default value itself. An unknown
+  key is rejected with `{:unknown_keys, keys}`.
 - `@opaque t` is not extracted: it stays `{}` with the untyped warning.
 - A `TypeProvider` always wins over extraction. Use one when a struct should
   travel as a scalar (`Decimal.t()` as a string, say) rather than as fields.

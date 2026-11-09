@@ -178,6 +178,14 @@ an `elixir` script) succeeds, but the companion is skipped with a warning and
 the phase-one descriptions are used. Everything else — including `$defs` and
 struct extraction — is compile-time and works without Mix.
 
+## Struct defaults are not sent to the model
+
+A `defstruct` default is not emitted as `default` in the schema: the model sees
+an optional field and only learns the value if the description says so. Dispatch
+applies the default when the field is omitted, because `struct/2` starts from
+the struct's defaults. A default does not make an enforced key optional; those
+stay in `required`.
+
 ## Struct fields have no descriptions
 
 A typespec has no per-field doc, so extraction cannot fill `description` on a
@@ -194,6 +202,10 @@ definition time; `t/0` supplies the field types. A field that `t/0` omits still
 appears, typed `{}`. `__struct__/0,1` are not treated as tools. `@opaque t` still
 hides the tool, and a module with no generated `__struct__/0` (a hand-written
 struct) falls back to `t/0` alone.
+
+`use ToolCall` must come **before** `defstruct` for that capture to happen. If
+the struct is declared first, only `t/0`'s fields are used; with no `t/0` there is
+no field list at all, and the tool is not exposed.
 
 ## A struct type is a shape break in 0.2
 
@@ -264,8 +276,11 @@ the bulk of the roughly 3 µs `run/3` cost for a recursive parameter, against
 about 0.17 µs on the scalar fast path. It is a dispatch cost, not a provider
 cost. The 32-definition budget is per **tool**, shared by its parameters in
 declaration order, so an earlier parameter that grows can push a later one into
-`{}`; the 8-instantiation bound is per key within one expansion. Depth is linear,
-not a cliff: a 100 000-level value coerces in about 0.3 s without raising.
+`{}`; the 8-instantiation bound is per key within one expansion. Definitions a
+struct module contributes are budgeted per struct, not by the tool budget, so a
+tool with several struct parameters can exceed 32 entries in total. Depth is
+linear, not a cliff: a 100 000-level value coerces in about 0.3 s without
+raising.
 
 ## Remaining design boundaries
 
