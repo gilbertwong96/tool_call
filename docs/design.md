@@ -604,3 +604,12 @@ These are intentional limits rather than missing implementation:
   types chunk.
 - Struct field order is alphabetical, not `defstruct` order, so `required` is
   reproducible.
+- Struct fields carry no description. A typespec has no per-field doc, so a
+  nested object reaches the model as property names only; `@doc` and `@typedoc`
+  describe parameters, not fields. Flatten the shape into parameters with
+  `@doc` bullets, or explain it in the tool description, when field meaning
+  matters.
+- A struct defined in the same module as its tools is extracted from that
+  module's `@type t/0` literal. A field that `t/0` omits cannot be recovered
+  (the generated `__struct__/0` is not callable while the module compiles), so
+  list every field in `t/0` or move the struct to another module.

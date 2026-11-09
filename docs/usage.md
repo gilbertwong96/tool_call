@@ -248,6 +248,9 @@ end
   travel as a scalar (`Decimal.t()` as a string, say) rather than as fields.
 - A recursive struct (`%Node{children: [Node.t()]}`) uses `$defs` like a
   recursive local type.
+- Field properties carry no description: a typespec has no per-field doc. Put the
+  field meaning in the tool description, or flatten the shape into parameters
+  with `@doc` bullets.
 
 `struct()` with no module is still an open object; the function receives a
 plain map.

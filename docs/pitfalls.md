@@ -177,6 +177,22 @@ an `elixir` script) succeeds, but the companion is skipped with a warning and
 the phase-one descriptions are used. Everything else — including `$defs` and
 struct extraction — is compile-time and works without Mix.
 
+## Struct fields have no descriptions
+
+A typespec has no per-field doc, so extraction cannot fill `description` on a
+struct's properties: the model sees `city`, `country`, `street` as bare names.
+`@doc` and `@typedoc` describe parameters, not fields. Flatten the shape into
+parameters with `@doc` bullets, or explain the fields in the tool description,
+when their meaning matters.
+
+## A struct and its tools in one module
+
+A struct defined in the same module as its tools is extracted from that module's
+`@type t/0` literal, and `defstruct`'s generated `__struct__/0,1` are not treated
+as tools. A field that `t/0` omits cannot be recovered, because `__struct__/0`
+does not exist yet while the module compiles; list every field in `t/0`, or move
+the struct to its own module.
+
 ## A struct type is a shape break in 0.2
 
 `Decimal.t()`, `URI.t()`, `Range.t()` and any other module with a public

@@ -25,6 +25,12 @@
 
 ### Changed
 
+- A struct defined in the same module as its tools is now extracted from that
+  module's `@type t/0` literal, and `defstruct`'s generated `__struct__/0,1` no
+  longer warn about a missing `@spec`.
+- An enum that mixes atoms with booleans or integers stringifies the atoms, so
+  the schema term is JSON-encodable by any encoder.
+
 - **A tool with an untyped argument is not exposed.** `term()`, `any()`, a
   remote type without a provider and an `@opaque` struct leave the argument
   undescribable, so the function is skipped with a compile-time warning instead
