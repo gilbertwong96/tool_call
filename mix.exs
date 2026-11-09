@@ -18,6 +18,7 @@ defmodule ToolCall.MixProject do
         main: "readme",
         extras: [
           "README.md",
+          "CHANGELOG.md",
           "docs/usage.md",
           "docs/design.md",
           "docs/roadmap.md",
@@ -63,7 +64,7 @@ defmodule ToolCall.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      files: ~w(lib docs README.md LICENSE mix.exs .formatter.exs),
+      files: ~w(lib docs README.md CHANGELOG.md LICENSE mix.exs .formatter.exs),
       links: %{}
     ]
   end
