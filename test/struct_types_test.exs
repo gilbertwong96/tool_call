@@ -217,4 +217,38 @@ defmodule ToolCall.StructTypesTest do
     assert to["additionalProperties"] == false
     assert Enum.sort(to["required"]) == ["city"]
   end
+
+  defp run(source, name, args) do
+    module = compile!(source)
+    ToolCall.run(module, name, args)
+  end
+
+  test "dispatch returns the declared struct with defaults applied" do
+    assert {:ok, %ToolCall.TestFixtures.Address{city: "Oslo", street: nil, country: "NO"}} =
+             run(@ship, :go, %{"to" => %{"city" => "Oslo"}})
+  end
+
+  test "dispatch rejects an unknown struct field" do
+    assert {:error, {:invalid_argument, {"to", {:unknown_keys, ["zip"]}}}} =
+             run(@ship, :go, %{"to" => %{"city" => "Oslo", "zip" => "0150"}})
+  end
+
+  test "dispatch reconstructs a recursive struct at every level" do
+    source = """
+    defmodule FIXTURE do
+      use ToolCall
+      @doc "Go."
+      @spec go(n :: ToolCall.TestFixtures.TreeNode.t()) :: map()
+      def go(n), do: n
+    end
+    """
+
+    expected = %ToolCall.TestFixtures.TreeNode{
+      value: 1,
+      children: [%ToolCall.TestFixtures.TreeNode{value: 2, children: []}]
+    }
+
+    args = %{"n" => %{"value" => 1, "children" => [%{"value" => 2, "children" => []}]}}
+    assert {:ok, ^expected} = run(source, :go, args)
+  end
 end

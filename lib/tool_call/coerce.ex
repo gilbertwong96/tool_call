@@ -337,7 +337,12 @@ defmodule ToolCall.Coerce do
 
     with {:ok, known} <- coerce_fields(fields, value, defs),
          {:ok, extra} <- coerce_extra(type, value, fields, defs) do
-      {:ok, Map.merge(known, extra)}
+      coerced = Map.merge(known, extra)
+
+      case type.struct do
+        nil -> {:ok, coerced}
+        module -> {:ok, struct(module, coerced)}
+      end
     end
   end
 
