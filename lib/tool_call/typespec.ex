@@ -818,10 +818,11 @@ defmodule ToolCall.Typespec do
     validate_description!(description, "tool")
     defs = validate_defs!(tool.defs || %{})
     params = Enum.map(params || [], &prepare_param!/1)
+    result = validate_result!(tool.result)
     validate_unique_params!(params)
-    validate_refs!(params, defs)
+    validate_refs!(params, result, defs)
     validate_productive!(defs)
-    %{tool | params: params, defs: defs}
+    %{tool | params: params, defs: defs, result: result}
   end
 
   def validate_tool!(%Tool{} = tool) do
@@ -931,9 +932,18 @@ defmodule ToolCall.Typespec do
     raise ArgumentError, "invalid ToolCall IR: defs must be a map, got: #{inspect(other)}"
   end
 
-  defp validate_refs!(params, defs) do
+  defp validate_result!(nil), do: nil
+  defp validate_result!(%Type{} = type), do: validate_type!(type)
+
+  defp validate_result!(other) do
+    raise ArgumentError,
+          "invalid ToolCall IR: result must be a type or nil, got: #{inspect(other)}"
+  end
+
+  defp validate_refs!(params, result, defs) do
     refs =
       Enum.flat_map(params, &type_refs(&1.type)) ++
+        type_refs(result) ++
         Enum.flat_map(Map.values(defs), &type_refs/1)
 
     case Enum.reject(refs, &Map.has_key?(defs, &1)) do

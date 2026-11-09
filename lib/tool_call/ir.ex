@@ -120,8 +120,12 @@ defmodule ToolCall.IR do
     @moduledoc """
     A compiled tool, as embedded into the defining module.
 
-    `defs` holds the `$defs` entries the tool's parameters reference by
-    `kind: :ref`. It is empty for a tool without recursive types.
+    `defs` holds the `$defs` entries the tool's parameters and result reference
+    by `kind: :ref`. Only the entries reachable from the parameters are rendered
+    into the input schema.
+
+    `result` is the declared `@spec` return type, or nil for a `no_return()`
+    spec. Result validation uses it; it is never rendered.
     """
     defstruct name: nil,
               description: nil,
@@ -129,7 +133,8 @@ defmodule ToolCall.IR do
               module: nil,
               fun: nil,
               source: nil,
-              defs: %{}
+              defs: %{},
+              result: nil
 
     @type t :: %__MODULE__{}
   end

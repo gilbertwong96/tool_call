@@ -30,7 +30,7 @@ defmodule ToolCall.Structs.Resolve do
       existing: existing
     }
 
-    roots = Enum.map(tool.params, & &1.type) ++ Map.values(tool.defs || %{})
+    roots = Enum.map(tool.params, & &1.type) ++ Map.values(tool.defs || %{}) ++ [tool.result]
     state = Enum.reduce(roots, state, &collect_type(&1, providers, &2, normalize))
 
     ctx = %{
@@ -42,6 +42,7 @@ defmodule ToolCall.Structs.Resolve do
     }
 
     {params, ctx} = Enum.map_reduce(tool.params, ctx, &build_param/2)
+    {result, ctx} = build_type(tool.result, ctx)
 
     {defs, ctx} =
       tool.defs
@@ -53,7 +54,8 @@ defmodule ToolCall.Structs.Resolve do
 
     defs = Map.merge(defs, ctx.struct_defs)
 
-    {%{tool | params: params, defs: defs}, Enum.reverse(state.warnings), state.raw}
+    {%{tool | params: params, defs: defs, result: result}, Enum.reverse(state.warnings),
+     state.raw}
   end
 
   # --- discovery ------------------------------------------------------------

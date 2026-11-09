@@ -205,7 +205,7 @@ defmodule ToolCall.Builder do
 
   defp make_tool(name, head_args, doc, spec, context, location) do
     {spec, constraints} = unwrap_spec(spec)
-    {:"::", _, [head, _return_ast]} = spec
+    {:"::", _, [head, return_ast]} = spec
     {^name, _, spec_args} = head
 
     bindings = constraint_bindings(constraints)
@@ -213,7 +213,7 @@ defmodule ToolCall.Builder do
     doc_info = Doc.parse(doc_value(doc))
     arity = length(spec_args)
 
-    {params, {{defs, _registry}, truncated}} =
+    {params, {{defs, registry}, truncated}} =
       spec_args
       |> Enum.with_index(1)
       |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {arg_ast, index},
@@ -290,6 +290,9 @@ defmodule ToolCall.Builder do
         |> drop_incompatible_default(context.module, location, name, arity)
       end)
 
+    {result, defs} =
+      result_type(return_ast, bindings, context, {defs, registry}, name, arity, location)
+
     {%Tool{
        name: Atom.to_string(name),
        description: doc_info.description,
@@ -297,8 +300,50 @@ defmodule ToolCall.Builder do
        module: context.module,
        fun: name,
        source: spec,
-       defs: defs
+       defs: defs,
+       result: result
      }, truncated}
+  end
+
+  defp result_type({:no_return, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
+    do: {nil, defs}
+
+  defp result_type({:none, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
+    do: {nil, defs}
+
+  defp result_type(return_ast, bindings, context, {defs, registry}, name, arity, location) do
+    source_ast =
+      return_ast
+      |> substitute_vars(bindings)
+      |> expand_aliases(context.env)
+      |> localize_module_types(context.module)
+
+    remaining = max(LocalTypes.max_defs() - map_size(defs), 0)
+
+    {type_ast, truncated?, insts} =
+      LocalTypes.expand(source_ast, context.definitions,
+        cyclic: context.cyclic,
+        max_defs: remaining
+      )
+
+    {type_ast, {defs, _registry}} =
+      hoist_instantiations(type_ast, insts, {defs, registry}, context)
+
+    type_ast =
+      type_ast
+      |> expand_aliases(context.env)
+      |> localize_module_types(context.module)
+
+    if truncated? do
+      warn(
+        context.module,
+        location,
+        "return type of #{name}/#{arity} hit the type expansion budget; the rest of " <>
+          "the type is treated as {}."
+      )
+    end
+
+    {Typespec.to_type(type_ast, context.providers), defs}
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
