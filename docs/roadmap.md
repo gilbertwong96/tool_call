@@ -2,7 +2,7 @@
 
 The `0.2`, `0.3` and `0.4` labels are planned minor releases. They are not the
 current version, fixed dates, or compatibility promises. The current line is
-`0.1.0-dev`; the stages group work by capability.
+`0.1.0`; the stages group work by capability.
 
 ## 0.1 — current
 
@@ -42,8 +42,6 @@ and the runtime dispatcher.
 
 These are useful additions without a target release yet:
 
-- Hex publication and release packaging metadata.
-- `CHANGELOG.md` and release notes for the first non-dev version.
 - Additional built-in type providers such as `Decimal`, `URI`, `MapSet`,
   `Range` and `Regex`.
 - Nested or remote typedoc inheritance if a description-composition model is

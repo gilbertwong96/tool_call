@@ -44,7 +44,6 @@ def deps do
 end
 ```
 
-`0.1.0` is not on Hex yet; until then use a `path:` or `git:` dependency.
 Requires Elixir `~> 1.18` and Erlang/OTP 27.1+. The OTP floor is enforced at
 compile time; there are no runtime dependencies.
 
