@@ -5,6 +5,7 @@
 ```sh
 mix deps.get
 mix ci
+mix coveralls.html
 ```
 
 ## Conventions
@@ -14,6 +15,8 @@ mix ci
   `spec_lint --warnings-as-errors`, `credo --strict`, `dialyzer`,
   `ex_dna --max-clones 0` and `reach.check --arch --smells` in the `test`
   environment.
+- Use `mix coveralls.html` to write the coverage report to `cover/`; it fails
+  below 100%.
 - Keep changes small, tested, and formatted.
 - `.credo.exs` and `.reach.exs` come from the VibeKit 0.1.7 installer. VibeKit
   itself is not a dependency: re-run `mix igniter.install vibe_kit --agents-md`

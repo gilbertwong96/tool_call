@@ -49,6 +49,29 @@ jobs:
       - run: mix deps.get
       - run: MIX_ENV=dev mix deps.get
       - run: mix ci
-      - run: mix test --cover > /tmp/cover.out
-      - run: grep -q '100.00% | Total' /tmp/cover.out
+      - name: Run tests with coverage
+        run: mix coveralls.html
+      - name: Generate coverage JSON
+        if: matrix.elixir == '1.20'
+        run: mix coveralls.json
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.elixir }}-${{ matrix.otp }}
+          path: cover/
+          retention-days: 30
+      - name: Post coverage to Codecov
+        if: matrix.elixir == '1.20'
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        run: |
+          if [ -z "$CODECOV_TOKEN" ]; then
+            echo "::notice::CODECOV_TOKEN not set - skipping Codecov upload."
+            exit 0
+          fi
+          curl -Os https://uploader.codecov.io/latest/linux/codecov
+          chmod +x codecov
+          ./codecov --token "$CODECOV_TOKEN" --file cover/excoveralls.json
+        continue-on-error: true
       - run: MIX_ENV=dev mix docs --warnings-as-errors

@@ -26,6 +26,7 @@ defmodule ToolCall.MixProject do
         ]
       ],
       dialyzer: [plt_add_apps: [:mix, :ex_unit]],
+      test_coverage: [tool: ExCoveralls],
       aliases: aliases()
     ]
   end
@@ -36,12 +37,19 @@ defmodule ToolCall.MixProject do
 
   def cli do
     [
-      preferred_envs: [ci: :test]
+      preferred_envs: [
+        ci: :test,
+        coveralls: :test,
+        "coveralls.html": :test,
+        "coveralls.json": :test,
+        "coveralls.cobertura": :test
+      ]
     ]
   end
 
   defp deps do
     [
+      {:excoveralls, "~> 0.18", only: [:dev, :test], runtime: false},
       {:ex_slop, "~> 0.4", only: [:dev, :test], runtime: false},
       {:spec_lint, "~> 0.1", only: [:dev, :test], runtime: false},
       {:reach, "~> 2.0", only: [:dev, :test], runtime: false},
