@@ -376,11 +376,48 @@ defmodule ToolCall do
   def emit(%Tool{} = tool, target, opts), do: ToolCall.Emit.emit(tool, target, opts)
   def emit(tools, target, opts) when is_list(tools), do: ToolCall.Emit.emit(tools, target, opts)
 
-  @doc "Runs a tool by name. `args` uses string keys, as decoded from JSON."
-  @spec run(module(), atom() | String.t(), term()) :: {:ok, term()} | {:error, term()}
-  def run(module, name, args) do
+  @doc """
+  Runs a tool by name. `args` uses string keys, as decoded from JSON.
+
+  ## Options
+
+    * `:validate_result` - when true, the function's raw return value is
+      validated against the declared `@spec` return type before
+      `{:ok, value}` / `{:error, reason}` is unwrapped. A mismatch returns
+      `{:error, {:invalid_result, reason}}`. Defaults to false, which is the
+      generated fast path. Validation uses the generic runner path.
+  """
+  @spec run(module(), atom() | String.t(), term(), keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def run(module, name, args, opts \\ [])
+
+  def run(module, name, args, opts) do
+    validate_result? = validate_result_option!(opts)
     ensure_tool_module!(module, :__run__)
-    module.__run__(name, args)
+
+    if validate_result? do
+      ToolCall.Runner.run(module, module.__tools__(), name, args, validate_result: true)
+    else
+      module.__run__(name, args)
+    end
+  end
+
+  defp validate_result_option!(opts) do
+    case Keyword.keys(opts) -- [:validate_result] do
+      [] -> :ok
+      unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
+    end
+
+    case Keyword.fetch(opts, :validate_result) do
+      {:ok, value} when is_boolean(value) ->
+        value
+
+      {:ok, other} ->
+        raise ArgumentError, "validate_result must be a boolean, got: #{inspect(other)}"
+
+      :error ->
+        false
+    end
   end
 
   # `Type.source` is runtime data for charlist handling; the spec and parameter

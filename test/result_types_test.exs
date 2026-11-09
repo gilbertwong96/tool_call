@@ -157,4 +157,107 @@ defmodule ToolCall.ResultTypesTest do
 
     refute warnings =~ "no JSON representation"
   end
+
+  @ok_map """
+  defmodule FIXTURE do
+    use ToolCall
+
+    @doc "Go."
+    @spec go(x :: integer()) :: {:ok, map()} | {:error, String.t()}
+    def go(x), do: {:ok, %{x: x}}
+  end
+  """
+
+  test "validation is opt-in" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: integer()
+        def go(_x), do: "not an integer"
+      end
+      """)
+
+    assert {:ok, "not an integer"} = ToolCall.run(module, :go, %{"x" => 1})
+
+    assert {:error, {:invalid_result, _}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a matching raw return passes and is unwrapped" do
+    module = compile!(@ok_map)
+    assert {:ok, %{x: 1}} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "the payload is not what gets validated" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: {:ok, map()} | {:error, String.t()}
+        def go(_x), do: {:ok, "not a map"}
+      end
+      """)
+
+    assert {:ok, "not a map"} = ToolCall.run(module, :go, %{"x" => 1})
+
+    assert {:error, {:invalid_result, _}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a function that raises keeps the raised error" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: integer()
+        def go(_x), do: raise(ArgumentError, "boom")
+      end
+      """)
+
+    assert {:error, {:raised, "boom"}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "unknown options and a non-boolean validate_result raise" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: integer()
+        def go(x), do: x
+      end
+      """)
+
+    assert_raise ArgumentError, ~r/unknown options/, fn ->
+      ToolCall.run(module, :go, %{"x" => 1}, nope: true)
+    end
+
+    assert_raise ArgumentError, ~r/validate_result/, fn ->
+      ToolCall.run(module, :go, %{"x" => 1}, validate_result: :yes)
+    end
+  end
+
+  test "a tool without a result type skips validation" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: no_return()
+        def go(_x), do: :anything
+      end
+      """)
+
+    assert {:ok, :anything} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
 end

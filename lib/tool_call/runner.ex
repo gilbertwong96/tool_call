@@ -8,7 +8,7 @@ defmodule ToolCall.Runner do
 
   require Logger
 
-  alias ToolCall.{Coerce, Typespec}
+  alias ToolCall.{Coerce, Typespec, Validate}
   alias ToolCall.IR.{Param, Tool, Type}
 
   @doc """
@@ -22,14 +22,16 @@ defmodule ToolCall.Runner do
   Runtime tool lists are validated before dispatch. Compiled tools can use
   `run_prepared/4` to skip that validation.
   """
-  @spec run(module(), [Tool.t()], atom() | String.t(), term()) ::
+  @spec run(module(), [Tool.t()], atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
-  def run(module, tools, name, args) when is_map(args) do
+  def run(module, tools, name, args, opts \\ [])
+
+  def run(module, tools, name, args, opts) when is_map(args) do
     tools = Enum.map(tools, &Typespec.validate_tool!/1)
-    run_prepared(module, tools, name, args)
+    run_prepared(module, tools, name, args, opts)
   end
 
-  def run(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+  def run(_module, _tools, _name, args, _opts), do: {:error, {:invalid_arguments, args}}
 
   @doc """
   Internal fast path for already prepared tools.
@@ -37,29 +39,39 @@ defmodule ToolCall.Runner do
   This skips runtime IR validation. Callers must pass tools prepared by
   `ToolCall.Typespec.validate_tool!/1`; use `run/4` for arbitrary runtime tools.
   """
-  @spec run_prepared(module(), [Tool.t()], atom() | String.t(), term()) ::
+  @spec run_prepared(module(), [Tool.t()], atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
-  def run_prepared(module, tools, name, args) when is_map(args) do
+  def run_prepared(module, tools, name, args, opts \\ [])
+
+  def run_prepared(module, tools, name, args, opts) when is_map(args) do
     name = to_string(name)
 
     case fetch(tools, name) do
-      {:ok, tool} -> run_prepared_tool(module, tool, args)
+      {:ok, tool} -> run_prepared_tool(module, tool, args, true, nil, opts)
       error -> error
     end
   end
 
-  def run_prepared(_module, _tools, _name, args), do: {:error, {:invalid_arguments, args}}
+  def run_prepared(_module, _tools, _name, args, _opts),
+    do: {:error, {:invalid_arguments, args}}
 
   @doc false
   @spec run_prepared_tool(module(), Tool.t(), term()) :: {:ok, term()} | {:error, term()}
   def run_prepared_tool(module, %Tool{} = tool, args) do
-    run_prepared_tool(module, tool, args, true, nil)
+    run_prepared_tool(module, tool, args, true, nil, [])
   end
 
   @doc false
   @spec run_prepared_tool(module(), Tool.t(), term(), boolean(), [String.t()] | nil) ::
           {:ok, term()} | {:error, term()}
-  def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known)
+  def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known) do
+    run_prepared_tool(module, tool, args, check_nested?, known, [])
+  end
+
+  @doc false
+  @spec run_prepared_tool(module(), Tool.t(), term(), boolean(), [String.t()] | nil, keyword()) ::
+          {:ok, term()} | {:error, term()}
+  def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
       when is_map(args) do
     known = known || Enum.map(tool.params || [], & &1.name)
 
@@ -68,11 +80,11 @@ defmodule ToolCall.Runner do
          :ok <- reject_unknown_arguments(args, known),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
-      invoke(module, tool, positional)
+      invoke(module, tool, positional, Keyword.get(opts, :validate_result, false))
     end
   end
 
-  def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known),
+  def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known, _opts),
     do: {:error, {:invalid_arguments, args}}
 
   @doc false
@@ -291,12 +303,32 @@ defmodule ToolCall.Runner do
     {missing, dropped}
   end
 
-  defp invoke(module, %Tool{} = tool, args) do
-    normalize(apply(module, tool.fun, args))
+  defp invoke(module, %Tool{} = tool, args, validate_result?) do
+    case apply_tool(module, tool, args) do
+      {:ok, value} ->
+        with :ok <- maybe_validate_result(tool, value, validate_result?), do: normalize(value)
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  defp apply_tool(module, %Tool{} = tool, args) do
+    {:ok, apply(module, tool.fun, args)}
   rescue
     exception -> raised(exception, __STACKTRACE__)
   catch
     :throw, value -> caught(:throw, value)
     :exit, reason -> caught(:exit, reason)
+  end
+
+  defp maybe_validate_result(_tool, _value, false), do: :ok
+  defp maybe_validate_result(%Tool{result: nil}, _value, _validate?), do: :ok
+
+  defp maybe_validate_result(%Tool{result: result, defs: defs}, value, true) do
+    case Validate.valid?(result, value, defs || %{}) do
+      :ok -> :ok
+      {:error, reason} -> {:error, {:invalid_result, reason}}
+    end
   end
 end
