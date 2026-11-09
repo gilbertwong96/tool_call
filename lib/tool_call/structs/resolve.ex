@@ -300,7 +300,7 @@ defmodule ToolCall.Structs.Resolve do
     {%{param | type: type}, ctx}
   end
 
-  defp build_type(%Type{kind: :struct, struct: module}, ctx), do: build_struct(module, ctx)
+  defp build_type(%Type{kind: :struct} = type, ctx), do: build_struct(type, ctx)
 
   defp build_type(%Type{kind: :object} = type, ctx) do
     {fields, ctx} = Enum.map_reduce(type.fields || [], ctx, &build_field/2)
@@ -334,36 +334,48 @@ defmodule ToolCall.Structs.Resolve do
     {%{field | type: type}, ctx}
   end
 
-  defp build_struct(module, ctx) do
+  defp build_struct(%Type{struct: module, nullable: nullable}, ctx) do
     case Map.get(ctx.cache, module) do
-      %{fields: fields, required: required} -> build_cached_struct(module, fields, required, ctx)
-      :opaque -> {%Type{kind: :any, source: {:opaque_struct, module}}, ctx}
-      _error_or_absent -> {%Type{kind: :any, source: {:unresolved_struct, module}}, ctx}
+      %{fields: fields, required: required} ->
+        build_cached_struct(module, nullable, fields, required, ctx)
+
+      :opaque ->
+        {%Type{kind: :any, source: {:opaque_struct, module}, nullable: nullable}, ctx}
+
+      _error_or_absent ->
+        {%Type{kind: :any, source: {:unresolved_struct, module}, nullable: nullable}, ctx}
     end
   end
 
-  defp build_cached_struct(module, fields, required, ctx) do
+  defp build_cached_struct(module, nullable, fields, required, ctx) do
     if MapSet.member?(ctx.cyclic, module) do
-      build_cyclic_struct(module, fields, required, ctx)
+      build_cyclic_struct(module, nullable, fields, required, ctx)
     else
       {built, ctx} = build_fields(fields, required, ctx)
-      {%Type{kind: :object, struct: module, fields: built, additional: nil}, ctx}
+
+      {%Type{
+         kind: :object,
+         struct: module,
+         fields: built,
+         additional: nil,
+         nullable: nullable
+       }, ctx}
     end
   end
 
-  defp build_cyclic_struct(module, fields, required, ctx) do
+  defp build_cyclic_struct(module, nullable, fields, required, ctx) do
     {name, ctx} = struct_def_name(module, ctx)
 
     case Map.fetch(ctx.struct_defs, name) do
       {:ok, _type} ->
-        {%Type{kind: :ref, ref: name}, ctx}
+        {%Type{kind: :ref, ref: name, nullable: nullable}, ctx}
 
       :error ->
         ctx = %{ctx | struct_defs: Map.put(ctx.struct_defs, name, :building)}
         {built, ctx} = build_fields(fields, required, ctx)
         object = %Type{kind: :object, struct: module, fields: built, additional: nil}
 
-        {%Type{kind: :ref, ref: name},
+        {%Type{kind: :ref, ref: name, nullable: nullable},
          %{ctx | struct_defs: Map.put(ctx.struct_defs, name, object)}}
     end
   end

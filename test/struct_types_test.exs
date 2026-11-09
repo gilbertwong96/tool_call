@@ -664,4 +664,46 @@ defmodule ToolCall.StructTypesTest do
     assert %Type{kind: :object, struct: ^module, fields: [%{name: "city"}]} =
              hd(tool.params).type
   end
+
+  test "a nullable struct parameter keeps the null branch" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Find."
+        @spec go(to :: ToolCall.TestFixtures.Address.t() | nil) :: map()
+        def go(nil), do: %{}
+
+        def go(to), do: to
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Param{type: %Type{kind: :object, struct: Address, nullable: true}} = hd(tool.params)
+    assert %{"type" => ["object", "null"]} = param_schema(module, "go", "to")
+    assert {:ok, %{}} = ToolCall.run(module, :go, %{"to" => nil})
+  end
+
+  test "a nullable recursive struct parameter is a nullable ref" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Grow."
+        @spec go(node :: ToolCall.TestFixtures.TreeNode.t() | nil) :: map()
+        def go(nil), do: %{}
+
+        def go(node), do: %{value: node.value}
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Param{type: %Type{kind: :ref, ref: ref, nullable: true}} = hd(tool.params)
+    assert %Type{kind: :object, struct: TreeNode} = tool.defs[ref]
+    assert {:ok, %{}} = ToolCall.run(module, :go, %{"node" => nil})
+  end
 end

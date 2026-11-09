@@ -316,4 +316,42 @@ defmodule ToolCall.ResultTypesTest do
       ToolCall.Runner.run(module, [tool], :go, %{"x" => 1}, validate_result: :yes)
     end
   end
+
+  test "a nullable struct result accepts nil" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Find."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.Address.t() | nil
+        def go(_x), do: nil
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Type{kind: :object, struct: ToolCall.TestFixtures.Address, nullable: true} =
+             tool.result
+
+    assert {:ok, nil} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a nullable recursive struct result is a nullable ref" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Grow."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.TreeNode.t() | nil
+        def go(_x), do: nil
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Type{kind: :ref, nullable: true} = tool.result
+    assert {:ok, nil} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
 end
