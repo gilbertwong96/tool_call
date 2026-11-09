@@ -1325,4 +1325,32 @@ defmodule ToolCall.BuilderTest do
     refute param.required
     assert param.default == nil
   end
+
+  test "the definition budget is shared by the tool's parameters" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+      #{cycle("a", 17)}
+      #{cycle("b", 17)}
+
+        @doc "Go."
+        @spec go(x :: a0(), y :: b0()) :: map()
+        def go(x, y), do: {x, y}
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+    assert map_size(tool.defs) == 32
+    assert warnings =~ "expansion budget"
+  end
+
+  defp cycle(prefix, count) do
+    for i <- 0..(count - 1) do
+      next = if i == count - 1, do: "#{prefix}0()", else: "#{prefix}#{i + 1}()"
+      "  @type #{prefix}#{i} :: {#{next}}\n"
+    end
+    |> Enum.join()
+  end
 end

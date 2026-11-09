@@ -10,6 +10,7 @@ defmodule ToolCall.StructTypesTest do
     FriendA,
     NoType,
     PathNode,
+    SetNode,
     TreeNode,
     WeirdType
   }
@@ -451,5 +452,144 @@ defmodule ToolCall.StructTypesTest do
       """)
 
     assert warnings |> String.split("only a parameterized @type t") |> Enum.count_until(3) == 2
+  end
+
+  test "a struct defined in the tool module is extracted from its @type t" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @enforce_keys [:city]
+        defstruct [:city, :country]
+
+        @type t :: %__MODULE__{city: String.t(), country: String.t()}
+
+        @doc "Go."
+        @spec go(a :: t()) :: map()
+        def go(a), do: a
+      end
+      """)
+
+    refute warnings =~ "__struct__"
+
+    [tool] = ToolCall.tools(module)
+    [param] = tool.params
+
+    assert %Type{kind: :object, struct: ^module, fields: fields} = param.type
+    assert Enum.map(fields, & &1.name) == ["city", "country"]
+    assert fields |> Enum.filter(& &1.required) |> Enum.map(& &1.name) == ["city"]
+
+    assert {:ok, %{__struct__: ^module, city: "Oslo", country: "NL"}} =
+             ToolCall.run(module, :go, %{"a" => %{"city" => "Oslo", "country" => "NL"}})
+  end
+
+  test "a same-module struct literal is extracted too" do
+    %Tool{params: [%Param{type: %Type{kind: :object, struct: module, fields: fields}}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        defstruct [:city]
+
+        @type t :: %__MODULE__{city: String.t()}
+
+        @doc "Go."
+        @spec go(a :: %__MODULE__{}) :: map()
+        def go(a), do: a
+      end
+      """)
+
+    assert Enum.map(fields, & &1.name) == ["city"]
+
+    assert {:ok, %{__struct__: ^module, city: "Oslo"}} =
+             ToolCall.run(module, :go, %{"a" => %{"city" => "Oslo"}})
+  end
+
+  test "a struct cycle through a provider is hoisted and keeps the transform" do
+    %Tool{defs: defs, params: [%Param{type: %Type{kind: :ref, ref: ref}}]} =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(n :: ToolCall.TestFixtures.SetNode.t()) :: map()
+        def go(n), do: n
+      end
+      """)
+
+    assert ref == "ToolCall_TestFixtures_SetNode"
+
+    children =
+      defs[ref].fields |> Enum.find(&(&1.name == "children")) |> Map.fetch!(:type)
+
+    assert %Type{kind: :array, items: %Type{kind: :ref, ref: ^ref}, transform: {_module, _fun}} =
+             children
+  end
+
+  test "dispatch rebuilds a struct cycle through a provider" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+        @doc "Go."
+        @spec go(n :: ToolCall.TestFixtures.SetNode.t()) :: map()
+        def go(n), do: n
+      end
+      """)
+
+    args = %{
+      "n" => %{
+        "value" => 1,
+        "children" => [%{"value" => 2, "children" => []}]
+      }
+    }
+
+    assert {:ok, %SetNode{value: 1, children: children}} = ToolCall.run(module, :go, args)
+
+    assert MapSet.to_list(children) == [%SetNode{value: 2, children: MapSet.new()}]
+  end
+
+  test "a same-module struct without @type t is not exposed" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        defstruct [:city]
+
+        @doc "Go."
+        @spec go(a :: %__MODULE__{}) :: map()
+        def go(a), do: a
+      end
+      """)
+
+    assert ToolCall.tools(module) == []
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "a")
+  end
+
+  test "a same-module struct whose t/0 is unusable is not exposed" do
+    for type <- [
+          "@opaque t :: %__MODULE__{city: String.t()}",
+          "@type t :: String.t()",
+          "@type t(a) :: %__MODULE__{city: a}"
+        ] do
+      {module, warnings} =
+        compile_with_warnings!("""
+        defmodule FIXTURE do
+          use ToolCall
+
+          defstruct [:city]
+
+          #{type}
+
+          @doc "Go."
+          @spec go(a :: %__MODULE__{}) :: map()
+          def go(a), do: a
+        end
+        """)
+
+      assert ToolCall.tools(module) == []
+      assert warnings =~ ~s(tool "go" is not exposed)
+    end
   end
 end

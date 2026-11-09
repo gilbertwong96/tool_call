@@ -15,20 +15,49 @@ defmodule ToolCall.Structs do
 
   @spec struct?(module()) :: boolean()
   def struct?(module) when is_atom(module) do
-    Code.ensure_compiled(module) == {:module, module} and
-      function_exported?(module, :__struct__, 0)
+    case Code.ensure_compiled(module) do
+      {:module, ^module} -> function_exported?(module, :__struct__, 0)
+      _other -> open_struct?(module)
+    end
   end
 
-  @spec fields(module()) ::
+  defp open_struct?(module) do
+    Module.open?(module) and {:__struct__, 1} in Module.definitions_in(module, :def)
+  rescue
+    _exception -> false
+  end
+
+  @spec fields(module(), keyword()) ::
           {:ok, %{atom() => term()}, [LocalTypes.instantiation()], field_status()}
           | :opaque
           | :error
-  def fields(module) when is_atom(module) do
-    if struct?(module), do: do_fields(module), else: :error
+  def fields(module, opts \\ []) when is_atom(module) do
+    current = Keyword.get(opts, :current)
+
+    cond do
+      current != nil and module == current ->
+        current_fields(module, Keyword.get(opts, :normalize, & &1))
+
+      struct?(module) ->
+        do_fields(module)
+
+      true ->
+        :error
+    end
   end
 
-  @spec enforced_keys(module()) :: {:ok, [atom()]} | :error
-  def enforced_keys(module) when is_atom(module) do
+  @spec enforced_keys(module(), keyword()) :: {:ok, [atom()]} | :error
+  def enforced_keys(module, opts \\ []) when is_atom(module) do
+    current = Keyword.get(opts, :current)
+
+    if current != nil and module == current do
+      current_enforced_keys(module)
+    else
+      probe_enforced_keys(module)
+    end
+  end
+
+  defp probe_enforced_keys(module) do
     defaults = module.__struct__() |> Map.delete(:__struct__)
     keys = defaults |> Map.keys() |> Enum.reject(&(&1 == :__exception__)) |> Enum.sort()
 
@@ -45,6 +74,81 @@ defmodule ToolCall.Structs do
     {:ok, enforced}
   rescue
     _exception -> :error
+  end
+
+  defp current_enforced_keys(module) do
+    keys =
+      module
+      |> Module.get_attribute(:enforce_keys)
+      |> List.wrap()
+      |> Enum.reject(&(&1 == :__exception__))
+      |> Enum.sort()
+
+    {:ok, keys}
+  rescue
+    _exception -> :error
+  end
+
+  defp current_fields(module, normalize) do
+    case current_type(module) do
+      {:ok, body} -> current_type_fields(module, body, normalize)
+      :opaque -> :opaque
+      _absent_or_unusable -> :error
+    end
+  end
+
+  defp current_type(module) do
+    types = List.wrap(Module.get_attribute(module, :type))
+    opaques = List.wrap(Module.get_attribute(module, :opaque))
+
+    t0 = fn
+      {:type, {:"::", _, [{:t, _, params}, body]}, _} when params in [nil, []] -> {:ok, body}
+      _entry -> nil
+    end
+
+    parameterized? =
+      Enum.any?(types, fn
+        {:type, {:"::", _, [{:t, _, params}, _]}, _} -> is_list(params) and params != []
+        _entry -> false
+      end)
+
+    opaque? =
+      Enum.any?(opaques, fn
+        {:opaque, {:"::", _, [{:t, _, params}, _]}, _} -> params in [nil, []]
+        _entry -> false
+      end)
+
+    cond do
+      opaque? -> :opaque
+      found = Enum.find_value(types, t0) -> found
+      parameterized? -> :parameterized_t
+      true -> :absent
+    end
+  end
+
+  defp current_type_fields(module, body, normalize) do
+    definitions =
+      module
+      |> LocalTypes.definitions()
+      |> Map.new(fn {key, {params, type}} -> {key, {params, normalize.(type)}} end)
+      |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
+
+    {expanded, truncated?, insts} = LocalTypes.expand(normalize.(body), definitions)
+
+    case expanded do
+      {:%, _, [^module, {:%{}, _, pairs}]} ->
+        types = Map.new(pairs)
+
+        fields =
+          for {field, _type} <- pairs, into: %{} do
+            {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
+          end
+
+        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
+
+      _other ->
+        :error
+    end
   end
 
   @spec name(module()) :: String.t()
@@ -134,7 +238,6 @@ defmodule ToolCall.Structs do
     Map.new(struct_keys(module), &{&1, {:any, [], []}})
   end
 
-  defp normalize_field_ast(:any), do: {:any, [], []}
   defp normalize_field_ast({name, _, []}) when name in [:term, :any], do: {:any, [], []}
   defp normalize_field_ast(ast), do: ast
 end

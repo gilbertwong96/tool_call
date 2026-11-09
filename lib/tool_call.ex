@@ -82,6 +82,10 @@ defmodule ToolCall do
   end
 
   @doc false
+  # `defstruct` generates `__struct__/0` and `__struct__/1`; they are not tools
+  # and would otherwise warn about a missing @spec.
+  def __on_definition__(_env, :def, :__struct__, _args, _guards, _body), do: :ok
+
   def __on_definition__(env, :def, name, args, _guards, _body) do
     doc = Module.get_attribute(env.module, :doc)
     Module.put_attribute(env.module, :tool_call_defs, {name, args, doc, env.file, env.line})

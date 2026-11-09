@@ -27,7 +27,8 @@ defmodule ToolCall.Builder do
       overrides: overrides,
       env: env,
       providers: providers,
-      definitions: definitions(module, env)
+      definitions: definitions(module, env),
+      cyclic: cyclic_keys(module, env)
     }
 
     entries =
@@ -44,6 +45,12 @@ defmodule ToolCall.Builder do
     validate_names(module, entries)
 
     %{tools: tools, typedoc_keys: typedoc_keys(tools, context.definitions)}
+  end
+
+  defp cyclic_keys(module, env) do
+    module
+    |> definitions(env)
+    |> LocalTypes.cyclic_keys()
   end
 
   defp definitions(module, env) do
@@ -220,7 +227,14 @@ defmodule ToolCall.Builder do
           |> expand_aliases(context.env)
           |> localize_module_types(context.module)
 
-        {type_ast, truncated?, insts} = LocalTypes.expand(source_ast, context.definitions)
+        {defs, _registry} = defs_registry
+        max_defs = max(LocalTypes.max_defs() - map_size(defs), 0)
+
+        {type_ast, truncated?, insts} =
+          LocalTypes.expand(source_ast, context.definitions,
+            cyclic: context.cyclic,
+            max_defs: max_defs
+          )
 
         {type_ast, defs_registry} =
           hoist_instantiations(type_ast, insts, defs_registry, context)
@@ -453,7 +467,14 @@ defmodule ToolCall.Builder do
   defp resolve_and_warn(entries, context, module) do
     {entries, _raw} =
       Enum.map_reduce(entries, %{}, fn {tool, location, truncated}, raw ->
-        {tool, warnings, raw} = Structs.Resolve.run(tool, context.providers, raw)
+        {tool, warnings, raw} =
+          Structs.Resolve.run(
+            tool,
+            context.providers,
+            raw,
+            &normalize_type(&1, context.env)
+          )
+
         Enum.each(warnings, &warn(module, location, &1))
         expose(module, location, tool, truncated, raw)
       end)

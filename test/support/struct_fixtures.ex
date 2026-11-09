@@ -110,6 +110,16 @@ defmodule ToolCall.TestFixtures.ChainHost do
   @type t :: %__MODULE__{node: chain()}
 end
 
+defmodule ToolCall.TestFixtures.SetNode do
+  @moduledoc false
+  defstruct [:value, :children]
+
+  @type t :: %__MODULE__{
+          value: integer(),
+          children: MapSet.t(ToolCall.TestFixtures.SetNode.t())
+        }
+end
+
 defmodule ToolCall.TestFixtures.NotAStruct do
   @moduledoc false
   @type t :: String.t()

@@ -45,14 +45,19 @@ defmodule ToolCall.LocalTypes do
   `instantiations`. Use `rewrite_refs/2` to replace those indices with final
   `$defs` names.
   """
-  @spec expand(term(), module() | map()) :: {term(), boolean(), [instantiation()]}
-  def expand(ast, module) when is_atom(module), do: expand(ast, definitions(module))
+  @spec expand(term(), module() | map(), keyword()) ::
+          {term(), boolean(), [instantiation()]}
+  def expand(ast, module_or_definitions, opts \\ [])
 
-  def expand(ast, definitions) when is_map(definitions) do
+  def expand(ast, module, opts) when is_atom(module),
+    do: expand(ast, definitions(module), opts)
+
+  def expand(ast, definitions, opts) when is_map(definitions) and is_list(opts) do
     state = %{
       count: 0,
       truncated?: false,
-      cyclic: cyclic_keys(definitions),
+      cyclic: Keyword.get_lazy(opts, :cyclic, fn -> cyclic_keys(definitions) end),
+      max_defs: Keyword.get(opts, :max_defs, @max_defs),
       insts: %{},
       by_inst: %{},
       per_key: %{}
@@ -98,6 +103,10 @@ defmodule ToolCall.LocalTypes do
 
     MapSet.new(keys)
   end
+
+  @doc false
+  @spec max_defs() :: pos_integer()
+  def max_defs, do: @max_defs
 
   @doc false
   @spec rewrite_refs(term(), %{non_neg_integer() => String.t()}) :: term()
@@ -283,7 +292,7 @@ defmodule ToolCall.LocalTypes do
   end
 
   defp capped?(state, key) do
-    map_size(state.insts) >= @max_defs or
+    map_size(state.insts) >= state.max_defs or
       Map.get(state.per_key, key, 0) >= @max_instantiations_per_key
   end
 

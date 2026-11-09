@@ -17,12 +17,13 @@ defmodule ToolCall.Structs.Resolve do
   alias ToolCall.{LocalTypes, Structs, Typespec}
 
   @spec run(Tool.t(), [module()], map()) :: {Tool.t(), [String.t()], map()}
-  def run(%Tool{} = tool, providers, raw \\ %{}) do
+  def run(%Tool{} = tool, providers, raw \\ %{}, normalize \\ & &1) do
     existing = MapSet.new(Map.keys(tool.defs || %{}))
 
     state = %{
       cache: %{},
       raw: raw,
+      current: tool.module,
       defs: %{},
       warnings: [],
       inst_names: %{},
@@ -30,7 +31,7 @@ defmodule ToolCall.Structs.Resolve do
     }
 
     roots = Enum.map(tool.params, & &1.type) ++ Map.values(tool.defs || %{})
-    state = Enum.reduce(roots, state, &collect_type(&1, providers, &2))
+    state = Enum.reduce(roots, state, &collect_type(&1, providers, &2, normalize))
 
     ctx = %{
       cache: state.cache,
@@ -57,52 +58,54 @@ defmodule ToolCall.Structs.Resolve do
 
   # --- discovery ------------------------------------------------------------
 
-  defp collect_type(%Type{kind: :struct, struct: module}, providers, state) do
+  defp collect_type(%Type{kind: :struct, struct: module}, providers, state, normalize) do
     if Map.has_key?(state.cache, module),
       do: state,
-      else: collect_struct(module, providers, state)
+      else: collect_struct(module, providers, state, normalize)
   end
 
-  defp collect_type(%Type{kind: :object} = type, providers, state) do
-    state = collect_types(type.fields || [], providers, state, & &1.type)
-    collect_type(type.additional, providers, state)
+  defp collect_type(%Type{kind: :object} = type, providers, state, normalize) do
+    state = collect_types(type.fields || [], providers, state, & &1.type, normalize)
+    collect_type(type.additional, providers, state, normalize)
   end
 
-  defp collect_type(%Type{kind: :array} = type, providers, state),
-    do: collect_type(type.items, providers, state)
+  defp collect_type(%Type{kind: :array} = type, providers, state, normalize),
+    do: collect_type(type.items, providers, state, normalize)
 
-  defp collect_type(%Type{kind: :tuple} = type, providers, state),
-    do: collect_types(type.items || [], providers, state, & &1)
+  defp collect_type(%Type{kind: :tuple} = type, providers, state, normalize),
+    do: collect_types(type.items || [], providers, state, & &1, normalize)
 
-  defp collect_type(%Type{kind: :union} = type, providers, state),
-    do: collect_types(type.variants || [], providers, state, & &1)
+  defp collect_type(%Type{kind: :union} = type, providers, state, normalize),
+    do: collect_types(type.variants || [], providers, state, & &1, normalize)
 
-  defp collect_type(_type, _providers, state), do: state
+  defp collect_type(_type, _providers, state, _normalize), do: state
 
-  defp collect_types(items, providers, state, to_type) do
-    Enum.reduce(items, state, fn item, st -> collect_type(to_type.(item), providers, st) end)
+  defp collect_types(items, providers, state, to_type, normalize) do
+    Enum.reduce(items, state, fn item, st ->
+      collect_type(to_type.(item), providers, st, normalize)
+    end)
   end
 
-  defp collect_struct(module, providers, state) do
+  defp collect_struct(module, providers, state, normalize) do
     {raw, state} =
       case Map.fetch(state.raw, module) do
         {:ok, raw} ->
           {raw, state}
 
         :error ->
-          raw = introspect(module)
+          raw = introspect(module, state.current, normalize)
           state = %{state | raw: Map.put(state.raw, module, raw)}
           {raw, warn_introspection(module, raw, state)}
       end
 
-    install_struct(module, raw, providers, state)
+    install_struct(module, raw, providers, state, normalize)
   end
 
   # Reading the beam, probing @enforce_keys and warning about the result are
   # per-module costs; a module with twenty tools should pay them once, not
   # twenty times.
-  defp introspect(module) do
-    case Structs.fields(module) do
+  defp introspect(module, current, normalize) do
+    case Structs.fields(module, current: current, normalize: normalize) do
       :opaque ->
         :opaque
 
@@ -111,7 +114,7 @@ defmodule ToolCall.Structs.Resolve do
 
       {:ok, field_asts, insts, status} ->
         probe =
-          case Structs.enforced_keys(module) do
+          case Structs.enforced_keys(module, current: current) do
             {:ok, keys} -> {:ok, MapSet.new(keys)}
             :error -> :error
           end
@@ -144,10 +147,13 @@ defmodule ToolCall.Structs.Resolve do
     end
   end
 
-  defp install_struct(module, :opaque, _providers, state), do: put_cache(state, module, :opaque)
-  defp install_struct(module, :error, _providers, state), do: put_cache(state, module, :error)
+  defp install_struct(module, :opaque, _providers, state, _normalize),
+    do: put_cache(state, module, :opaque)
 
-  defp install_struct(module, {:ok, raw}, providers, state) do
+  defp install_struct(module, :error, _providers, state, _normalize),
+    do: put_cache(state, module, :error)
+
+  defp install_struct(module, {:ok, raw}, providers, state, normalize) do
     %{field_asts: field_asts, insts: insts, probe: probe} = raw
 
     required =
@@ -180,10 +186,10 @@ defmodule ToolCall.Structs.Resolve do
 
     state =
       Enum.reduce(fields, state, fn {_field, type}, st ->
-        collect_type(type, providers, st)
+        collect_type(type, providers, st, normalize)
       end)
 
-    Enum.reduce(inst_types, state, &collect_type(&1, providers, &2))
+    Enum.reduce(inst_types, state, &collect_type(&1, providers, &2, normalize))
   end
 
   defp rewrite(ast, names), do: LocalTypes.rewrite_refs(ast, names)
