@@ -242,4 +242,12 @@ defmodule ToolCall.ValidateTest do
     node = %Type{kind: :string, validator: {Throwing, :validate}}
     assert {:error, {:validate_raised, :nope}} = Validate.valid?(node, "x", %{})
   end
+
+  test "nonempty_binary derives its own source and rejects empty" do
+    node = ToolCall.Typespec.to_type({:nonempty_binary, [], []})
+
+    assert %Type{source: :nonempty_binary} = node
+    assert {:error, _} = Validate.valid?(node, "", %{})
+    assert :ok = Validate.valid?(node, "x", %{})
+  end
 end

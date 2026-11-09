@@ -260,4 +260,41 @@ defmodule ToolCall.ResultTypesTest do
 
     assert {:ok, :anything} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
   end
+
+  test "nonempty_binary rejects an empty result end to end" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: nonempty_binary()
+        def go(_x), do: ""
+      end
+      """)
+
+    assert {:error, {:invalid_result, _}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a result-only struct does not warn about what the model sees" do
+    for type <- [
+          "ToolCall.TestFixtures.OpaqueBox.t()",
+          "ToolCall.TestFixtures.ParamOnly.t()"
+        ] do
+      {_module, warnings} =
+        compile_with_warnings!("""
+        defmodule FIXTURE do
+          use ToolCall
+
+          @doc "Go."
+          @spec go(x :: integer()) :: #{type}
+          def go(_x), do: nil
+        end
+        """)
+
+      refute warnings =~ "treated as {}"
+      refute warnings =~ "is @opaque"
+    end
+  end
 end

@@ -146,7 +146,7 @@ defmodule ToolCall.Typespec do
     %Type{kind: :array, items: to_type(type, providers), minimum: 1}
   end
 
-  defp local(:nonempty_binary, [], _providers), do: nonempty_string_type(:binary)
+  defp local(:nonempty_binary, [], _providers), do: nonempty_string_type(:nonempty_binary)
   defp local(:nonempty_string, [], _providers), do: nonempty_string_type(:string)
 
   defp local(:keyword, args, providers) do
