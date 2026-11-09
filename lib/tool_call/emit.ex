@@ -5,14 +5,16 @@ defmodule ToolCall.Emit do
   The IR is intentionally provider-neutral: `docs/design.md` lists the subset
   each provider actually accepts.
 
-  `precompile/1` renders the closed set of provider variants at compile time so
-  that a module carries finished schemas as literals; `emit/3` renders loose IR
-  values on demand. Runtime IR is validated before rendering.
+  `precompile/1` renders the closed set of provider-call variants at compile time
+  so that a module carries finished schemas as literals; `emit/3` renders loose IR
+  values on demand. MCP is not precompiled: its `inputSchema` is the same
+  parameters object the other targets embed, so `ToolCall.emit/3` renders it on
+  demand. Runtime IR is validated before rendering.
   """
 
   alias ToolCall.IR.Tool
 
-  @type target :: :openai | :anthropic
+  @type target :: :openai | :anthropic | :mcp
 
   @spec emit([Tool.t()] | Tool.t(), target(), keyword()) :: [map()] | map()
   def emit(tools_or_tool, target, opts \\ [])
@@ -23,10 +25,11 @@ defmodule ToolCall.Emit do
 
   def emit(%Tool{} = tool, :openai, opts), do: ToolCall.Emit.OpenAI.emit(tool, opts)
   def emit(%Tool{} = tool, :anthropic, opts), do: ToolCall.Emit.Anthropic.emit(tool, opts)
+  def emit(%Tool{} = tool, :mcp, opts), do: ToolCall.Emit.MCP.emit(tool, opts)
 
   def emit(%Tool{}, target, _opts) do
     raise ArgumentError,
-          "unsupported target #{inspect(target)}; expected :openai or :anthropic"
+          "unsupported target #{inspect(target)}; expected :openai, :anthropic or :mcp"
   end
 
   @doc false
@@ -50,15 +53,7 @@ defmodule ToolCall.Emit do
 
       :error ->
         raise ArgumentError,
-              "unsupported target #{inspect(target)}; available: #{available(schemas)}"
+              "unsupported target #{inspect(target)}; expected :openai, :anthropic or :mcp"
     end
-  end
-
-  defp available(schemas) do
-    schemas
-    |> Map.keys()
-    |> Enum.map(&elem(&1, 0))
-    |> Enum.uniq()
-    |> Enum.map_join(", ", &inspect/1)
   end
 end

@@ -338,25 +338,35 @@ defmodule ToolCall do
   def tool_names(module), do: Enum.map(tools(module), & &1.name)
 
   @doc """
-  Emits schemas for `target` (`:openai` or `:anthropic`).
+  Emits schemas for `target` (`:openai`, `:anthropic` or `:mcp`).
 
-  For a module the supported variants are rendered at **compile time** and
-  embedded as a literal, so this is a direct or guarded map lookup and `strict`
-  may be a runtime boolean. A module returns a list with one schema per tool; a
-  single `ToolCall.IR.Tool` returns one schema map and a list of them a list,
-  rendered on demand, which is what dynamically built tools need. Runtime IR is
-  validated before rendering; invalid types raise `ArgumentError`.
+  For a module the OpenAI and Anthropic variants are rendered at **compile time**
+  and embedded as a literal, so this is a direct or guarded map lookup and
+  `strict` may be a runtime boolean. MCP is rendered on demand, because its
+  `inputSchema` is the parameters object the other targets already embed. A
+  module returns a list with one schema per tool; a single `ToolCall.IR.Tool`
+  returns one schema map and a list of them a list, rendered on demand, which is
+  what dynamically built tools need. Runtime IR is validated before rendering;
+  invalid types raise `ArgumentError`.
 
   ## Options
 
     * `:strict` - OpenAI strict mode. The tool object carries
       `"strict": true`, every property becomes required, optional values
       become nullable and every object is closed, which is the only shape the
-      API accepts when `strict: true` is set. Ignored for `:anthropic`.
+      API accepts when `strict: true` is set. For `:mcp` it renders the same
+      closed subset without a flag (MCP has none). Ignored for `:anthropic`.
   """
-  @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic, keyword()) ::
+  @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic | :mcp, keyword()) ::
           map() | [map()]
   def emit(module_or_tools, target, opts \\ [])
+
+  # MCP is not precompiled: its schema is the same parameters object the other
+  # targets embed, so rendering it on demand keeps `__schemas__/0` unchanged.
+  def emit(module, :mcp, opts) when is_atom(module) do
+    ensure_tool_module!(module)
+    Enum.map(module.__tools__(), &ToolCall.Emit.MCP.emit(&1, opts))
+  end
 
   def emit(module, target, opts) when is_atom(module) do
     ensure_tool_module!(module, :__schemas__)

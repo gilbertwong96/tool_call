@@ -62,6 +62,17 @@ defmodule ToolCall.ExportTest do
              JSON.decode!(export([inspect(module), "--format", "mcp"]))
   end
 
+  test "passes --strict through to the MCP schema" do
+    module = weather()
+
+    assert %{"tools" => [tool]} =
+             JSON.decode!(export([inspect(module), "--format", "mcp", "--strict"]))
+
+    refute Map.has_key?(tool, "strict")
+    assert tool["inputSchema"]["required"] == ["city", "days"]
+    assert tool["inputSchema"]["additionalProperties"] == false
+  end
+
   test "passes --strict through to the schema" do
     module = weather()
 

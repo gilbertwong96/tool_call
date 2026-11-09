@@ -172,17 +172,8 @@ defmodule Mix.Tasks.ToolCall.Export do
   defp render(modules, "anthropic", _strict?, _specs),
     do: Enum.flat_map(modules, &ToolCall.emit(&1, :anthropic))
 
-  defp render(_modules, "mcp", _strict?, specs) do
-    %{
-      "tools" =>
-        Enum.map(specs, fn spec ->
-          %{
-            "name" => spec.name,
-            "description" => spec.description,
-            "inputSchema" => spec.parameters
-          }
-        end)
-    }
+  defp render(modules, "mcp", strict?, _specs) do
+    %{"tools" => Enum.flat_map(modules, &ToolCall.emit(&1, :mcp, strict: strict?))}
   end
 
   # Use JSON.format/1 once Elixir's JSON ships a pretty printer; that would

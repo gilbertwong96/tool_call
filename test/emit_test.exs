@@ -440,4 +440,81 @@ defmodule ToolCall.EmitTest do
              }
     end
   end
+
+  describe "mcp target" do
+    defp weather do
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Get the forecast."
+
+        @spec get_weather(city :: String.t(), days :: pos_integer()) :: String.t()
+        def get_weather(city, _days \\\\ 3), do: city
+      end
+      """)
+    end
+
+    test "emits MCP tool objects whose inputSchema is the plain parameters object" do
+      module = weather()
+
+      assert [
+               %{
+                 "name" => "get_weather",
+                 "description" => "Get the forecast.",
+                 "inputSchema" => %{"type" => "object"} = schema
+               }
+             ] = ToolCall.emit(module, :mcp)
+
+      assert schema == module |> ToolCall.describe() |> hd() |> Map.fetch!(:parameters)
+    end
+
+    test "emits a single tool or a list of runtime tools" do
+      module = weather()
+      [tool] = ToolCall.tools(module)
+
+      assert %{"name" => "get_weather", "inputSchema" => %{"type" => "object"}} =
+               ToolCall.emit(tool, :mcp)
+
+      assert [%{"name" => "get_weather"}] = ToolCall.emit([tool], :mcp)
+    end
+
+    test "strict closes the schema without adding a strict flag" do
+      module = weather()
+      [mcp] = ToolCall.emit(module, :mcp, strict: true)
+
+      refute Map.has_key?(mcp, "strict")
+      assert mcp["inputSchema"]["additionalProperties"] == false
+      assert Enum.sort(mcp["inputSchema"]["required"]) == ["city", "days"]
+      assert mcp["inputSchema"]["properties"]["days"]["type"] == ["integer", "null"]
+    end
+
+    test "carries $defs for a recursive parameter" do
+      module =
+        compile!("""
+        defmodule FIXTURE do
+          use ToolCall
+
+          @type tree :: %{value: integer(), children: [tree()]}
+
+          @doc "Walk."
+          @spec walk(root :: tree()) :: map()
+          def walk(root), do: root
+        end
+        """)
+
+      [mcp] = ToolCall.emit(module, :mcp)
+
+      assert mcp["inputSchema"]["properties"]["root"] == %{"$ref" => "#/$defs/tree"}
+      assert Map.has_key?(mcp["inputSchema"], "$defs")
+    end
+
+    test "names the supported targets in the error" do
+      tool = %ToolCall.IR.Tool{name: "go", description: "Go."}
+
+      assert_raise ArgumentError, ~r/:openai, :anthropic or :mcp/, fn ->
+        ToolCall.emit(tool, :gemini)
+      end
+    end
+  end
 end
