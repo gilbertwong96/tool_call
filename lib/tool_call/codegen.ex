@@ -7,18 +7,21 @@ defmodule ToolCall.Codegen do
 
   @max_optional 6
 
-  @spec runner_clauses([Tool.t()], [String.t()], nil | non_neg_integer() | module()) :: [
-          Macro.t()
-        ]
-  def runner_clauses(tools, indirect, timeout \\ nil) do
+  @spec runner_clauses(
+          [Tool.t()],
+          [String.t()],
+          nil | non_neg_integer() | module(),
+          nil | module()
+        ) :: [Macro.t()]
+  def runner_clauses(tools, indirect, timeout \\ nil, approval \\ nil) do
     tools
     |> Enum.with_index()
     |> Enum.flat_map(fn {tool, index} ->
-      clauses(tool, index, tool.name in indirect, timeout)
+      clauses(tool, index, tool.name in indirect, timeout, approval)
     end)
   end
 
-  defp clauses(tool, index, indirect?, timeout) do
+  defp clauses(tool, index, indirect?, timeout, approval) do
     runner = :"__tool_call_run_#{index}__"
 
     clauses = [
@@ -29,7 +32,7 @@ defmodule ToolCall.Codegen do
     ]
 
     definition =
-      if timeout == nil and fast_tool?(tool),
+      if timeout == nil and approval == nil and fast_tool?(tool),
         do: fast_runner(tool, runner, indirect?),
         else: generic_runner(tool, runner, timeout)
 

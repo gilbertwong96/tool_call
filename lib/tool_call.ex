@@ -47,19 +47,22 @@ defmodule ToolCall do
   @doc false
   defmacro __using__(opts) do
     {types, opts} = Keyword.pop(opts, :types, [])
-    {timeout, rest} = Keyword.pop(opts, :timeout)
+    {timeout, opts} = Keyword.pop(opts, :timeout)
+    {approval, rest} = Keyword.pop(opts, :approval)
 
     if rest != [] do
       raise ArgumentError,
-            "use ToolCall accepts only :types and :timeout, got: #{inspect(rest)}"
+            "use ToolCall accepts only :types, :timeout and :approval, got: #{inspect(rest)}"
     end
 
     timeout = expand_timeout(timeout, __CALLER__)
+    approval = expand_approval(approval, __CALLER__)
     providers = ToolCall.Typespec.builtin_providers() ++ expand_providers(types, __CALLER__)
 
     quote do
       @tool_call_type_providers unquote(providers)
       @tool_call_timeout unquote(timeout)
+      @tool_call_approval unquote(approval)
       Module.register_attribute(__MODULE__, :tool_call_defs, accumulate: true)
       Module.register_attribute(__MODULE__, :tool_call_struct_fields, [])
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
@@ -84,6 +87,18 @@ defmodule ToolCall do
 
   defp expand_providers(other, _env) do
     raise ArgumentError, ":types must be a list of modules, got: #{inspect(other)}"
+  end
+
+  defp expand_approval(nil, _env), do: nil
+
+  defp expand_approval(approval, env) do
+    case Macro.expand(approval, env) do
+      module when is_atom(module) and module not in [nil, true, false] ->
+        module
+
+      other ->
+        raise ArgumentError, "approval must be a module, got: #{inspect(other)}"
+    end
   end
 
   defp expand_timeout(nil, _env), do: nil
@@ -146,6 +161,7 @@ defmodule ToolCall do
       end
 
     timeout = Module.get_attribute(module, :tool_call_timeout)
+    approval = Module.get_attribute(module, :tool_call_approval)
     generation = Generated.generation()
     companion = Generated.companion(module)
     schemas = Emit.precompile(tools)
@@ -164,7 +180,7 @@ defmodule ToolCall do
     tools_body = tools_body(embedded, companion, generation, typedoc_keys)
     schemas_body = schemas_body(schemas, companion, generation, typedoc_keys)
 
-    runner_clauses = runner_clauses(tools, embedded, timeout)
+    runner_clauses = runner_clauses(tools, embedded, timeout, approval)
 
     quote do
       @doc false
@@ -178,6 +194,9 @@ defmodule ToolCall do
 
       @doc false
       def __timeout_policy__, do: unquote(timeout)
+
+      @doc false
+      def __approval_policy__, do: unquote(approval)
 
       unquote_splicing(runner_clauses)
 
@@ -215,9 +234,9 @@ defmodule ToolCall do
     end
   end
 
-  defp runner_clauses(tools, embedded, timeout) do
+  defp runner_clauses(tools, embedded, timeout, approval) do
     indirect = for tool <- tools, no_return_spec?(tool.source), do: tool.name
-    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout)
+    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout, approval)
   end
 
   defp no_return_spec?({:"::", _, [_args, {:no_return, _, []}]}), do: true
@@ -442,6 +461,9 @@ defmodule ToolCall do
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
       invocation. Without it the task is linked to the caller.
     * `:context` - passed to a `ToolCall.Timeout` policy's `timeout/3` callback.
+    * `:approval` - `:granted`, `:denied`, or a `ToolCall.Approval` policy module.
+      A policy may answer `{:required, reason}`, which returns
+      `{:pending, %ToolCall.Approval.Request{}}`; the call is not invoked.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
@@ -461,7 +483,7 @@ defmodule ToolCall do
 
   defp runner_path?(opts) do
     Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout) or
-      Keyword.has_key?(opts, :context)
+      Keyword.has_key?(opts, :approval) or Keyword.has_key?(opts, :context)
   end
 
   defp inject_timeout_policy(module, opts) do
@@ -481,12 +503,13 @@ defmodule ToolCall do
     validate_option_keys!(opts)
     validate_validate_result!(opts)
     validate_timeout_option!(opts)
+    validate_approval_option!(opts)
     validate_task_supervisor!(opts)
     :ok
   end
 
   defp validate_option_keys!(opts) do
-    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor, :context] do
+    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor, :approval, :context] do
       [] -> :ok
       unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
     end
@@ -503,6 +526,26 @@ defmodule ToolCall do
     case Keyword.fetch(opts, :timeout) do
       {:ok, timeout} -> ToolCall.Timeout.validate!(timeout)
       :error -> :ok
+    end
+  end
+
+  defp validate_approval_option!(opts) do
+    case Keyword.get(opts, :approval) do
+      nil ->
+        :ok
+
+      :granted ->
+        :ok
+
+      :denied ->
+        :ok
+
+      policy when is_atom(policy) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
     end
   end
 

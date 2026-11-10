@@ -466,6 +466,29 @@ validation) but is filtered out of `inputSchema`/`describe/2`, and it does not
 produce "the model will see `{}`" warnings. A type shared by a parameter and the
 result is emitted once.
 
+## Approval is a policy hook, not a workflow
+
+`ToolCall.Approval` decides whether to invoke, but it does not store the pending
+request, expire it, notify a human or resume the call. The application owns that
+state machine. On resume, use the stored `request.args` and `request.context` —
+never fresh model output for the same approval — and mark the request executed
+so a retry cannot run side effects twice. `{:pending, _}` is a third `run/4`
+outcome next to `{:ok, _}` and `{:error, _}`; an agent loop must pause instead of
+sending it to the model as a tool result.
+
+## A timeout is a hard kill, not a cancellation
+
+`run/4 timeout:` and `execute/2 timeout:` run the invocation in a task and kill
+it with `:brutal_kill`. The function may already have produced its side effect.
+The task is a different process: `self/0`, the process dictionary,
+`Logger.metadata`, ETS ownership and Ecto sandbox ownership are not inherited,
+`try/after` does not run on the kill, and a long-running NIF is not interrupted.
+Prefer a cooperative timeout inside the tool (Ecto `timeout:`, Req
+`receive_timeout`) for resources and NIFs. Without `task_supervisor:` the task is
+linked to the caller; with it the supervisor owns the task. The timeout is a
+per-invocation cap, not a run deadline; the caller or agent framework owns the
+overall budget.
+
 ## Remaining design boundaries
 
 Some limits are intentional: nested/remote/provider typedoc inheritance,

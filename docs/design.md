@@ -481,6 +481,17 @@ complete `functionCall` parts (no id). The concatenated JSON is decoded with the
 standard `JSON` module; a malformed fragment is an error, and a call without a
 name is refused. Chunks for other event types are ignored.
 
+## Approvals
+
+`ToolCall.Approval` is a policy hook at the execution boundary.
+`use ToolCall, approval: Policy` embeds the policy and disables the fast path
+for the module; `run/4 approval:` overrides it. `resolve/4` stores the policy;
+`execute/2` calls `check/3` with the tool IR, the raw args and the context
+before the timeout and invocation. `{:required, reason}` returns a serializable
+`Request`; the application persists it and resumes with the stored args and
+`approval: :granted`. No persistence, expiry, retry or double-execution
+protection lives here; the agent runtime owns that workflow.
+
 ## Timeouts
 
 `Runner.resolve/4` performs the key checks, coercion and positional

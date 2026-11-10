@@ -43,6 +43,9 @@
   `use ToolCall, timeout: ...` sets a default or a `ToolCall.Timeout` policy; a
   timeout answers `{:error, {:timeout, ms}}`, and `context:` reaches the policy.
   Timeouts are per invocation and a hard kill, not a cancellation.
+- `ToolCall.Approval` adds a policy hook: `use ToolCall, approval: Policy` or
+  `run/4 approval:`; `check/3` can approve, deny, or return a serializable
+  pending request. No persistence or resume state machine is built in.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one

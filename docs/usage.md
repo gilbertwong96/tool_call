@@ -476,6 +476,59 @@ rejects a struct value. The result also shares the tool's 32-definition budget
 with the parameters: if they exhaust it, the result degrades to `:any` and
 validation accepts anything.
 
+### Approvals
+
+An approval policy is a module implementing `ToolCall.Approval`:
+
+```elixir
+defmodule MyApproval do
+  @behaviour ToolCall.Approval
+
+  @impl true
+  def check(%ToolCall.IR.Tool{name: "transfer_money"}, args, _context) do
+    if args["amount"] > 1_000,
+      do: {:required, "amount over threshold"},
+      else: :approve
+  end
+
+  def check(_tool, _args, _context), do: :approve
+end
+
+use ToolCall, approval: MyApproval
+```
+
+`run/4` then answers one of:
+
+```elixir
+{:ok, value}
+{:pending, %ToolCall.Approval.Request{}}
+{:error, {:approval_denied, reason}}
+```
+
+The pending request carries `id`, `module`, `tool`, `args`, `reason`,
+`context` and `inserted_at`. The application persists it, asks a human, and
+resumes with the **stored** arguments:
+
+```elixir
+ToolCall.run(request.module, request.tool, request.args,
+  approval: :granted, context: request.context)
+```
+
+- `approval: :granted` / `:denied` override the module policy; an explicit
+  policy module overrides it too. `approval: nil` disables a module policy for
+  one call.
+- `context:` reaches `check/3`.
+- The policy runs before the timeout; a pending request returns without
+  starting a task or invoking the function.
+- This is a mechanism, not a workflow: no storage, expiry, retry or
+  double-execution guard. Never accept fresh model arguments for an approved
+  call; use the stored ones. The agent runtime or application owns the pending
+  state.
+
+`ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve` is
+pure and stores the policy, `execute` checks it, so a future runtime can
+resolve, gate and then execute.
+
 ### Timeouts
 
 `run/4` accepts a per-call timeout; without one the call runs in the caller

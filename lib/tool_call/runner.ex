@@ -106,14 +106,18 @@ defmodule ToolCall.Runner do
   """
   @spec execute(ToolCall.Call.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def execute(%ToolCall.Call{} = call, opts \\ []) do
-    timeout = Keyword.get(opts, :timeout, call.timeout)
-    ToolCall.Timeout.validate!(timeout)
+    approval = Keyword.get(opts, :approval, call.approval)
 
-    ToolCall.Timeout.run(
-      fn -> invoke(call.module, call.tool, call.positional, call.validate_result?) end,
-      timeout,
-      opts
-    )
+    with :ok <- approve(call, approval, opts) do
+      timeout = Keyword.get(opts, :timeout, call.timeout)
+      ToolCall.Timeout.validate!(timeout)
+
+      ToolCall.Timeout.run(
+        fn -> invoke(call.module, call.tool, call.positional, call.validate_result?) end,
+        timeout,
+        opts
+      )
+    end
   end
 
   defp resolve_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
@@ -121,6 +125,7 @@ defmodule ToolCall.Runner do
     known = known || Enum.map(tool.params || [], & &1.name)
     validate_result? = validate_result_opt!(opts)
     timeout = timeout_for(tool, args, opts)
+    approval = approval_for(module, opts)
 
     with :ok <- reject_non_string_keys(args),
          :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
@@ -135,9 +140,52 @@ defmodule ToolCall.Runner do
          values: values,
          positional: positional,
          timeout: timeout,
+         approval: approval,
          validate_result?: validate_result?
        }}
     end
+  end
+
+  defp approval_for(module, opts) do
+    case Keyword.fetch(opts, :approval) do
+      {:ok, approval} -> approval
+      :error -> module_approval(module)
+    end
+  end
+
+  defp module_approval(module) do
+    if function_exported?(module, :__approval_policy__, 0) do
+      module.__approval_policy__()
+    else
+      nil
+    end
+  end
+
+  defp approve(_call, nil, _opts), do: :ok
+  defp approve(_call, :granted, _opts), do: :ok
+  defp approve(_call, :denied, _opts), do: {:error, {:approval_denied, :denied}}
+
+  defp approve(call, policy, opts) when is_atom(policy) do
+    context = Keyword.get(opts, :context)
+
+    case policy.check(call.tool, call.args, context) do
+      :approve ->
+        :ok
+
+      {:deny, reason} ->
+        {:error, {:approval_denied, reason}}
+
+      {:required, reason} ->
+        {:pending, ToolCall.Approval.request(call.module, call.tool, call.args, reason, context)}
+
+      other ->
+        {:error, {:invalid_approval, other}}
+    end
+  end
+
+  defp approve(_call, other, _opts) do
+    raise ArgumentError,
+          "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
   end
 
   defp timeout_for(tool, args, opts) do

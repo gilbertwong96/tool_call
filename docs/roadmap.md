@@ -40,7 +40,10 @@ All planned items are implemented and awaiting a release.
 
 ## 0.4 — runtime governance
 
-- Approval / human-in-the-loop hooks.
+- Approval / human-in-the-loop hooks: done as a policy hook
+  (`use ToolCall, approval: ...`, `run/4 approval:`). A required decision returns
+  a serializable `ToolCall.Approval.Request`; persistence, notification and
+  resume belong to the application or agent runtime.
 - Per-tool timeouts: done as an opt-in per-invocation cap. `ToolCall.run/4`
   accepts `timeout:`/`task_supervisor:`, `Runner.execute/2` takes the same
   override, and `use ToolCall, timeout: ...` sets a default or a

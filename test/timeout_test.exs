@@ -138,4 +138,48 @@ defmodule ToolCall.TimeoutTest do
       ToolCall.run(module, :sleep, %{"ms" => 1}, timeout: -1)
     end
   end
+
+  test "the timeout policy receives the run context" do
+    module =
+      compile!("""
+      defmodule ContextPolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, _args, context) do
+          if context[:fast], do: 10, else: 1_000
+        end
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: ContextPolicy
+
+        @doc "Sleep."
+        @spec sleep(ms :: integer()) :: :ok
+        def sleep(ms) do
+          Process.sleep(ms)
+          :ok
+        end
+      end
+      """)
+
+    assert {:ok, :ok} = ToolCall.run(module, :sleep, %{"ms" => 10})
+
+    assert {:error, {:timeout, 10}} =
+             ToolCall.run(module, :sleep, %{"ms" => 100}, context: %{fast: true})
+  end
+
+  test "resolve/4 validates a hand-built tool" do
+    bad = %ToolCall.IR.Tool{
+      name: "go",
+      description: "Go.",
+      params: [
+        %ToolCall.IR.Param{name: "x", type: %ToolCall.IR.Type{kind: :bogus}}
+      ]
+    }
+
+    assert_raise ArgumentError, ~r/unknown kind/, fn ->
+      ToolCall.Runner.resolve(__MODULE__, bad, %{"x" => 1})
+    end
+  end
 end

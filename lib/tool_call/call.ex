@@ -8,7 +8,8 @@ defmodule ToolCall.Call do
   argument list and the effective `timeout`.
 
   `execute/2` accepts a `:timeout` override and a `:task_supervisor`; the
-  default timeout is the one stored in the call.
+  default timeout is the one stored in the call. It also checks the stored
+  approval policy unless `:approval` overrides it.
   """
 
   alias ToolCall.IR.Tool
@@ -21,6 +22,7 @@ defmodule ToolCall.Call do
     :values,
     :positional,
     timeout: :infinity,
+    approval: nil,
     validate_result?: false
   ]
 
@@ -31,6 +33,7 @@ defmodule ToolCall.Call do
           values: %{optional(String.t()) => term()},
           positional: [term()],
           timeout: :infinity | non_neg_integer(),
+          approval: nil | :granted | :denied | module(),
           validate_result?: boolean()
         }
 end
