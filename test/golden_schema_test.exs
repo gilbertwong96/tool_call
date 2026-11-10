@@ -11,6 +11,7 @@ defmodule ToolCall.GoldenSchemaTest do
 
     @type status :: :idle | :busy
     @type coords :: %{lat: float(), lon: float()}
+    @type tree :: %{value: integer(), children: [tree()]}
 
     @doc "Exercise every non-recursive mapping."
     @spec go(
@@ -27,10 +28,14 @@ defmodule ToolCall.GoldenSchemaTest do
             k :: float()
           ) :: :ok
     def go(_a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k), do: :ok
+
+    @doc "Walk a tree."
+    @spec walk(root :: tree()) :: :ok
+    def walk(_root), do: :ok
   end
   """
 
-  test "non-recursive schemas are unchanged" do
+  test "rendered schemas are unchanged, including $defs" do
     module = compile!(@source)
 
     rendered = %{

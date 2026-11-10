@@ -866,4 +866,82 @@ defmodule ToolCall.TypeProviderTest do
     assert %ToolCall.IR.Type{validator: {ToolCall.TestFixtures.ValidatingProvider, :validate}} =
              hd(tool.params).type
   end
+
+  test "a provider-typed result is validated end to end" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.ValidatingProvider]
+
+        @doc "Good."
+        @spec good(x :: integer()) :: ToolCall.TestFixtures.ValidateModule.t()
+        def good(_x), do: "ok"
+
+        @doc "Bad."
+        @spec bad(x :: integer()) :: ToolCall.TestFixtures.ValidateModule.t()
+        def bad(_x), do: 1
+      end
+      """)
+
+    assert {:ok, "ok"} = ToolCall.run(module, :good, %{"x" => 1}, validate_result: true)
+
+    assert {:error,
+            {:invalid_result,
+             {:validator, {ToolCall.TestFixtures.ValidatingProvider, :validate}, 1}}} =
+             ToolCall.run(module, :bad, %{"x" => 1}, validate_result: true)
+  end
+
+  test "an explicit validator wins over the provider shorthand" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.PrecedenceProvider]
+
+        @doc "Go."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.PrecedenceModule.t()
+        def go(_x), do: "ok"
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %ToolCall.IR.Type{validator: {ToolCall.TestFixtures.RejectAll, :validate}} =
+             tool.result
+
+    assert {:error,
+            {:invalid_result, {:validator, {ToolCall.TestFixtures.RejectAll, :validate}, "ok"}}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a provider validator that is not defined raises with provider context" do
+    assert_raise ArgumentError,
+                 ~r/type provider ToolCall.TestFixtures.BadValidatorProvider returned an invalid type for ToolCall.TestFixtures.MissingModule.t\/0: validator ToolCall.TestFixtures.NoSuchModule.validate\/3 is not defined/,
+                 fn ->
+                   compile!("""
+                   defmodule ToolCall.TestFixtures.BadValidatorProvider do
+                     @moduledoc false
+                     @behaviour ToolCall.TypeProvider
+
+                     @impl true
+                     def resolve(ToolCall.TestFixtures.MissingModule, :t, []) do
+                       {:ok,
+                        %ToolCall.IR.Type{
+                          kind: :string,
+                          validator: {ToolCall.TestFixtures.NoSuchModule, :validate}
+                        }}
+                     end
+
+                     def resolve(_module, _function, _args), do: :error
+                   end
+
+                   defmodule FIXTURE do
+                     use ToolCall, types: [ToolCall.TestFixtures.BadValidatorProvider]
+
+                     @doc "Go."
+                     @spec go(x :: integer()) :: ToolCall.TestFixtures.MissingModule.t()
+                     def go(_x), do: "ok"
+                   end
+                   """)
+                 end
+  end
 end

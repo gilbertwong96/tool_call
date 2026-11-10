@@ -108,6 +108,11 @@ defmodule ToolCall.ValidateTest do
 
     assert :ok = Validate.valid?(node, [1, 2], %{})
     assert {:error, {:too_few_items, 0, 1}} = Validate.valid?(node, [], %{})
+
+    assert {:error, {:too_many_items, 2, 1}} =
+             Validate.valid?(%Type{kind: :array, items: int(), maximum: 1}, [1, 2], %{})
+
+    assert :ok = Validate.valid?(%Type{kind: :array, items: int(), maximum: 2}, [1, 2], %{})
     assert {:error, {0, {:expected_integer, "x"}}} = Validate.valid?(node, ["x"], %{})
     assert {:error, {:expected_array, "x"}} = Validate.valid?(node, "x", %{})
   end
@@ -120,6 +125,25 @@ defmodule ToolCall.ValidateTest do
     assert {:error, {0, {:expected_integer, "x"}}} = Validate.valid?(node, {"x", "y"}, %{})
     assert :ok = Validate.valid?(%Type{kind: :tuple, items: nil}, {1, 2, 3}, %{})
     assert {:error, {:expected_tuple, [1, "x"]}} = Validate.valid?(node, [1, "x"], %{})
+  end
+
+  test "nullable enum, ref and union accept nil" do
+    defs = %{"t" => int()}
+
+    for node <- [
+          %Type{kind: :enum, values: [:idle], nullable: true},
+          %Type{kind: :ref, ref: "t", nullable: true},
+          %Type{kind: :union, variants: [int()], nullable: true}
+        ] do
+      assert :ok = Validate.valid?(node, nil, defs)
+
+      assert {:error, _reason} =
+               Validate.valid?(node, :not_valid_for_all, defs)
+               |> then(fn
+                 :ok -> {:error, :accepted}
+                 error -> error
+               end)
+    end
   end
 
   test "a struct object checks the struct, required fields and field types" do

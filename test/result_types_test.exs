@@ -1,7 +1,7 @@
 defmodule ToolCall.ResultTypesTest do
   use ExUnit.Case, async: true
 
-  alias ToolCall.IR.{Param, Tool, Type}
+  alias ToolCall.IR.{Tool, Type}
   import ToolCall.TestModule
 
   defp tool(source) do
@@ -209,6 +209,7 @@ defmodule ToolCall.ResultTypesTest do
              ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
   end
 
+  @tag capture_log: true
   test "a function that raises keeps the raised error" do
     module =
       compile!("""
@@ -223,6 +224,54 @@ defmodule ToolCall.ResultTypesTest do
 
     assert {:error, {:raised, "boom"}} =
              ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "the embedded IR drops AST sources and keeps runtime sources" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Any."
+        @spec any_result(x :: integer()) :: Totally.Missing.t()
+        def any_result(_x), do: :anything
+
+        @doc "Chars."
+        @spec chars(x :: integer()) :: charlist()
+        def chars(_x), do: ~c"ok"
+
+        @doc "Bad chars."
+        @spec bad_chars(x :: integer()) :: charlist()
+        def bad_chars(_x), do: "not a charlist"
+      end
+      """)
+
+    any = Enum.find(ToolCall.tools(module), &(&1.name == "any_result"))
+    assert %Type{kind: :any, source: nil} = any.result
+
+    chars = Enum.find(ToolCall.tools(module), &(&1.name == "chars"))
+    assert %Type{kind: :string, source: :charlist} = chars.result
+
+    assert {:ok, ~c"ok"} = ToolCall.run(module, :chars, %{"x" => 1}, validate_result: true)
+
+    assert {:error, {:invalid_result, {:expected_charlist, "not a charlist"}}} =
+             ToolCall.run(module, :bad_chars, %{"x" => 1}, validate_result: true)
+  end
+
+  test "emit rejects a malformed result type" do
+    bad = %Tool{
+      name: "go",
+      description: "Go.",
+      params: [],
+      defs: %{},
+      result: %Type{kind: :bogus}
+    }
+
+    for target <- [:openai, :anthropic, :mcp] do
+      assert_raise ArgumentError, ~r/unknown kind :bogus/, fn ->
+        ToolCall.Emit.emit(bad, target)
+      end
+    end
   end
 
   test "unknown options and a non-boolean validate_result raise" do

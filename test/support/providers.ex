@@ -22,3 +22,27 @@ defmodule ToolCall.TestFixtures.EmbedProvider do
 
   def resolve(_module, _function, _args), do: :error
 end
+
+defmodule ToolCall.TestFixtures.RejectAll do
+  @moduledoc false
+  def validate(_type, _value, _defs), do: false
+end
+
+defmodule ToolCall.TestFixtures.PrecedenceProvider do
+  @moduledoc false
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(ToolCall.TestFixtures.PrecedenceModule, :t, []) do
+    {:ok,
+     %ToolCall.IR.Type{
+       kind: :string,
+       validator: {ToolCall.TestFixtures.RejectAll, :validate}
+     }}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+
+  @impl true
+  def validate(_type, _value, _defs), do: true
+end
