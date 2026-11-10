@@ -368,8 +368,8 @@ and warns. The result is a closed object:
   `%__MODULE__{}`; a nil branch of `t/0` is unwrapped, so the struct is nullable
   wherever it is used, and a field missing from `t` keeps `{}`. When the
   typespec chunk is missing, a readable `compile_info.source` file is parsed as
-  a best-effort fallback; without a source the fields stay `{}` and the compile
-  warns;
+  a best-effort fallback (simple `alias` directives are expanded); without a
+  source the fields stay `{}` and the compile warns;
 - `required` comes from `@enforce_keys`.
 
 `@enforce_keys` is not readable for a compiled module: `Module.get_attribute/2`

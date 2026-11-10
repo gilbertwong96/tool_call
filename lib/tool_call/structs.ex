@@ -301,13 +301,26 @@ defmodule ToolCall.Structs do
 
   defp find_in(_other, _target, _prefix), do: :error
 
-  defp module_name({:__aliases__, _meta, parts}, nil), do: Module.concat(parts)
+  defp module_name({:__aliases__, _meta, [{:__MODULE__, _mod_meta, _context} | rest]}, prefix)
+       when is_atom(prefix) do
+    Module.concat([prefix | rest])
+  end
+
+  defp module_name({:__aliases__, _meta, [{:__MODULE__, _mod_meta, _context} | _rest]}, nil) do
+    nil
+  end
+
+  defp module_name({:__aliases__, _meta, parts}, nil) do
+    Module.concat(parts)
+  end
+
   defp module_name({:__aliases__, _meta, parts}, prefix), do: Module.concat([prefix | parts])
   defp module_name(atom, _prefix) when is_atom(atom), do: atom
   defp module_name(_other, _prefix), do: nil
 
   defp from_source_body(module, body) do
-    entries = source_entries(body, module)
+    aliases = source_aliases(body)
+    entries = source_entries(body, module, aliases)
     definitions = Map.new(entries, fn {key, {params, _kind, type}} -> {key, {params, type}} end)
 
     case Enum.find(entries, &match?({{:t, 0}, _value}, &1)) do
@@ -332,10 +345,39 @@ defmodule ToolCall.Structs do
     end)
   end
 
-  defp source_entries(body, module) do
+  defp source_entries(body, module, aliases) do
+    body |> source_statements() |> Enum.flat_map(&source_type_entry(&1, module, aliases))
+  end
+
+  defp source_aliases(body) do
     body
     |> source_statements()
-    |> Enum.flat_map(&source_type_entry(&1, module))
+    |> Enum.reduce(%{}, fn
+      {:alias, _meta, [{:__aliases__, _alias_meta, parts} | rest]}, acc ->
+        put_source_alias(acc, parts, rest)
+
+      _statement, acc ->
+        acc
+    end)
+  end
+
+  defp put_source_alias(acc, [head | _rest] = parts, rest_opts) when is_atom(head) do
+    target = Module.concat(parts)
+    Map.put(acc, alias_key(parts, rest_opts), target)
+  rescue
+    _exception -> acc
+  end
+
+  defp put_source_alias(acc, _parts, _rest) do
+    acc
+  end
+
+  defp alias_key(parts, [[as: {:__aliases__, _meta, as_parts}]]) do
+    List.last(as_parts) || List.last(parts)
+  end
+
+  defp alias_key(parts, _rest) do
+    List.last(parts)
   end
 
   defp source_statements({:__block__, _meta, statements}), do: statements
@@ -344,31 +386,46 @@ defmodule ToolCall.Structs do
   defp source_type_entry(
          {:@, _meta,
           [{kind, _kind_meta, [{:"::", _op_meta, [{name, _name_meta, params}, type]}]}]},
-         module
+         module,
+         aliases
        )
        when kind in [:type, :opaque] and is_atom(name) do
     params = params || []
-    type = rewrite_source_type(type, module)
+    type = rewrite_source_type(type, module, aliases)
     [{{name, length(params)}, {params, kind, type}}]
   end
 
-  defp source_type_entry(_other, _module), do: []
+  defp source_type_entry(_other, _module, _aliases) do
+    []
+  end
 
-  defp rewrite_source_type(ast, module) do
+  defp rewrite_source_type(ast, module, aliases) do
     ast
     |> Macro.prewalk(fn
       {:__MODULE__, _meta, _context} -> module
       other -> other
     end)
-    |> Macro.prewalk(fn
-      {:__aliases__, meta, parts} ->
-        if Enum.all?(parts, &is_atom/1),
-          do: Module.concat(parts),
-          else: {:__aliases__, meta, parts}
+    |> Macro.prewalk(&rewrite_source_alias(&1, aliases))
+  end
 
-      other ->
-        other
-    end)
+  defp rewrite_source_alias({:__aliases__, _meta, [head | rest]} = alias_node, aliases)
+       when is_atom(head) do
+    case Map.fetch(aliases, head) do
+      {:ok, target} -> concat_source_alias([target | rest], alias_node)
+      :error -> concat_source_alias([head | rest], alias_node)
+    end
+  end
+
+  defp rewrite_source_alias(other, _aliases) do
+    other
+  end
+
+  defp concat_source_alias(parts, alias_node) do
+    if Enum.all?(parts, &is_atom/1) do
+      Module.concat(parts)
+    else
+      alias_node
+    end
   end
 
   defp definitions(module) do

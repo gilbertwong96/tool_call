@@ -73,6 +73,31 @@ defmodule ToolCall.StructsTest do
     assert {Date, :t, []} = unwrap_remote(fields.at)
   end
 
+  test "fields/1 expands simple aliases from the source" do
+    dir = Path.join(System.tmp_dir!(), "tool_call_alias_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "alias_struct.ex")
+
+    module =
+      Module.concat([ToolCall.TestFixtures, :"AliasStruct#{System.unique_integer([:positive])}"])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      alias ToolCall.TestFixtures.Address
+      alias ToolCall.TestFixtures.Address, as: Addr
+      defstruct [:a, :b]
+      @type t :: %__MODULE__{a: Address.t(), b: Addr.t()}
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.a)
+    assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.b)
+  end
+
   test "fields/1 falls back to source for a beam compiled without debug info" do
     dir = Path.join(System.tmp_dir!(), "tool_call_dbg_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
