@@ -251,8 +251,8 @@ build warns. Depth 18 now compiles in 28 ms.
 | `nil` in a union | `nullable: true` | `{"type":["T","null"]}`; an enum becomes `anyOf` with a null branch |
 | `map()` | `:object` open | `"additionalProperties": true` |
 | `struct()` | `:object` open | the function receives a map; use a concrete struct type for fields |
-| `%Mod{}`, `Mod.t()` with a public `@type t` | `:object`, `struct: Mod` | closed object; `required` from `@enforce_keys`; dispatch returns `%Mod{}` |
-| `%Mod{}`, `Mod.t()` with `@opaque t` | `:any` | `{}` + warning; the field set is hidden |
+| `%Mod{}`, `Mod.t()`, `Mod.t(...)` with a public `@type t` | `:object`, `struct: Mod` | closed object; `required` from `@enforce_keys`; a nil branch in `t` makes it nullable; type arguments are not substituted |
+| `%Mod{}`, `Mod.t()`, `Mod.t(...)` with `@opaque t` | `:any` | `{}` + warning; the field set is hidden |
 | recursive `@type` | `:ref` + `$defs` | one body in `$defs`, a `$ref` at every occurrence |
 | `%{k: t}` | `:object` | required fields; the function receives atom keys |
 | `%{optional(k) => t}` | `:object` | not in `required`; atom keys at dispatch |
@@ -354,14 +354,16 @@ which is finite, so the type-level cycle terminates.
 
 ### Structs
 
-`Mod.t()` and `%Mod{}` are resolved for a module that exports
-`__struct__/0`, when no `TypeProvider` matches first. The result is a closed
-object:
+`Mod.t()`, `Mod.t(...)` and `%Mod{}` are resolved for a module that exports
+`__struct__/0`, when no `TypeProvider` matches first. Type arguments are not
+substituted: a parameterized `@type t/N` with no `t/0` leaves every field `{}`
+and warns. The result is a closed object:
 
 - field names come from `__struct__/0`, sorted by name;
 - field types come from the module's public `@type t`, with the module's own
   local types expanded and a self-reference to `t/0` replaced by
-  `%__MODULE__{}`; a field missing from `t` keeps `{}`;
+  `%__MODULE__{}`; a nil branch of `t/0` is unwrapped, so the struct is nullable
+  wherever it is used, and a field missing from `t` keeps `{}`;
 - `required` comes from `@enforce_keys`.
 
 `@enforce_keys` is not readable for a compiled module: `Module.get_attribute/2`

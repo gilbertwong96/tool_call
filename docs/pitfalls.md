@@ -154,10 +154,10 @@ the struct module's own `@typep` also stays `{}`, because private types are not
 in the types chunk.
 
 A struct whose only type is `@type t/N` (no `t/0`), or whose `t/0` is not a
-`%__MODULE__{}` literal, warns at compile time: extraction reads `t/0` alone, so
-the shape you wrote is not being used. The fields still appear, typed `{}`. Only
-`@opaque t` leaves the *argument* untyped, and that hides the tool; see the next
-entry.
+`%__MODULE__{}` literal (a `| nil` branch is allowed and unwrapped), warns at
+compile time: extraction reads `t/0` alone, so the shape you wrote is not being
+used. The fields still appear, typed `{}`. Only `@opaque t` leaves the *argument*
+untyped, and that hides the tool; see the next entry.
 
 `@opaque t` is deliberately not extracted: the author hid the shape. Note that
 most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
@@ -353,6 +353,15 @@ other rule. A closed plain object rejects unknown keys; a struct is checked by
 `is_struct/2` plus its declared fields. `keyword(t)` and `MapSet.t(t)` validate
 their elements. An improper list or an exotic map key is an
 `{:invalid_result, ...}`, not a raise.
+
+## A result type that renders `{}` validates nothing
+
+`Validate.valid?/3` accepts `:any` and `:unsupported` before any kind rule, so a
+return type declared as `term()`, an unknown remote type, `fun()`/`pid()` or a
+type that hit the definition budget answers `{:ok, value}` for any value.
+`no_return()`/`none()` skip validation entirely. Apart from the budget warning,
+the compile does not warn about a result that renders `{}` because the model
+never sees it. Narrow the return type when the result must be checked.
 
 ## A result struct must satisfy `@type t`, including nil defaults
 

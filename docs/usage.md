@@ -601,7 +601,9 @@ end
 - **Deeply nested `@type` hierarchies are inlined up to a budget** (100
   inlinings). Past that the rest of the type is treated as `{}` and the build
   warns; flatten the hierarchy or enumerate the fields.
-- **The return type is not checked.** Tool results are returned as plain terms
-  and must be JSON-encodable by the caller.
+- **Result validation is opt-in and does not encode.** `run/4` with
+  `validate_result: true` checks the raw return value against the `@spec`; the
+  result is still returned as a plain term and must be JSON-encodable by the
+  caller.
 - **`run/3` has no timeout.** A tool that can hang should be wrapped in
   `Task.async/1` + `Task.yield/2` by the caller.
