@@ -121,14 +121,21 @@ defmodule ToolCall.Structs.Resolve do
       :error ->
         :error
 
-      {:ok, field_asts, insts, status} ->
+      {:ok, field_asts, insts, status, nullable?} ->
         probe =
           case Structs.enforced_keys(module, current: current) do
             {:ok, keys} -> {:ok, MapSet.new(keys)}
             :error -> :error
           end
 
-        {:ok, %{field_asts: field_asts, insts: insts, status: status, probe: probe}}
+        {:ok,
+         %{
+           field_asts: field_asts,
+           insts: insts,
+           status: status,
+           nullable: nullable?,
+           probe: probe
+         }}
     end
   end
 
@@ -164,7 +171,7 @@ defmodule ToolCall.Structs.Resolve do
     do: put_cache(state, module, :error)
 
   defp install_struct(module, {:ok, raw}, providers, state, normalize) do
-    %{field_asts: field_asts, insts: insts, probe: probe} = raw
+    %{field_asts: field_asts, insts: insts, nullable: nullable?, probe: probe} = raw
 
     required =
       case probe do
@@ -191,7 +198,12 @@ defmodule ToolCall.Structs.Resolve do
     state = %{
       state
       | defs: defs,
-        cache: Map.put(state.cache, module, %{fields: fields, required: required})
+        cache:
+          Map.put(state.cache, module, %{
+            fields: fields,
+            required: required,
+            nullable: nullable?
+          })
     }
 
     state =
@@ -336,8 +348,8 @@ defmodule ToolCall.Structs.Resolve do
 
   defp build_struct(%Type{struct: module, nullable: nullable}, ctx) do
     case Map.get(ctx.cache, module) do
-      %{fields: fields, required: required} ->
-        build_cached_struct(module, nullable, fields, required, ctx)
+      %{fields: fields, required: required, nullable: type_nullable} ->
+        build_cached_struct(module, nullable or type_nullable, fields, required, ctx)
 
       :opaque ->
         {%Type{kind: :any, source: {:opaque_struct, module}, nullable: nullable}, ctx}

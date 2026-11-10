@@ -28,7 +28,7 @@ defmodule ToolCall.Structs do
   end
 
   @spec fields(module(), keyword()) ::
-          {:ok, %{atom() => term()}, [LocalTypes.instantiation()], field_status()}
+          {:ok, %{atom() => term()}, [LocalTypes.instantiation()], field_status(), boolean()}
           | :opaque
           | :error
   def fields(module, opts \\ []) when is_atom(module) do
@@ -112,8 +112,9 @@ defmodule ToolCall.Structs do
       |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
 
     {expanded, truncated?, insts} = LocalTypes.expand(normalize.(body), definitions)
+    {shape, nullable?} = split_nullable_struct(expanded)
 
-    case expanded do
+    case shape do
       {:%, _, [^module, {:%{}, _, type_pairs}]} ->
         types = Map.new(type_pairs)
         field_pairs = pairs || type_pairs
@@ -123,13 +124,13 @@ defmodule ToolCall.Structs do
             {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
           end
 
-        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
+        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok), nullable?}
 
       _other when is_nil(pairs) ->
         :error
 
       _other ->
-        {:ok, any_from_pairs(pairs), [], :non_literal_t}
+        {:ok, any_from_pairs(pairs), [], :non_literal_t, false}
     end
   end
 
@@ -138,7 +139,7 @@ defmodule ToolCall.Structs do
 
   defp current_fields(_module, status, pairs, _normalize) do
     status = if status == :absent, do: :ok, else: status
-    {:ok, any_from_pairs(pairs), [], status}
+    {:ok, any_from_pairs(pairs), [], status, false}
   end
 
   defp any_from_pairs(pairs) do
@@ -184,17 +185,17 @@ defmodule ToolCall.Structs do
   defp do_fields(module) do
     case fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
-      :error -> {:ok, any_fields(module), [], :ok}
+      :error -> {:ok, any_fields(module), [], :ok, false}
     end
   rescue
-    _exception -> {:ok, any_fields(module), [], :ok}
+    _exception -> {:ok, any_fields(module), [], :ok, false}
   end
 
   defp from_entries(module, entries) do
     case Enum.find(entries, &match?({_kind, {:t, _body, []}}, &1)) do
       {:opaque, {:t, _body, []}} -> :opaque
       {:type, {:t, body, []}} -> type_fields(module, body)
-      nil -> {:ok, any_fields(module), [], missing_t_status(entries)}
+      nil -> {:ok, any_fields(module), [], missing_t_status(entries), false}
     end
   end
 
@@ -207,8 +208,9 @@ defmodule ToolCall.Structs do
       |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
 
     {expanded, truncated?, insts} = LocalTypes.expand(type_ast, definitions)
+    {shape, nullable?} = split_nullable_struct(expanded)
 
-    case expanded do
+    case shape do
       {:%, _, [^module, {:%{}, _, pairs}]} ->
         types = Map.new(pairs)
 
@@ -217,12 +219,29 @@ defmodule ToolCall.Structs do
             {field, normalize_field_ast(Map.get(types, field, {:any, [], []}))}
           end
 
-        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok)}
+        {:ok, fields, insts, if(truncated?, do: :truncated, else: :ok), nullable?}
 
       _other ->
-        {:ok, any_fields(module), [], :non_literal_t}
+        {:ok, any_fields(module), [], :non_literal_t, false}
     end
   end
+
+  # `@type t :: %__MODULE__{...} | nil` is a common way to make a struct
+  # optional; unwrap the nil branch so the fields keep their types and the
+  # struct stays nullable wherever it is used.
+  defp split_nullable_struct({:|, _, [left, right]} = union) do
+    cond do
+      null_type?(left) -> {right, true}
+      null_type?(right) -> {left, true}
+      true -> {union, false}
+    end
+  end
+
+  defp split_nullable_struct(other), do: {other, false}
+
+  defp null_type?(nil), do: true
+  defp null_type?({nil, _, _}), do: true
+  defp null_type?(_other), do: false
 
   defp missing_t_status(entries) do
     if Enum.any?(entries, &match?({_kind, {:t, _body, [_ | _]}}, &1)),

@@ -298,6 +298,52 @@ defmodule ToolCall.ResultTypesTest do
     end
   end
 
+  test "a struct whose t unions nil accepts nil as a result" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Find."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.NullableAddress.t()
+        def go(_x), do: nil
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Type{kind: :object, struct: ToolCall.TestFixtures.NullableAddress, nullable: true} =
+             tool.result
+
+    assert {:ok, nil} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "a struct type with arguments validates as a struct" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Good."
+        @spec good(x :: integer()) :: ToolCall.TestFixtures.ParamOnly.t(integer())
+        def good(_x), do: %ToolCall.TestFixtures.ParamOnly{a: 1}
+
+        @doc "Bad."
+        @spec bad(x :: integer()) :: ToolCall.TestFixtures.ParamOnly.t(integer())
+        def bad(_x), do: 1
+      end
+      """)
+
+    good = Enum.find(ToolCall.tools(module), &(&1.name == "good"))
+    assert %Type{kind: :object, struct: ToolCall.TestFixtures.ParamOnly} = good.result
+
+    assert {:ok, %ToolCall.TestFixtures.ParamOnly{a: 1}} =
+             ToolCall.run(module, :good, %{"x" => 1}, validate_result: true)
+
+    assert {:error, {:invalid_result, {:expected_struct, 1}}} =
+             ToolCall.run(module, :bad, %{"x" => 1}, validate_result: true)
+  end
+
   test "Runner.run/5 rejects a non-boolean validate_result" do
     module =
       compile!("""

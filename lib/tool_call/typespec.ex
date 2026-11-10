@@ -199,10 +199,10 @@ defmodule ToolCall.Typespec do
     end
   end
 
-  defp unresolved_remote(module, :t, []) do
+  defp unresolved_remote(module, :t, args) do
     if Structs.struct?(module),
       do: %Type{kind: :struct, struct: module},
-      else: %Type{kind: :any, source: {module, :t, []}}
+      else: %Type{kind: :any, source: {module, :t, args}}
   end
 
   defp unresolved_remote(module, function, args),

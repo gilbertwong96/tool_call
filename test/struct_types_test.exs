@@ -9,6 +9,8 @@ defmodule ToolCall.StructTypesTest do
     ChainHost,
     FriendA,
     NoType,
+    NullableAddress,
+    ParamOnly,
     PathNode,
     SetNode,
     TreeNode,
@@ -642,6 +644,54 @@ defmodule ToolCall.StructTypesTest do
       assert %Type{kind: :object, struct: ^module} = hd(tool.params).type
       assert warnings =~ warning
     end
+  end
+
+  test "a struct whose t unions nil keeps its fields and the null branch" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Find."
+        @spec go(to :: ToolCall.TestFixtures.NullableAddress.t()) :: map()
+        def go(nil), do: %{}
+
+        def go(to), do: to
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Param{
+             type: %Type{
+               kind: :object,
+               struct: NullableAddress,
+               nullable: true,
+               fields: [%{name: "city", type: %Type{kind: :string}}]
+             }
+           } = hd(tool.params)
+
+    refute warnings =~ "not a %__MODULE__"
+    assert {:ok, %{}} = ToolCall.run(module, :go, %{"to" => nil})
+  end
+
+  test "a struct type with arguments resolves to the struct and warns" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: ToolCall.TestFixtures.ParamOnly.t(integer())) :: integer()
+        def go(x), do: x.a
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert %Param{type: %Type{kind: :object, struct: ParamOnly}} = hd(tool.params)
+    assert warnings =~ "parameterized @type t/N"
+    assert {:ok, "anything"} = ToolCall.run(module, :go, %{"x" => %{"a" => "anything"}})
   end
 
   test "defstruct before use ToolCall still resolves through @type t" do

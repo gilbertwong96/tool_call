@@ -7,6 +7,13 @@ defmodule ToolCall.TestFixtures.Address do
   @type t :: %__MODULE__{city: String.t(), street: street() | nil, country: String.t()}
 end
 
+defmodule ToolCall.TestFixtures.NullableAddress do
+  @moduledoc false
+  defstruct [:city]
+
+  @type t :: %__MODULE__{city: String.t()} | nil
+end
+
 defmodule ToolCall.TestFixtures.TreeNode do
   @moduledoc false
   defstruct [:value, children: []]
