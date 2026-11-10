@@ -57,6 +57,9 @@
 - A provider `validator` that is not exported with arity 3 now raises with the
   provider and the remote type in the message, like the other provider IR
   errors.
+- An explicit provider `validator` may live in a file compiled in parallel with
+  the tool: the build waits for it with `Code.ensure_compiled?/1` instead of
+  treating it as missing.
 - `Mod.t(integer())` now resolves as a struct (the type arguments are not
   substituted), so a parameter keeps a callable tool and a result is validated
   as a struct; previously it degraded to `{}` and hid the tool.

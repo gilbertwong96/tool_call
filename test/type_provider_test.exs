@@ -960,4 +960,52 @@ defmodule ToolCall.TypeProviderTest do
                    """)
                  end
   end
+
+  test "a validator compiled in a parallel file is waited for" do
+    dir =
+      Path.join(System.tmp_dir!(), "tool_call_validator_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    tool_file = Path.join(dir, "tool.ex")
+    validator_file = Path.join(dir, "validator.ex")
+
+    File.write!(tool_file, """
+    defmodule ToolCall.TestFixtures.LateValidatorProvider do
+      @behaviour ToolCall.TypeProvider
+
+      def resolve(ToolCall.TestFixtures.LateValidated, :t, []) do
+        {:ok,
+         %ToolCall.IR.Type{
+           kind: :string,
+           validator: {ToolCall.TestFixtures.LateValidator, :validate}
+         }}
+      end
+
+      def resolve(_module, _function, _args), do: :error
+    end
+
+    defmodule ToolCall.TestFixtures.LateValidatorTool do
+      use ToolCall, types: [ToolCall.TestFixtures.LateValidatorProvider]
+
+      @doc "Go."
+      @spec go(x :: integer()) :: ToolCall.TestFixtures.LateValidated.t()
+      def go(_x), do: "ok"
+    end
+    """)
+
+    File.write!(validator_file, """
+    defmodule ToolCall.TestFixtures.LateValidator do
+      def validate(_type, _value, _defs), do: true
+    end
+    """)
+
+    assert {:ok, modules, _diagnostics} =
+             Kernel.ParallelCompiler.compile_to_path([tool_file, validator_file], dir,
+               return_diagnostics: true
+             )
+
+    assert ToolCall.TestFixtures.LateValidatorTool in modules
+  end
 end

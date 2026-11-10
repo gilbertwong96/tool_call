@@ -366,7 +366,11 @@ defmodule ToolCall.Typespec do
          args
        )
        when is_atom(module) and is_atom(function) do
-    if Code.ensure_loaded?(module) and function_exported?(module, function, 3) do
+    available? =
+      match?({:module, ^module}, Code.ensure_compiled(module)) and
+        function_exported?(module, function, 3)
+
+    if available? do
       :ok
     else
       provider_type_error!(

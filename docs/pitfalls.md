@@ -335,6 +335,16 @@ returning `{:ok, "not a map"}` fails even though the tool would have answered
 skips validation. Validation uses the generic runner path, so it is slower than
 the generated fast path.
 
+## A provider validator must be compiled first
+
+An explicit `%ToolCall.IR.Type{validator: {Module, function}}` is checked with
+`Code.ensure_compiled?/1` when the tool compiles. A module in another file of the
+same parallel build is waited for, and a `require`d provider is always earlier.
+A module defined *later in the same file* is not available yet, so the build
+raises "validator ... is not defined". Put the validator before the tool, move it
+to another file, or leave the validator out and let the provider's `validate/3`
+shorthand apply.
+
 ## A provider type without `validate/3` is accepted
 
 The IR describes a provider type in its **wire** domain (`Date.t()` is a
