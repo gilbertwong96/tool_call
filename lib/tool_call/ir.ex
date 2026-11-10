@@ -37,8 +37,9 @@ defmodule ToolCall.IR do
     `ToolCall.Typespec.validate_type!/1` to build a validated copy of a
     hand-written type. `source` is an atom for the string sub-kinds
     (`:charlist`, `:char`, `:binary`, `:bitstring`, `:nonempty_binary`,
-    `:nonempty_string`), which dispatch and result validation read; any other
-    source is compile-time provenance and is dropped from the embedded IR.
+    `:nonempty_string`), which dispatch and result validation read, and for a few
+    diagnostics. A non-atom source is compile-time provenance and is dropped from
+    the embedded IR.
 
     `kind: :ref` names an entry in the tool's `defs` map; emitters render it as
     `{"$ref": "#/$defs/<name>"}` and never resolve it.

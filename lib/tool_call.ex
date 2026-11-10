@@ -298,7 +298,7 @@ defmodule ToolCall do
   Returns the tools derived from a module.
 
   The embedded IR keeps the atom `Type.source` values (string sub-kinds drive
-  dispatch and result validation) and drops AST sources, the spec and the
+  dispatch and result validation) and drops non-atom sources, the spec and the
   parameter ASTs, which are compile-time provenance only.
   """
   @spec tools(module()) :: [Tool.t()]

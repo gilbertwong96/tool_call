@@ -285,8 +285,9 @@ to `{}` and warns.
 The IR is also public for runtime-built tools. A hand-built calendar node must
 set `format`/`transform`; `source` is an atom for the string sub-kinds
 (`:charlist`, `:char`, `:binary`, `:bitstring`, `:nonempty_binary`,
-`:nonempty_string`), which dispatch and result validation read. Any other source
-is provenance and is dropped from the embedded IR. `ToolCall.emit/3`
+`:nonempty_string`), which dispatch and result validation read, and for a few
+diagnostics. A non-atom source is provenance and is dropped from the embedded
+IR. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
 Not handled: bitstrings with explicit sizes and `@typep` field types inside a

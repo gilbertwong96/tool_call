@@ -25,7 +25,9 @@ defmodule ToolCall.TypeProvider do
   `{:error, {:invalid_transform, ...}}` like any other coercion failure. It is a
   shorthand for a provider that resolves one type: a provider that handles
   several types can return `%ToolCall.IR.Type{transform: {Module, :fun}}`
-  instead and leave `coerce/1` undefined.
+  instead and leave `coerce/1` undefined. When both are present, the `coerce/1`
+  shorthand replaces the returned `transform`, while an explicit `validator`
+  wins over `validate/3`.
 
   Implement `validate/3` to describe the **value domain** of the types the
   provider resolves: it receives the resolved IR node, the value the tool

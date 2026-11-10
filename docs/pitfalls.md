@@ -356,14 +356,17 @@ their elements. An improper list or an exotic map key is an
 
 ## A result type that renders `{}` validates nothing
 
-`Validate.valid?/3` accepts `:any` and `:unsupported` before any kind rule, so a
-return type declared as `term()`, an unknown remote type, `fun()`/`pid()` or a
-type that hit the definition budget answers `{:ok, value}` for any value.
-`no_return()`/`none()` skip validation entirely. The compile warns for each of
-these: a top-level `:any`/`:unsupported` result, an `@opaque` or unresolved
-struct, and a budget-truncated return type. A nested `{}` inside an object,
-array or union is still accepted silently and only that part goes unchecked;
-narrow the return type when the whole result must be checked.
+`Validate.valid?/3` checks a `validator` first, then accepts `:any` and
+`:unsupported` before any kind rule. A return type declared as `term()`, an
+unknown remote type, `fun()`/`pid()` or a type that hit the definition budget
+therefore answers `{:ok, value}` for any value — unless a provider gives the
+node a `validator`, which makes it checkable. `no_return()`/`none()` skip
+validation entirely. The compile warns for a top-level `:any`/`:unsupported`
+result without a validator, for an `@opaque` or unresolved struct, and for a
+budget-truncated return type; a validator suppresses the warning because the
+value is checked. A nested `{}` inside an object, array or union is still
+accepted silently and only that part goes unchecked; narrow the return type when
+the whole result must be checked.
 
 ## A result struct must satisfy `@type t`, including nil defaults
 

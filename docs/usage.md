@@ -436,7 +436,8 @@ non-UTF-8 path fails validation. `atom()` results follow the value domain
 A `no_return()` result is never validated. A result type that renders `{}` —
 `term()`, an unknown remote type, `fun()`/`pid()`, an `@opaque` struct, or a
 budget-truncated type — accepts any value; the compile warns, because
-`validate_result: true` cannot check it. An improper list or an exotic map key
+`validate_result: true` cannot check it. A provider `validator` on the node
+suppresses the warning and is used instead. An improper list or an exotic map key
 (a tuple, a map) is `{:invalid_result, ...}`, not a raise. A struct result is
 checked field by field against its `@type t`, so a field whose `defstruct`
 default is nil must be declared `T | nil`. A fixed-shape map type is closed and
