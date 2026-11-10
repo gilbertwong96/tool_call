@@ -512,10 +512,13 @@ use ToolCall, timeout: MyTimeouts
 ```
 
 - `timeout: :infinity` disables the module policy for one call.
+- `context: term` is passed to the timeout policy's `timeout/3` callback; use it
+  for per-request budgets or user/tenant data.
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
   `Task.Supervisor` instead of a task linked to the caller.
-- The timeout wraps only the function invocation, after validation and before
-  result validation. A resolve error is returned without starting a task.
+- The timeout wraps the function invocation and its result validation; argument
+  validation and coercion happen before the task starts. A resolve error is
+  returned without starting a task.
 - It is a per-invocation cap, not a run deadline. The caller or agent framework
   owns the overall deadline.
 - A timeout is a hard kill, not a cancellation: see

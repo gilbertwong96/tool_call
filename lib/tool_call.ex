@@ -441,6 +441,7 @@ defmodule ToolCall do
       answers `{:error, {:timeout, ms}}` and runs the function in a task.
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
       invocation. Without it the task is linked to the caller.
+    * `:context` - passed to a `ToolCall.Timeout` policy's `timeout/3` callback.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
@@ -459,7 +460,8 @@ defmodule ToolCall do
   end
 
   defp runner_path?(opts) do
-    Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout)
+    Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout) or
+      Keyword.has_key?(opts, :context)
   end
 
   defp inject_timeout_policy(module, opts) do
@@ -484,7 +486,7 @@ defmodule ToolCall do
   end
 
   defp validate_option_keys!(opts) do
-    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor] do
+    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor, :context] do
       [] -> :ok
       unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
     end

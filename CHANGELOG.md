@@ -41,8 +41,8 @@
 - `ToolCall.Runner.resolve/4` and `execute/2` split preparation from the side
   effect. `ToolCall.run/4` accepts `timeout:` and `task_supervisor:`, and
   `use ToolCall, timeout: ...` sets a default or a `ToolCall.Timeout` policy; a
-  timeout answers `{:error, {:timeout, ms}}`. Timeouts are per invocation and a
-  hard kill, not a cancellation.
+  timeout answers `{:error, {:timeout, ms}}`, and `context:` reaches the policy.
+  Timeouts are per invocation and a hard kill, not a cancellation.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one

@@ -485,8 +485,9 @@ name is refused. Chunks for other event types are ignored.
 
 `Runner.resolve/4` performs the key checks, coercion and positional
 construction without side effects; `execute/2` invokes the function (and
-validates the result). A timeout wraps only the invocation in a task, after
-validation, so an invalid call fails before a human or timer is involved.
+validates the result). A timeout wraps the invocation and its result validation
+in a task after argument validation, so an invalid call fails before a timer is
+involved.
 `run/4 timeout:` overrides the module default; `use ToolCall, timeout: ...`
 embeds a constant or a `ToolCall.Timeout` policy in the generated runner and
 disables the fast path for that module. The task is killed with `:brutal_kill`;

@@ -86,13 +86,14 @@ defmodule ToolCall.Runner do
 
   Runs the key checks, coercion and positional construction and answers a
   `ToolCall.Call` that `execute/2` can run later. No side effect is performed.
+  A hand-built tool is validated first; invalid IR raises `ArgumentError`.
   """
   @spec resolve(module(), Tool.t(), map(), keyword()) ::
           {:ok, ToolCall.Call.t()} | {:error, term()}
   def resolve(module, tool, args, opts \\ [])
 
   def resolve(module, %Tool{} = tool, args, opts) when is_map(args) do
-    resolve_tool(module, tool, args, true, nil, opts)
+    resolve_tool(module, Typespec.validate_tool!(tool), args, true, nil, opts)
   end
 
   def resolve(_module, %Tool{}, args, _opts), do: {:error, {:invalid_arguments, args}}
