@@ -111,6 +111,49 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "city_2")["description"] == "second city only"
   end
 
+  test "does not warn about @doc bullets under an Options heading" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc \"\"\"
+        Go.
+
+        ## Options
+          * timeout - request timeout
+          * retries - retry count
+        \"\"\"
+        @spec go(opts :: keyword()) :: :ok
+        def go(_opts), do: :ok
+      end
+      """)
+
+    refute warnings =~ "not a parameter"
+  end
+
+  test "an Options heading does not name an unannotated parameter by position" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc \"\"\"
+        Go.
+
+        ## Options
+          * timeout - request timeout
+        \"\"\"
+        @spec go(keyword()) :: :ok
+        def go(opts), do: :ok
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+    assert hd(tool.params).name == "opts"
+    refute warnings =~ "not a parameter"
+  end
+
   test "warns about a @doc bullet that names no parameter" do
     {_module, warnings} =
       compile_with_warnings!("""

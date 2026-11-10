@@ -86,7 +86,11 @@ A bullet under `## Parameters` is matched to a parameter by name, or by position
 when the spec does not name it. A name that matches nothing — a typo, or a
 bullet for an option the function does not take — is dropped, and the compile
 warns with the offending name, so a description that does not appear is visible
-rather than silent.
+rather than silent. `## Options` is the exception: it documents the keys of a
+keyword argument, so its bullets are not checked against parameter names, do not
+name an unannotated parameter by position, and do not warn. The section is not
+part of the tool description either — put the keys in the description or flatten
+them into parameters if the model must see them.
 
 ## `@typedoc` is consumed before `@before_compile`
 

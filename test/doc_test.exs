@@ -16,6 +16,29 @@ defmodule ToolCall.DocTest do
     assert %{description: "Get the forecast."} = Doc.parse(doc)
   end
 
+  test "reports whether the heading documents parameters or options" do
+    params = """
+    Run.
+
+    ## Parameters
+      * city - city name
+    """
+
+    options = """
+    Run.
+
+    ## Options
+      * timeout - request timeout
+    """
+
+    assert %{param_heading: :parameters} = Doc.parse(params)
+
+    assert %{param_heading: :options, params: %{"timeout" => "request timeout"}, param_order: []} =
+             Doc.parse(options)
+
+    assert %{param_heading: nil} = Doc.parse("Run.")
+  end
+
   test "reads bullets under a Parameters heading" do
     doc = """
     Search.

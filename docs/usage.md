@@ -32,7 +32,7 @@ Everything else is derived. What the library reads:
 | `@spec f(city :: String.t())` | parameter name `city` and its type. Without `city ::` the name is taken by position from a `@doc` bullet when available, then falls back to the head variable (or `argN`) with a warning; a bare type variable in a `when` constraint counts as unnamed |
 | `def f(city, days \\ 3)` | `days` is optional, `3` is emitted as `default`; a module attribute value is expanded when it is a JSON literal |
 | first `@doc` paragraph | tool `description`; a leading `# Title` is stripped and a leading level-2+ section heading is omitted in favor of its body |
-| `* name - text` (also `+` and `-`; optional `(Type.t())`) under `## Parameters` (a trailing `:` and up to three spaces of heading indentation are accepted) | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored) |
+| `* name - text` (also `+` and `-`; optional `(Type.t())`) under `## Parameters` (also `Params`, `Options`, `Arguments`, `Args`; a trailing `:` and up to three spaces of heading indentation are accepted) | per-parameter `description` (indented continuation lines are joined; nested bullets, their continuations, and other shapes are ignored). `## Options` bullets describe keyword-option keys: they do not name or warn about parameters, and the section is not sent to the model. |
 | `@doc false` | the function is not a tool |
 | no `@spec` | the function is skipped with a warning |
 | `@type` in the same module | inlined; a remote type without a provider stays `{}` |

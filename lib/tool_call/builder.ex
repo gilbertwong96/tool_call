@@ -307,6 +307,16 @@ defmodule ToolCall.Builder do
      }, truncated}
   end
 
+  defp warn_unknown_doc_bullets(
+         _module,
+         _location,
+         _name,
+         _arity,
+         %{param_heading: :options},
+         _params
+       ),
+       do: :ok
+
   defp warn_unknown_doc_bullets(module, location, name, arity, doc_info, params) do
     names = MapSet.new(params, & &1.name)
 

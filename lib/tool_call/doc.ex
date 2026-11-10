@@ -5,8 +5,12 @@ defmodule ToolCall.Doc do
   `@doc` is free-form markdown. The first paragraph becomes the tool
   description; a leading `#` title is stripped, while a leading level-2+
   section heading is omitted and its body is used. Bullets under a
-  `## Parameters` heading become per-parameter descriptions, with an optional
-  type annotation such as `* city (String.t()) - city name`.
+  `## Parameters` heading (also `Params`, `Options`, `Arguments` and `Args`)
+  become per-parameter descriptions, with an optional type annotation such as
+  `* city (String.t()) - city name`. `## Options` conventionally documents the
+  keys of a keyword argument, so those bullets are not matched against parameter
+  names, do not name a parameter by position and do not warn; the section is not
+  part of the tool description.
 
       @doc \"\"\"
       Get the forecast.
@@ -24,20 +28,22 @@ defmodule ToolCall.Doc do
   @type parsed :: %{
           description: String.t() | nil,
           params: %{String.t() => String.t()},
-          param_order: [String.t()]
+          param_order: [String.t()],
+          param_heading: :parameters | :options | nil
         }
 
   @spec parse(nil | false | String.t()) :: parsed()
-  def parse(nil), do: %{description: nil, params: %{}, param_order: []}
-  def parse(false), do: %{description: nil, params: %{}, param_order: []}
+  def parse(nil), do: %{description: nil, params: %{}, param_order: [], param_heading: nil}
+  def parse(false), do: %{description: nil, params: %{}, param_order: [], param_heading: nil}
 
   def parse(text) when is_binary(text) do
-    params = params(text)
+    {params, heading} = params(text)
 
     %{
       description: description(text),
       params: Map.new(params),
-      param_order: Enum.map(params, fn {name, _description} -> name end)
+      param_order: if(heading == :options, do: [], else: Enum.map(params, &elem(&1, 0))),
+      param_heading: heading
     }
   end
 
@@ -67,12 +73,22 @@ defmodule ToolCall.Doc do
   defp level_one_heading?(line), do: Regex.match?(~r/^\s{0,3}#\s+/, line)
 
   defp params(text) do
-    text
-    |> String.split("\n")
-    |> Enum.drop_while(&(not Regex.match?(@param_heading, &1)))
-    |> Enum.drop(1)
-    |> Enum.take_while(&(not Regex.match?(@any_heading, &1)))
-    |> collect_params()
+    case text
+         |> String.split("\n")
+         |> Enum.split_while(&(not Regex.match?(@param_heading, &1))) do
+      {_before, [heading | rest]} ->
+        {rest |> Enum.take_while(&(not Regex.match?(@any_heading, &1))) |> collect_params(),
+         heading_kind(heading)}
+
+      {_before, []} ->
+        {[], nil}
+    end
+  end
+
+  # `## Options` conventionally documents the keys of a keyword argument, which
+  # are not function parameters; the builder does not warn about those bullets.
+  defp heading_kind(line) do
+    if Regex.match?(~r/options/i, line), do: :options, else: :parameters
   end
 
   # Only bullets at the indentation of the first bullet are parameters; a
