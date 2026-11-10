@@ -68,7 +68,13 @@ defmodule ToolCall.Audit do
 
   @callback record(Entry.t()) :: term()
 
-  @doc false
+  @doc """
+  Builds the entry passed to `c:record/1`.
+
+  `outcome` is one of the `t:outcome/0` values; `opts` accepts
+  `:duration_us`, `:error`, `:approval_request_id` and `:timeout`.
+  Custom dispatchers call this when they bypass `ToolCall.run/4`.
+  """
   @spec entry(module(), String.t(), term(), term(), outcome(), keyword()) :: Entry.t()
   def entry(module, tool, args, context, outcome, opts \\ []) do
     %Entry{
