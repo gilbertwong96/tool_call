@@ -269,7 +269,7 @@ defmodule ToolCall.EmitTest do
         """)
 
       assert_raise ArgumentError, ~r/unsupported target/, fn ->
-        ToolCall.emit(module, :gemini)
+        ToolCall.emit(module, :bogus)
       end
     end
   end
@@ -512,8 +512,8 @@ defmodule ToolCall.EmitTest do
     test "names the supported targets in the error" do
       tool = %ToolCall.IR.Tool{name: "go", description: "Go."}
 
-      assert_raise ArgumentError, ~r/:openai, :anthropic or :mcp/, fn ->
-        ToolCall.emit(tool, :gemini)
+      assert_raise ArgumentError, ~r/:openai, :anthropic, :mcp or :gemini/, fn ->
+        ToolCall.emit(tool, :bogus)
       end
     end
   end

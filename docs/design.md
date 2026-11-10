@@ -469,17 +469,20 @@ Not included: converting a value into a JSON value (struct → map, `Date` → I
 ## Provider subsets
 
 The same IR is normalized for the provider formats below. Runtime emitters exist
-for OpenAI, Anthropic and MCP. OpenAI and Anthropic are precompiled per module;
-MCP renders on demand from the tool IR, because its schema is the same
-parameters object the other targets embed. A Gemini emitter is planned.
+for OpenAI, Anthropic, MCP and Gemini. OpenAI and Anthropic are precompiled per
+module; MCP renders on demand from the tool IR, because its schema is the same
+parameters object the other targets embed. Gemini also renders on demand: its
+`parameters` is a different OpenAPI subset, not the shared JSON Schema.
 
-| | OpenAI | Anthropic | MCP |
-|---|---|---|---|
-| Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` |
-| Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) |
-| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | renders the closed subset; MCP has no flag |
-| `$ref` / `$defs` | supported, strict mode included | supported | supported |
-| Who parses arguments | you (a JSON string) | the provider (`input` arrives decoded) | varies |
+| | OpenAI | Anthropic | MCP | Gemini |
+|---|---|---|---|---|
+| Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` | `{name, description, parameters}` in `functionDeclarations` |
+| Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) | an object schema (`type: "OBJECT"`) |
+| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | renders the closed subset; MCP has no flag | ignored |
+| `$ref` / `$defs` | supported, strict mode included | supported | supported | not supported; a recursive parameter raises |
+| Type casing | lowercase JSON Schema | lowercase JSON Schema | lowercase JSON Schema | uppercase OpenAPI `Type` enum |
+| Nullability | `["T", "null"]` | `["T", "null"]` / `anyOf` | same as OpenAI | `nullable: true` |
+| Who parses arguments | you (a JSON string) | the provider (`input` arrives decoded) | varies | the provider (a `functionCall` map) |
 
 The last row matters for large integers: when the provider parses, you inherit
 its numeric precision. It is the reason `wire: :string_integer` exists.
@@ -489,6 +492,14 @@ OpenAI accepts `pattern`, the nine `format` values (`date-time`, `time`,
 bounds in strict mode **for standard models**. Fine-tuned models reject those
 keywords and refuse the schema, so a strict schema for a fine-tuned model must
 enumerate values and drop the constraints.
+
+Gemini's `parameters` is a 22-field OpenAPI 3.0 subset, not JSON Schema: it has
+no `additionalProperties`, `$ref`/`$defs`, `oneOf`, `prefixItems` or `const`,
+and its `enum` is a string list. The emitter drops `additionalProperties` (an
+object stays open, so dispatch may reject an extra key the schema allowed),
+drops `prefixItems` (a tuple keeps only `minItems`/`maxItems`), drops a
+non-string enum, and raises for a recursive parameter. `parametersJsonSchema`
+accepts full JSON Schema but is not emitted.
 
 ## Decisions
 

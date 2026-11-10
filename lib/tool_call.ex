@@ -338,16 +338,21 @@ defmodule ToolCall do
   def tool_names(module), do: Enum.map(tools(module), & &1.name)
 
   @doc """
-  Emits schemas for `target` (`:openai`, `:anthropic` or `:mcp`).
+  Emits schemas for `target` (`:openai`, `:anthropic`, `:mcp` or `:gemini`).
 
   For a module the OpenAI and Anthropic variants are rendered at **compile time**
   and embedded as a literal, so this is a direct or guarded map lookup and
-  `strict` may be a runtime boolean. MCP is rendered on demand, because its
-  `inputSchema` is the parameters object the other targets already embed. A
-  module returns a list with one schema per tool; a single `ToolCall.IR.Tool`
-  returns one schema map and a list of them a list, rendered on demand, which is
-  what dynamically built tools need. Runtime IR is validated before rendering;
-  invalid types raise `ArgumentError`.
+  `strict` may be a runtime boolean. MCP and Gemini are rendered on demand. MCP
+  because its `inputSchema` is the parameters object the other targets already
+  embed; Gemini because its OpenAPI subset differs (uppercase types, no
+  `additionalProperties`). A module returns a list with one schema per tool; a
+  single `ToolCall.IR.Tool` returns one schema map and a list of them a list,
+  rendered on demand, which is what dynamically built tools need. Runtime IR is
+  validated before rendering; invalid types raise `ArgumentError`.
+
+  Gemini's `parameters` cannot express `$ref`/`$defs`, `additionalProperties`
+  or non-string enums, and it has no positional tuples; a recursive parameter
+  raises, and the other losses are documented in `ToolCall.Emit.Gemini`.
 
   ## Options
 
@@ -355,9 +360,10 @@ defmodule ToolCall do
       `"strict": true`, every property becomes required, optional values
       become nullable and every object is closed, which is the only shape the
       API accepts when `strict: true` is set. For `:mcp` it renders the same
-      closed subset without a flag (MCP has none). Ignored for `:anthropic`.
+      closed subset without a flag (MCP has none). Ignored for `:anthropic` and
+      `:gemini`.
   """
-  @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic | :mcp, keyword()) ::
+  @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic | :mcp | :gemini, keyword()) ::
           map() | [map()]
   def emit(module_or_tools, target, opts \\ [])
 
@@ -366,6 +372,11 @@ defmodule ToolCall do
   def emit(module, :mcp, opts) when is_atom(module) do
     ensure_tool_module!(module)
     Enum.map(module.__tools__(), &ToolCall.Emit.MCP.emit(&1, opts))
+  end
+
+  def emit(module, :gemini, opts) when is_atom(module) do
+    ensure_tool_module!(module)
+    Enum.map(module.__tools__(), &ToolCall.Emit.Gemini.emit(&1, opts))
   end
 
   def emit(module, target, opts) when is_atom(module) do

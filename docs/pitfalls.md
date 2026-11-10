@@ -276,6 +276,17 @@ compile time. A cycle that consumes a value — a ref under an object, array or
 tuple, as in `@type tree :: %{children: [tree()]}` — is fine and terminates at
 dispatch because the value is finite.
 
+## Gemini's `parameters` is a reduced OpenAPI subset
+
+Gemini's `FunctionDeclaration.parameters` is not JSON Schema: it has no
+`additionalProperties`, `$ref`/`$defs`, `oneOf`, `prefixItems` or `const`, and
+its `enum` is a string list. `ToolCall.emit(module, :gemini)` therefore drops
+`additionalProperties` (objects stay open, so dispatch can still reject an extra
+key the schema allowed), drops `prefixItems` (a tuple keeps only
+`minItems`/`maxItems`), drops a non-string enum, and raises for a recursive
+parameter. Send `parametersJsonSchema` yourself when those must be preserved;
+`strict` is ignored for this target.
+
 ## A hand-built `:ref` needs its `$defs` entry
 
 `ToolCall.IR.Tool.defs` must hold every name a `:ref` points at.

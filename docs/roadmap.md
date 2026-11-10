@@ -28,7 +28,10 @@ and the runtime dispatcher.
   encoding stays with the caller.
 - MCP `emit/3` target: done. `ToolCall.emit/3` renders `{name, description,
   inputSchema}` on demand, and `mix tool_call.export --format mcp` uses it.
-- Gemini `emit/3` target.
+- Gemini `emit/3` target: done. `ToolCall.emit(module, :gemini)` renders
+  `{name, description, parameters}` declarations, and
+  `mix tool_call.export --format gemini` wraps them in a `tools` value. The
+  schema is Gemini's OpenAPI subset, not JSON Schema.
 - Streaming helpers for aggregating `tool_calls` deltas. The current runtime
   operates on complete tool calls.
 

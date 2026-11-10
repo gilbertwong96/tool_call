@@ -586,7 +586,7 @@ defmodule ToolCall.SchemaTest do
     tool = %Tool{name: "go", description: "Go.", params: []}
 
     assert_raise ArgumentError, ~r/unsupported target/, fn ->
-      ToolCall.emit(tool, :gemini)
+      ToolCall.emit(tool, :bogus)
     end
   end
 

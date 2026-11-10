@@ -18,6 +18,13 @@
   tool objects for an MCP `tools/list` result. MCP renders on demand from the
   tool IR; `strict: true` renders the closed schema subset without a flag.
 
+- `ToolCall.emit/3` supports `:gemini`, returning `{name, description,
+  parameters}` declarations for `functionDeclarations`. The parameters object is
+  Gemini's OpenAPI 3.0 subset: uppercase types, `nullable: true`, no
+  `additionalProperties`, no `prefixItems`; non-string enums are dropped and a
+  recursive `$ref` raises. `mix tool_call.export --format gemini` wraps them as
+  `{"tools": [{"functionDeclarations": [...]}]}`.
+
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one
   canonical body.

@@ -55,6 +55,17 @@ defmodule ToolCall.ExportTest do
              JSON.decode!(export([inspect(module), "--format", "anthropic"]))
   end
 
+  test "exports Gemini function declarations" do
+    module = weather()
+
+    assert %{"tools" => [%{"functionDeclarations" => [declaration]}]} =
+             JSON.decode!(export([inspect(module), "--format", "gemini"]))
+
+    assert declaration["name"] == "get_weather"
+    assert declaration["parameters"]["type"] == "OBJECT"
+    refute Map.has_key?(declaration["parameters"], "additionalProperties")
+  end
+
   test "exports an MCP tools/list result" do
     module = weather()
 

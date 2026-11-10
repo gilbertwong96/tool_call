@@ -50,14 +50,14 @@ compile time; there are no runtime dependencies.
 
 ## What you get
 
-- `ToolCall.emit/3` — OpenAI, Anthropic and MCP schemas; the provider-call
-  targets are precompiled per module.
+- `ToolCall.emit/3` — OpenAI, Anthropic, MCP and Gemini schemas; the
+  provider-call targets are precompiled per module, MCP and Gemini on demand.
 - `ToolCall.run/3` — required/unknown argument checks, coercion, exception
   wrapping, and dispatch to the real function.
 - `ToolCall.tools/1` and `ToolCall.describe/2` — the IR and provider-neutral
   schema descriptions.
 - `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
-- `mix tool_call.export` — JSON for OpenAI, Anthropic or MCP.
+- `mix tool_call.export` — JSON for OpenAI, Anthropic, MCP or Gemini.
 - `mix tool_call.clean` — removes orphaned typedoc companion beams.
 
 ## Documentation

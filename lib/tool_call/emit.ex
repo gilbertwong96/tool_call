@@ -14,7 +14,7 @@ defmodule ToolCall.Emit do
 
   alias ToolCall.IR.Tool
 
-  @type target :: :openai | :anthropic | :mcp
+  @type target :: :openai | :anthropic | :mcp | :gemini
 
   @spec emit([Tool.t()] | Tool.t(), target(), keyword()) :: [map()] | map()
   def emit(tools_or_tool, target, opts \\ [])
@@ -26,10 +26,11 @@ defmodule ToolCall.Emit do
   def emit(%Tool{} = tool, :openai, opts), do: ToolCall.Emit.OpenAI.emit(tool, opts)
   def emit(%Tool{} = tool, :anthropic, opts), do: ToolCall.Emit.Anthropic.emit(tool, opts)
   def emit(%Tool{} = tool, :mcp, opts), do: ToolCall.Emit.MCP.emit(tool, opts)
+  def emit(%Tool{} = tool, :gemini, opts), do: ToolCall.Emit.Gemini.emit(tool, opts)
 
   def emit(%Tool{}, target, _opts) do
     raise ArgumentError,
-          "unsupported target #{inspect(target)}; expected :openai, :anthropic or :mcp"
+          "unsupported target #{inspect(target)}; expected :openai, :anthropic, :mcp or :gemini"
   end
 
   @doc false
@@ -53,7 +54,7 @@ defmodule ToolCall.Emit do
 
       :error ->
         raise ArgumentError,
-              "unsupported target #{inspect(target)}; expected :openai, :anthropic or :mcp"
+              "unsupported target #{inspect(target)}; expected :openai, :anthropic, :mcp or :gemini"
     end
   end
 end

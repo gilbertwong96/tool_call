@@ -10,6 +10,7 @@ defmodule Mix.Tasks.ToolCall.Export do
       mix tool_call.export MyApp.Tools.Weather MyApp.Tools.Math
       mix tool_call.export --format anthropic
       mix tool_call.export --format mcp --out priv/tools.json
+      mix tool_call.export --format gemini --out priv/gemini_tools.json
       mix tool_call.export --strict
 
   Without module arguments every module of the current application that exports
@@ -26,6 +27,8 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `anthropic` - an array of `{name, description, input_schema}` objects
     * `mcp` - an MCP `tools/list` result:
       `{"tools": [{"name": ..., "description": ..., "inputSchema": ...}]}`
+    * `gemini` - a `tools` request value:
+      `{"tools": [{"functionDeclarations": [{"name": ..., "parameters": ...}]}]}`
 
   ## Options
 
@@ -33,7 +36,7 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `--out`, `-o` - write to a file instead of stdout
     * `--app`, `-a` - application to discover tool modules in
     * `--strict` - emit the strict JSON Schema subset for OpenAI and MCP;
-      ignored by `anthropic`
+      ignored by `anthropic` and `gemini`
 
   Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
   27.1+. The formatter belongs to OTP, so a file is reproducible per OTP version
@@ -44,7 +47,7 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   @switches [app: :string, format: :string, out: :string, strict: :boolean]
   @aliases [a: :app, f: :format, o: :out]
-  @formats ~w(openai anthropic mcp)
+  @formats ~w(openai anthropic mcp gemini)
 
   @impl Mix.Task
   def run(argv) do
@@ -174,6 +177,11 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   defp render(modules, "mcp", strict?, _specs) do
     %{"tools" => Enum.flat_map(modules, &ToolCall.emit(&1, :mcp, strict: strict?))}
+  end
+
+  defp render(modules, "gemini", _strict?, _specs) do
+    declarations = Enum.flat_map(modules, &ToolCall.emit(&1, :gemini))
+    %{"tools" => [%{"functionDeclarations" => declarations}]}
   end
 
   # Use JSON.format/1 once Elixir's JSON ships a pretty printer; that would

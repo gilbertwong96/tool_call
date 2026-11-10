@@ -276,6 +276,7 @@ ToolCall.emit(MyApp.Tools.Weather, :openai)
 ToolCall.emit(MyApp.Tools.Weather, :openai, strict: true)
 ToolCall.emit(MyApp.Tools.Weather, :anthropic)
 ToolCall.emit(MyApp.Tools.Weather, :mcp)
+ToolCall.emit(MyApp.Tools.Weather, :gemini)
 
 # several modules: concatenate the lists
 tools = ToolCall.emit(A, :openai, strict: true) ++ ToolCall.emit(B, :openai, strict: true)
@@ -287,12 +288,22 @@ object. For an optional argument or field whose type does not accept `nil`, an
 explicit `null` is treated as absent; if the type accepts `nil`, the value is
 passed through and can override a default.
 
+`ToolCall.emit(module, :gemini)` returns one `{name, description, parameters}`
+declaration per tool (the `functionDeclarations` entry), rendered on demand.
+`parameters` is Gemini's 22-field OpenAPI 3.0 subset, not JSON Schema: types are
+uppercase (`STRING`, `OBJECT`, `INTEGER`, …), `nullable: true` replaces a
+`["T", "null"]` type, `additionalProperties` is dropped (Gemini objects are
+always open), `prefixItems` is dropped (a tuple keeps only `minItems`/`maxItems`),
+and a non-string enum is dropped. A recursive parameter raises
+`ArgumentError`, because `parameters` has no `$defs`/`$ref`; send
+`parametersJsonSchema` yourself if you need one. `strict` is ignored.
+
 ### When it happens
 
 Everything is compile time. Inside `@before_compile` the library derives the IR
-and renders the three supported variants — `{:openai, false}`,
+and renders the precompiled variants — `{:openai, false}`,
 `{:openai, true}` and `{:anthropic, false}` — into literals stored in
-`__schemas__/0`. A second compile phase (`@after_compile`) reads the
+`__schemas__/0`. MCP and Gemini are rendered on demand from the tool IR. A second compile phase (`@after_compile`) reads the
 just-compiled `Docs` chunk for `@typedoc` fallback descriptions; if any apply,
 the enriched literals live in a generated companion module and `__schemas__/0`
 delegates to it. `ToolCall.emit/3` on a module still returns a precompiled
@@ -458,12 +469,15 @@ validation accepts anything.
 mix tool_call.export                              # OpenAI function objects
 mix tool_call.export --format anthropic           # Anthropic tool definitions
 mix tool_call.export --format mcp --out priv/tools.json
+mix tool_call.export --format gemini --out priv/gemini_tools.json
 mix tool_call.export --strict
 mix tool_call.clean                               # remove orphaned typedoc companions
 ```
 
-`--format` is `openai` (default), `anthropic` or `mcp`; `--strict` renders the
-strict subset for OpenAI and MCP; `--app` discovers another application. Without
+`--format` is `openai` (default), `anthropic`, `mcp` or `gemini`; `--strict`
+renders the strict subset for OpenAI and MCP (ignored by the other two); `--app`
+discovers another application. Gemini output is a `tools` request value:
+`{"tools": [{"functionDeclarations": [...]}]}`. Without
 module arguments every module in the app that exports `__tools__/0` is included.
 The output indents two spaces, sorts object keys and modules, and keeps
 declaration order inside a module, so a committed file stays stable across runs.
