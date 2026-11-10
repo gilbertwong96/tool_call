@@ -80,13 +80,13 @@ attribute read by `@on_definition`. They also live in the `Docs` chunk, which a
 stripped release removes. A tool declared that way falls back to its function
 name; write text as well if the model should see a description.
 
-## A `@doc` bullet that names no parameter is ignored
+## A `@doc` bullet that names no parameter is dropped
 
 A bullet under `## Parameters` is matched to a parameter by name, or by position
 when the spec does not name it. A name that matches nothing — a typo, or a
-bullet for an option the function does not take — is dropped without a warning,
-so the parameter keeps its fallback description. Compare the bullet names with
-the spec when a description does not appear.
+bullet for an option the function does not take — is dropped, and the compile
+warns with the offending name, so a description that does not appear is visible
+rather than silent.
 
 ## `@typedoc` is consumed before `@before_compile`
 
@@ -238,24 +238,21 @@ built-in provider, and a user provider cannot replace it — the built-ins are
 tried first. For those two, declare the parameter as `String.t()` or `list(t)`
 and convert in the function.
 
-## A struct type with arguments is not a struct type
+## A struct type with arguments keeps the struct, not the field types
 
-Only `Mod.t()` with no arguments becomes a struct marker. `Mod.t(integer())`
-has no provider, so it is `{}` (`:any`): as a parameter that hides the tool
-with the untyped-argument warning, and as a return type it leaves the result
-unvalidated without a warning of its own. A struct whose `t` is parameterized
-(`@type t(a)`) works only as `Mod.t()` — every field is `{}` and a warning names
-the module — or through a separate non-parametric `@type`.
+`Mod.t(integer())` is resolved like `Mod.t()` when `Mod` is a struct: dispatch
+still rebuilds the struct and result validation still requires one, but the type
+arguments are not substituted. Field extraction reads `t/0`, so a struct that
+declares only `@type t/N` gives every field `{}` and the compile warns. Declare a
+non-parametric `@type t`, or accept `{}` fields for that parameter.
 
-## `@type t :: %__MODULE__{} | nil` is not a struct `t`
+## `@type t :: %__MODULE__{} | nil` is nullable
 
-Field extraction reads a `%__MODULE__{}` literal, so a union — even just `| nil`
-— makes `t/0` non-literal: every field becomes `{}`, the nil branch is ignored,
-and the compile warns. A parameter of that type still rejects null and a result
-still fails `{:expected_struct, nil}`. Keep the struct's `t/0` a literal and put
-`| nil` where the type is used: `@spec ship(to :: Address.t() | nil)`. The
-nullable struct then keeps its null branch in the schema and in result
-validation.
+Field extraction unwraps a nil branch of `t/0`, so the fields keep their types and
+`Mod.t()` is nullable wherever it is used: the parameter schema accepts null and
+result validation accepts nil. A union with any other type — `%__MODULE__{} |
+:error`, say — is still non-literal: every field becomes `{}`, the other branch
+is ignored, and the compile warns.
 
 ## A schema is per tool, so a shared recursive type is sent once per tool
 

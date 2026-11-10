@@ -46,6 +46,13 @@
   booleans are JSON literals, not atoms on the wire.
 - `Address.t() | nil` keeps the null branch for a struct parameter and for
   result validation; the resolved struct object previously dropped `nullable`.
+- `Mod.t(integer())` now resolves as a struct (the type arguments are not
+  substituted), so a parameter keeps a callable tool and a result is validated
+  as a struct; previously it degraded to `{}` and hid the tool.
+- A struct whose `@type t` unions `nil` keeps its field types and is nullable
+  wherever it is used; other unions still degrade to `{}`.
+- A `@doc` bullet under `## Parameters` that names no parameter now warns with
+  the offending name instead of being dropped silently.
 - An enum that mixes atoms with booleans or integers stringifies the atoms, so
   the schema term is JSON-encodable by any encoder.
 
