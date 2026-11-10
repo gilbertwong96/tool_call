@@ -431,10 +431,10 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
   its wire form. It receives the resolved node and the tool's `$defs`, so it can
   validate element types (`MapSet`, `Keyword`) through `Validate.valid?/3`.
 - A node with a `transform` and no `validator` describes a domain the library
-  cannot see, so it is accepted. The compile warns about a top-level
-  `:any`/`:unsupported` result without a validator, an `@opaque` or unresolved
-  struct, and a budget-truncated type; a `{}` nested inside an object, array or
-  union is not reported and only that part goes unchecked.
+  cannot see, so it is accepted. The compile walks the result and warns with the
+  path of every untyped node (object field, open-object value, array item,
+  tuple position, union variant, or `$ref` body); a validator stops the walk at
+  its subtree. A budget-truncated result keeps the single budget warning.
 - A non-productive `$ref` chain raises after 64 same-level hops, mirroring
   `Coerce`; a productive cycle (a ref under an object/array/tuple) resets and
   terminates on the value.

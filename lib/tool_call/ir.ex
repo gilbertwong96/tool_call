@@ -108,7 +108,25 @@ defmodule ToolCall.IR do
     @spec kinds() :: [kind()]
     def kinds, do: @kinds
 
-    @type t :: %__MODULE__{}
+    @type t :: %__MODULE__{
+            kind: kind(),
+            minimum: number() | nil,
+            maximum: number() | nil,
+            items: t() | [t()] | nil,
+            fields: [ToolCall.IR.Field.t()] | nil,
+            additional: t() | nil,
+            values: [term()] | nil,
+            variants: [t()] | nil,
+            pattern: String.t() | nil,
+            pattern_regex: Regex.t() | nil,
+            format: String.t() | nil,
+            transform: {module(), atom()} | nil,
+            validator: {module(), atom()} | nil,
+            ref: String.t() | nil,
+            struct: module() | nil,
+            nullable: boolean(),
+            source: term()
+          }
   end
 
   defmodule Param do

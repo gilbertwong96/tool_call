@@ -82,7 +82,9 @@ defmodule ToolCall.Builder do
 
   defp unique_tool_names(entries, module) do
     {entries, _seen} =
-      Enum.flat_map_reduce(entries, MapSet.new(), fn {tool, location, _truncated} = entry, seen ->
+      Enum.flat_map_reduce(entries, MapSet.new(), fn {tool, location, _truncated,
+                                                      _result_truncated} = entry,
+                                                     seen ->
         if MapSet.member?(seen, tool.name) do
           warn(
             module,
@@ -101,7 +103,7 @@ defmodule ToolCall.Builder do
   end
 
   defp validate_names(module, entries) do
-    for {%Tool{name: name}, location, _truncated} <- entries,
+    for {%Tool{name: name}, location, _truncated, _result_truncated} <- entries,
         not ToolCall.ProviderName.valid?(name) do
       warn(
         module,
@@ -131,8 +133,11 @@ defmodule ToolCall.Builder do
 
       {spec, count} ->
         warn_overloads(context.module, location, name, arity, count)
-        {tool, truncated} = make_tool(name, head_args, doc, spec, context, location)
-        [{tool, location, truncated}]
+
+        {tool, truncated, result_truncated?} =
+          make_tool(name, head_args, doc, spec, context, location)
+
+        [{tool, location, truncated, result_truncated?}]
     end
   end
 
@@ -292,7 +297,7 @@ defmodule ToolCall.Builder do
 
     warn_unknown_doc_bullets(context.module, location, name, arity, doc_info, params)
 
-    {result, defs} =
+    {result, defs, result_truncated?} =
       result_type(return_ast, bindings, context, {defs, registry}, name, arity, location)
 
     {%Tool{
@@ -304,7 +309,7 @@ defmodule ToolCall.Builder do
        source: spec,
        defs: defs,
        result: result
-     }, truncated}
+     }, truncated, result_truncated?}
   end
 
   defp warn_unknown_doc_bullets(
@@ -332,10 +337,10 @@ defmodule ToolCall.Builder do
   end
 
   defp result_type({:no_return, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
-    do: {nil, defs}
+    do: {nil, defs, false}
 
   defp result_type({:none, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
-    do: {nil, defs}
+    do: {nil, defs, false}
 
   defp result_type(return_ast, bindings, context, {defs, registry}, name, arity, location) do
     source_ast =
@@ -369,19 +374,7 @@ defmodule ToolCall.Builder do
       )
     end
 
-    type = Typespec.to_type(type_ast, context.providers)
-
-    if not truncated? and type.kind in [:any, :unsupported] and is_nil(type.validator) do
-      warn(
-        context.module,
-        location,
-        "return type of #{name}/#{arity} cannot be validated; run/4 with " <>
-          "validate_result: true will accept any value. Narrow the type or add a " <>
-          "validator if the result must be checked."
-      )
-    end
-
-    {type, defs}
+    {Typespec.to_type(type_ast, context.providers), defs, truncated?}
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
@@ -549,7 +542,7 @@ defmodule ToolCall.Builder do
 
   defp resolve_and_warn(entries, context, module) do
     {entries, _raw} =
-      Enum.map_reduce(entries, %{}, fn {tool, location, truncated}, raw ->
+      Enum.map_reduce(entries, %{}, fn {tool, location, truncated, result_truncated}, raw ->
         {tool, warnings, raw} =
           Structs.Resolve.run(
             tool,
@@ -559,7 +552,7 @@ defmodule ToolCall.Builder do
           )
 
         Enum.each(warnings, &warn(module, location, &1))
-        expose(module, location, tool, truncated, raw)
+        expose(module, location, tool, truncated, result_truncated, raw)
       end)
 
     Enum.reject(entries, &is_nil/1)
@@ -568,11 +561,11 @@ defmodule ToolCall.Builder do
   # A parameter with no JSON type cannot be described to a model, and a tool
   # with one is not a contract the model can honour. Skipping it keeps the
   # compile total and mirrors `@doc false`; the warning names the fix.
-  defp expose(module, location, %Tool{} = tool, truncated, raw) do
+  defp expose(module, location, %Tool{} = tool, truncated, result_truncated, raw) do
     case Enum.find(tool.params, &(&1.type.kind == :any)) do
       nil ->
-        warn_tool(module, location, tool, truncated)
-        {{tool, location, truncated}, raw}
+        warn_tool(module, location, tool, truncated, result_truncated)
+        {{tool, location, truncated, result_truncated}, raw}
 
       %Param{name: param} ->
         warn(
@@ -587,7 +580,7 @@ defmodule ToolCall.Builder do
     end
   end
 
-  defp warn_tool(module, location, %Tool{} = tool, truncated) do
+  defp warn_tool(module, location, %Tool{} = tool, truncated, result_truncated) do
     arity = length(tool.params)
 
     Enum.each(tool.params, fn param ->
@@ -604,33 +597,176 @@ defmodule ToolCall.Builder do
       end
     end)
 
-    warn_result_type(module, location, tool, arity)
+    warn_result_type(module, location, tool, arity, result_truncated)
   end
 
-  defp warn_result_type(_module, _location, %Tool{result: nil}, _arity), do: :ok
+  @max_result_paths 5
 
-  defp warn_result_type(module, location, %Tool{result: %Type{} = result} = tool, arity) do
-    case result.source do
-      {:opaque_struct, struct} ->
-        warn(
-          module,
-          location,
-          "return type of #{tool.fun}/#{arity} is #{inspect(struct)}.t(), which is " <>
-            "@opaque; run/4 with validate_result: true will accept any value."
-        )
+  defp warn_result_type(_module, _location, %Tool{}, _arity, true), do: :ok
 
-      {:unresolved_struct, struct} ->
-        warn(
-          module,
-          location,
-          "return type of #{tool.fun}/#{arity} could not resolve #{inspect(struct)}; " <>
-            "run/4 with validate_result: true will accept any value."
-        )
-
-      _other ->
-        :ok
+  defp warn_result_type(module, location, %Tool{} = tool, arity, false) do
+    case Map.get(tool, :result) do
+      nil -> :ok
+      %Type{} = result -> warn_result_paths(module, location, tool, arity, result)
     end
   end
+
+  defp warn_result_paths(module, location, tool, arity, result) do
+    fun = Map.get(tool, :fun)
+
+    paths =
+      result
+      |> result_paths(Map.get(tool, :defs) || %{}, [], "")
+      |> Enum.uniq()
+
+    case Enum.find(paths, fn {path, _reason} -> is_nil(path) end) do
+      {nil, reason} -> warn_root_result(module, location, fun, arity, reason)
+      nil -> warn_nested_result(module, location, fun, arity, paths)
+    end
+  end
+
+  defp warn_root_result(module, location, fun, arity, {:opaque, struct}) do
+    warn(
+      module,
+      location,
+      "return type of #{fun}/#{arity} is #{inspect(struct)}.t(), which is " <>
+        "@opaque; run/4 with validate_result: true will accept any value."
+    )
+  end
+
+  defp warn_root_result(module, location, fun, arity, {:unresolved, struct}) do
+    warn(
+      module,
+      location,
+      "return type of #{fun}/#{arity} could not resolve #{inspect(struct)}; " <>
+        "run/4 with validate_result: true will accept any value."
+    )
+  end
+
+  defp warn_root_result(module, location, fun, arity, _reason) do
+    warn(
+      module,
+      location,
+      "return type of #{fun}/#{arity} cannot be validated; run/4 with " <>
+        "validate_result: true will accept any value. Narrow the type or add a " <>
+        "validator if the result must be checked."
+    )
+  end
+
+  defp warn_nested_result(_module, _location, _fun, _arity, []), do: :ok
+
+  defp warn_nested_result(module, location, fun, arity, paths) do
+    listed =
+      paths
+      |> Enum.map(fn {path, _reason} -> inspect(format_result_path(path)) end)
+      |> Enum.take(@max_result_paths)
+
+    more = length(paths) - length(listed)
+    suffix = if more > 0, do: " (and #{more} more)", else: ""
+
+    warn(
+      module,
+      location,
+      "return type of #{fun}/#{arity} cannot be validated at " <>
+        Enum.join(listed, ", ") <>
+        suffix <>
+        "; run/4 with validate_result: true will accept any value there. " <>
+        "Narrow the type or add a validator if the result must be checked."
+    )
+  end
+
+  defp result_paths(type, defs, seen, path) when is_map(type) do
+    if Map.get(type, :validator) do
+      []
+    else
+      result_paths_kind(type, defs, seen, path)
+    end
+  end
+
+  defp result_paths(nil, _defs, _seen, _path), do: []
+
+  defp result_paths_kind(type, defs, seen, path) when is_map(type) do
+    case Map.get(type, :kind) do
+      :any -> result_paths_any(type, path)
+      :unsupported -> [{root_result_path(path), :unsupported}]
+      :ref -> result_paths_ref(type, defs, seen, path)
+      :object -> result_paths_object(type, defs, seen, path)
+      :array -> result_paths(Map.get(type, :items), defs, seen, path <> "[]")
+      :tuple -> result_paths_tuple(type, defs, seen, path)
+      :union -> result_paths_union(type, defs, seen, path)
+      _other -> []
+    end
+  end
+
+  defp result_paths_any(type, path) do
+    [{root_result_path(path), result_reason(Map.get(type, :source))}]
+  end
+
+  defp result_paths_ref(type, defs, seen, path) do
+    ref = Map.get(type, :ref)
+
+    if ref in seen do
+      []
+    else
+      case Map.fetch(defs, ref) do
+        {:ok, nested} -> result_paths(nested, defs, [ref | seen], path)
+        :error -> [{root_result_path(path), {:missing_ref, ref}}]
+      end
+    end
+  end
+
+  defp result_paths_object(type, defs, seen, path) do
+    fields =
+      type
+      |> Map.get(:fields)
+      |> List.wrap()
+      |> Enum.flat_map(fn field ->
+        result_paths(
+          Map.get(field, :type),
+          defs,
+          seen,
+          result_field_path(path, Map.get(field, :name))
+        )
+      end)
+
+    additional =
+      case Map.get(type, :additional) do
+        nil -> []
+        additional -> result_paths(additional, defs, seen, result_field_path(path, "*"))
+      end
+
+    fields ++ additional
+  end
+
+  defp result_paths_tuple(type, defs, seen, path) do
+    type
+    |> Map.get(:items)
+    |> List.wrap()
+    |> Enum.with_index()
+    |> Enum.flat_map(fn {item, index} ->
+      result_paths(item, defs, seen, path <> "[" <> Integer.to_string(index) <> "]")
+    end)
+  end
+
+  defp result_paths_union(type, defs, seen, path) do
+    type
+    |> Map.get(:variants)
+    |> List.wrap()
+    |> Enum.flat_map(&result_paths(&1, defs, seen, path))
+  end
+
+  defp root_result_path(""), do: nil
+  defp root_result_path(path), do: path
+
+  defp result_field_path("", name), do: name
+  defp result_field_path(path, name), do: path <> "." <> name
+
+  defp result_reason({:opaque_struct, struct}), do: {:opaque, struct}
+  defp result_reason({:unresolved_struct, struct}), do: {:unresolved, struct}
+  defp result_reason(_source), do: :no_validator
+
+  defp format_result_path(path) when byte_size(path) > 40, do: String.slice(path, 0, 37) <> "..."
+  defp format_result_path(path), do: path
 
   defp warn_def(module, location, name, type, fun, arity) do
     where = "$defs entry \"#{name}\" of #{fun}/#{arity}"

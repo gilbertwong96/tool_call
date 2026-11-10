@@ -64,6 +64,11 @@
   that `run/4` with `validate_result: true` accepts any value; the budget
   warning names the same consequence. A provider `validator` suppresses the
   warning because the value is checked.
+- The result warning now walks the type and reports nested untyped paths:
+  object fields, open-object values (`"*"`), array items (`"[]"`), tuple
+  positions, union variants, struct fields and `$ref` bodies. A provider
+  `validator` stops the walk at its subtree; a budget-truncated result keeps the
+  single budget warning.
 - The embedded IR drops AST `Type.source` values from parameters, the result and
   `$defs`, while keeping the string sub-kind atoms that dispatch and result
   validation read; this shrinks the beam.

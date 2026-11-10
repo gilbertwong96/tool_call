@@ -410,7 +410,7 @@ defmodule ToolCall.TypeProviderTest.Tools do
   def price(amount), do: amount
 
   @doc "Boxes."
-  @spec boxes(items :: ToolCall.TypeProviderTest.Box.t(integer())) :: list()
+  @spec boxes(items :: ToolCall.TypeProviderTest.Box.t(integer())) :: [integer()]
   def boxes(items), do: items
 
   @doc "Alias-only."

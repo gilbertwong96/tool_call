@@ -396,12 +396,14 @@ their elements. An improper list or an exotic map key is an
 unknown remote type, `fun()`/`pid()` or a type that hit the definition budget
 therefore answers `{:ok, value}` for any value — unless a provider gives the
 node a `validator`, which makes it checkable. `no_return()`/`none()` skip
-validation entirely. The compile warns for a top-level `:any`/`:unsupported`
-result without a validator, for an `@opaque` or unresolved struct, and for a
-budget-truncated return type; a validator suppresses the warning because the
-value is checked. A nested `{}` inside an object, array or union is still
-accepted silently and only that part goes unchecked; narrow the return type when
-the whole result must be checked.
+validation entirely. The compile walks the result and warns with every
+untyped path: object fields (`"a"`), open-object values (`"*"`), array items
+(`"[]"`), tuple positions (`"[1]"`), union variants, struct fields, and `$defs`
+reached through a `$ref`. A validator on a node suppresses the warning for its
+whole subtree. `map()` and `list()` results therefore report `"*"` and `"[]"`
+because their values are untyped; use a fixed shape when the values must be
+checked. A budget-truncated result keeps the single budget warning instead of
+listing paths.
 
 ## A result struct must satisfy `@type t`, including nil defaults
 

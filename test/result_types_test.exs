@@ -469,12 +469,110 @@ defmodule ToolCall.ResultTypesTest do
         use ToolCall
 
         @doc "Go."
+        @spec go(x :: integer()) :: %{a: integer()}
+        def go(_x), do: %{a: 1}
+      end
+      """)
+
+    refute warnings =~ "accept any value"
+  end
+
+  test "warns about nested untyped object fields and open values" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: %{a: term(), b: integer()}
+        def go(_x), do: %{a: :anything, b: 1}
+      end
+      """)
+
+    assert warnings =~ "cannot be validated at \"a\""
+  end
+
+  test "warns about the values of an open map result" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
         @spec go(x :: integer()) :: map()
         def go(_x), do: %{}
       end
       """)
 
+    assert warnings =~ "cannot be validated at \"*\""
+  end
+
+  test "warns about untyped array items and tuple positions" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "List."
+        @spec list(x :: integer()) :: [term()]
+        def list(_x), do: []
+
+        @doc "Tuple."
+        @spec tuple(x :: integer()) :: {integer(), term()}
+        def tuple(_x), do: {1, :anything}
+      end
+      """)
+
+    assert warnings =~ "cannot be validated at \"[]\""
+    assert warnings =~ "cannot be validated at \"[1]\""
+  end
+
+  test "a validator on a nested node suppresses the warning for its subtree" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.AnyValidatorProvider]
+
+        @doc "Go."
+        @spec go(x :: integer()) :: %{value: ToolCall.TestFixtures.AnyValidated.t()}
+        def go(_x), do: %{value: "ok"}
+      end
+      """)
+
     refute warnings =~ "accept any value"
+  end
+
+  test "a nested opaque struct is reported by its field path" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: %{box: ToolCall.TestFixtures.OpaqueBox.t()}
+        def go(_x), do: %{box: %ToolCall.TestFixtures.OpaqueBox{secret: "x"}}
+      end
+      """)
+
+    assert warnings =~ "cannot be validated at \"box\""
+  end
+
+  test "a recursive result reports nested untyped fields once" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type tree :: %{value: integer(), children: [tree()], bad: term()}
+
+        @doc "Go."
+        @spec go(x :: integer()) :: tree()
+        def go(_x), do: %{value: 1, children: [], bad: :anything}
+      end
+      """)
+
+    assert warnings =~ "cannot be validated at \"bad\""
+    assert String.split(warnings, "cannot be validated at") |> Enum.count() == 2
   end
 
   test "a truncated result type reports the validation blind spot once" do

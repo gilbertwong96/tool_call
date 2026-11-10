@@ -453,9 +453,11 @@ A `no_return()` result is never validated. A result type that renders `{}` —
 `term()`, an unknown remote type, `fun()`/`pid()`, an `@opaque` struct, or a
 budget-truncated type — accepts any value; the compile warns, because
 `validate_result: true` cannot check it. A provider `validator` on the node
-suppresses the warning and is used instead. The warning covers a top-level `{}`
-only; a `{}` nested inside an object, array or union is accepted silently and
-only that part goes unchecked. An improper list or an exotic map key
+suppresses the warning and is used instead. The warning walks the result and
+reports paths: `"a"` for a field, `"*"` for open-object values, `"[]"` for array
+items, `"[1]"` for a tuple position. A validator on a node stops the walk at
+that subtree, so `map()` and `list()` results report `"*"`/`"[]"` unless their
+values use a fixed shape. An improper list or an exotic map key
 (a tuple, a map) is `{:invalid_result, ...}`, not a raise. A struct result is
 checked field by field against its `@type t`, so a field whose `defstruct`
 default is nil must be declared `T | nil`. A fixed-shape map type is closed and
