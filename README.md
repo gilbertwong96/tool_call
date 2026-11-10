@@ -52,13 +52,16 @@ compile time; there are no runtime dependencies.
 
 - `ToolCall.emit/3` — OpenAI, Anthropic, MCP and Gemini schemas; the
   provider-call targets are precompiled per module, MCP and Gemini on demand.
-- `ToolCall.run/3` — required/unknown argument checks, coercion, exception
-  wrapping, and dispatch to the real function.
+- `ToolCall.run/4` — required/unknown argument checks, coercion, exception
+  wrapping, optional result validation, per-call timeouts, approval policies and
+  dispatch audit hooks.
 - `ToolCall.tools/1` and `ToolCall.describe/2` — the IR and provider-neutral
   schema descriptions.
 - `ToolCall.Stream` — folds streaming tool-call deltas (OpenAI, Anthropic,
   Gemini) into complete calls for `run/3`.
 - `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
+- `use ToolCall, timeout: ...`, `approval: ...`, `audit: ...` — module-level
+  policies; `Runner.resolve/4` + `execute/2` expose the same hooks separately.
 - `mix tool_call.export` — JSON for OpenAI, Anthropic, MCP or Gemini.
 - `mix tool_call.clean` — removes orphaned typedoc companion beams.
 

@@ -481,25 +481,30 @@ configuration at startup when the policy comes from outside the project.
 
 ## An audit hook is not an audit log
 
-`ToolCall.Audit` receives one `%Entry{}` per dispatch, but it does not persist,
-redact, rotate or retain anything, and an exception from `record/1` is ignored
-(fail-open). The raw `args` and `context` are passed through; redact them before
-storage. The hook runs after the dispatch, so it cannot fail-closed; use an
-approval policy if a call must be blocked before execution. The result value is
-not recorded; store a business id or a digest if needed.
+`ToolCall.Audit` receives one `%Entry{}` per dispatch, including an exception
+from a resolve/execute policy (recorded as `:error` with
+`error: {:exception, message}`), but it does not persist, redact, rotate or
+retain anything, and an exception from `record/1` is ignored (fail-open). The
+raw `args` and `context` are passed through; redact them before storage. The
+hook runs after the dispatch, so it cannot fail-closed; use an approval policy
+if a call must be blocked before execution. The result value is not recorded;
+store a business id or a digest if needed.
 
 ## A timeout is a hard kill, not a cancellation
 
-`run/4 timeout:` and `execute/2 timeout:` run the invocation in a task and kill
-it with `:brutal_kill`. The function may already have produced its side effect.
+A finite `run/4 timeout:` or `execute/2 timeout:` runs the invocation in a task
+and kills it with `:brutal_kill`. The function may already have produced its side effect.
 The task is a different process: `self/0`, the process dictionary,
 `Logger.metadata`, ETS ownership and Ecto sandbox ownership are not inherited,
 `try/after` does not run on the kill, and a long-running NIF is not interrupted.
 Prefer a cooperative timeout inside the tool (Ecto `timeout:`, Req
-`receive_timeout`) for resources and NIFs. Without `task_supervisor:` the task is
-linked to the caller; with it the supervisor owns the task. The timeout is a
-per-invocation cap, not a run deadline; the caller or agent framework owns the
-overall budget.
+`receive_timeout`) for resources and NIFs. Without `task_supervisor:` a finite
+timeout uses a task linked to the caller and `:infinity` runs in the caller;
+with it the supervisor owns the task, including `:infinity`. An unreachable
+supervisor answers `{:error, {:task_supervisor, reason}}`. The timeout policy
+runs at `execute/2` after approval, receives the raw args, and is not a
+cancellation; the timeout is a per-invocation cap, not a run deadline. The
+caller or agent framework owns the overall budget.
 
 ## Remaining design boundaries
 

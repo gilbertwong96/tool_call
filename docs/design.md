@@ -488,7 +488,7 @@ name is refused. Chunks for other event types are ignored.
 for the module; `run/4 approval:` overrides it. `resolve/4` stores the policy
 and the caller's context; `execute/2` calls `check/3` with the tool IR, the raw
 args and the context (from the call unless `execute` overrides it) before the
-timeout and invocation. `{:required, reason}` returns a serializable `Request`;
+timeout policy and invocation. `{:required, reason}` returns a serializable `Request`;
 the application persists it and resumes with the stored args and
 `approval: :granted`. No persistence, expiry, retry or double-execution
 protection lives here; the agent runtime owns that workflow.
@@ -499,9 +499,11 @@ protection lives here; the agent runtime owns that workflow.
 embeds the policy and disables the fast path; `run/4 audit:` overrides it.
 `execute/2` records one entry per dispatch from the execution path
 (ok/error/raised/pending/denied/timeout), and `run_prepared` records invalid
-arguments and unknown tools, including a non-map `args`. A tool's own
-`{:error, {:timeout, ...}}` or `{:error, {:approval_denied, ...}}` is an
-`:error`, not a dispatch outcome.
+arguments and unknown tools, including a non-map `args`. An exception from a
+resolve or execute policy is also recorded as `:error` with
+`error: {:exception, message}`; `Runner.run/5` records invalid runtime IR the
+same way before re-raising. A tool's own `{:error, {:timeout, ...}}` or
+`{:error, {:approval_denied, ...}}` is an `:error`, not a dispatch outcome.
 `Runner.resolve/4` stores the policy and context without calling the hook. The
 hook is synchronous and fail-open: an exception from `record/1` is ignored.
 Persistence, redaction, retention and fail-closed behavior belong to the
@@ -511,16 +513,18 @@ application; the result value is never recorded.
 
 `Runner.resolve/4` performs the key checks, coercion and positional
 construction and does not invoke the function; `execute/2` invokes the function
-(and validates the result). `resolve/4` applies the module timeout default or
-policy after argument validation (the policy receives the coerced argument map)
-and stores the result on the call. A timeout wraps the invocation and its result
-validation in a task. `run/4 timeout:` overrides the module default;
-`use ToolCall, timeout: ...` embeds a constant or a `ToolCall.Timeout` policy in
-the generated runner and disables the fast path for that module. The task is
-killed with `:brutal_kill`; process-local state, ETS ownership, Ecto sandbox
-ownership and NIFs are not carried over, so cooperative timeouts inside the
-tool remain the better choice for DB/HTTP work. The timeout is per invocation;
-the overall run deadline belongs to the caller or agent framework.
+(and validates the result). `resolve/4` stores the timeout constant and an
+optional `ToolCall.Timeout` policy; `execute/2` checks approval, then evaluates
+the policy with the validated raw argument map and context, and stores nothing
+new. A timeout wraps the invocation and its result validation in a task.
+`run/4 timeout:` overrides the module default; `use ToolCall, timeout: ...`
+embeds a constant or a policy in the generated runner and disables the fast path
+for that module. With `:infinity` a `:task_supervisor` still starts a task;
+without one `:infinity` runs in the caller. The task is killed with
+`:brutal_kill`; process-local state, ETS ownership, Ecto sandbox ownership and
+NIFs are not carried over, so cooperative timeouts inside the tool remain the
+better choice for DB/HTTP work. The timeout is per invocation; the overall run
+deadline belongs to the caller or agent framework.
 
 ## Provider subsets
 
@@ -710,7 +714,8 @@ optional one is still fine: `def f(a \\ 1, b)` accepts `%{"b" => 2}`.
 
 ## Dispatch errors
 
-`ToolCall.run/3` returns `{:ok, term}` or one of:
+`ToolCall.run/4` returns `{:ok, term}`, `{:pending, %ToolCall.Approval.Request{}}`
+or one of:
 
 | Error | Cause |
 |---|---|
@@ -723,12 +728,20 @@ optional one is still fine: `def f(a \\ 1, b)` accepts `%{"b" => 2}`.
 | `{:invalid_argument, {name, reason}}` | coercion or bounds failed |
 | `{:raised, message}` | the function raised |
 | `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |
+| `{:timeout, ms}` | the invocation exceeded its timeout |
+| `{:invalid_timeout, reason}` | the timeout policy raised or returned an invalid value |
+| `{:task_supervisor, reason}` | the configured supervisor is unreachable |
+| `{:approval_denied, reason}` | the approval policy denied the call |
+| `{:invalid_approval, term}` | the approval policy returned an unknown term |
+| `{:invalid_result, reason}` | `validate_result: true` rejected the raw return |
 
 The reason terms are deliberately plain data: the caller decides how to render
 them, and no dependency on a JSON library leaks into the library. A rescued
-exception is logged with its stacktrace before it is turned into
+tool exception is logged with its stacktrace before it is turned into
 `{:raised, message}`; otherwise the trace would be lost, because the dispatcher
-never lets it propagate.
+never lets it propagate. Unknown options and an explicitly invalid timeout raise
+`ArgumentError`; an exception from a policy that is not returned as an error is
+re-raised after the audit entry is written.
 
 ## Roadmap
 

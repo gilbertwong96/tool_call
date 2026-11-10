@@ -125,20 +125,32 @@
 
 ### Fixed
 
-- `ToolCall.Runner.resolve/4` now applies the module's `use ToolCall, timeout:`
-  constant or policy. The timeout policy runs after argument validation and
-  receives the coerced argument map instead of the raw wire values.
+- `ToolCall.Runner.resolve/4` now stores the module's `use ToolCall, timeout:`
+  constant or policy instead of dropping it. `execute/2` evaluates the policy
+  after approval with the validated raw argument map and context, so a pending
+  or denied call does not run the policy; a policy exception returns
+  `{:error, {:invalid_timeout, reason}}`.
 - `run/4` honors `:task_supervisor` when the timeout comes from the module
-  default; an unreachable supervisor answers `{:error, {:task_supervisor,
-  reason}}` instead of exiting the caller.
+  default, and `:infinity` with a supervisor now starts a supervised task. An
+  unreachable supervisor answers `{:error, {:task_supervisor, reason}}` instead
+  of exiting the caller.
+- `execute/2` validates an explicit `:timeout` override before approval, so a
+  pending/denied decision cannot hide an invalid timeout.
 - `ToolCall.Call` stores the `:context` given to `resolve/4`, so `execute/2`
-  passes it to the approval and audit hooks (an `execute/2` context still
-  overrides it).
+  passes it to the approval, timeout and audit hooks (an `execute/2` context
+  still overrides it). The struct documents that it is a trusted resolve
+  handoff, not data to deserialize from model output.
 - Audit outcomes now come from the dispatch path, not from the final error
   tuple: a tool returning `{:error, {:timeout, ...}}` or
   `{:error, {:approval_denied, ...}}` is recorded as `:error`. Non-map
-  arguments are audited as `:invalid_arguments`, and `audit: nil` no longer
-  constructs an entry.
+  arguments are audited as `:invalid_arguments`; policy exceptions, invalid
+  timeout overrides and invalid runtime IR are audited as `:error` with
+  `error: {:exception, message}` (a timeout policy error is returned as
+  `{:invalid_timeout, term}`); `audit: nil` no longer constructs an entry.
+- `ToolCall.run/4` uses the prepared-tool path for compiled modules instead of
+  revalidating every tool on each option-carrying call.
+- `Runner` validates its public option keys and rejects boolean/invalid
+  approval or audit values before dispatch.
 - `:crypto` is declared in `extra_applications`; audit and approval ids work in
   a release that contains only this library.
 - An Anthropic stream whose initial `input` is not a map, and has no

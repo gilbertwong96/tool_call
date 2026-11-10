@@ -46,14 +46,15 @@ All planned items are implemented and awaiting a release.
   (`use ToolCall, approval: ...`, `run/4 approval:`). A required decision returns
   a serializable `ToolCall.Approval.Request`; persistence, notification and
   resume belong to the application or agent runtime.
-- Per-tool timeouts: done as an opt-in per-invocation cap. `ToolCall.run/4`
+- Per-invocation timeouts: done as an opt-in per-invocation cap. `ToolCall.run/4`
   accepts `timeout:`/`task_supervisor:`, `Runner.execute/2` takes the same
   override, and `use ToolCall, timeout: ...` sets a default or a
-  `ToolCall.Timeout` policy. The overall run deadline stays with the caller or
-  agent framework.
+  `ToolCall.Timeout` policy (which can inspect the tool). The overall run
+  deadline stays with the caller or agent framework.
 - Audit log for dispatches: done as a hook. `use ToolCall, audit: ...` or
-  `run/4 audit:` receives one `%ToolCall.Audit.Entry{}` per attempt; persistence,
-  redaction and retention stay with the application.
+  `run/4 audit:` receives one `%ToolCall.Audit.Entry{}` per attempt, including
+  resolve/execute policy exceptions; persistence, redaction and retention stay
+  with the application.
 
 ## Later / not scheduled
 

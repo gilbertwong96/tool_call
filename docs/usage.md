@@ -507,7 +507,9 @@ use ToolCall, approval: MyApproval
 
 The pending request carries `id`, `module`, `tool`, `args`, `reason`,
 `context` and `inserted_at`. The application persists it, asks a human, and
-resumes with the **stored** arguments:
+resumes with the **stored** arguments. The struct itself contains no pids or
+closures, but `args` and `context` are caller-provided: they are serializable
+only when those values are.
 
 ```elixir
 ToolCall.run(request.module, request.tool, request.args,
@@ -518,8 +520,9 @@ ToolCall.run(request.module, request.tool, request.args,
   policy module overrides it too. `approval: nil` disables a module policy for
   one call.
 - `context:` reaches `check/3`.
-- The policy runs before the timeout; a pending request returns without
-  starting a task or invoking the function.
+- The approval policy runs before the timeout policy and the task; a pending
+  request returns without evaluating the timeout policy, starting a task or
+  invoking the function.
 - This is a mechanism, not a workflow: no storage, expiry, retry or
   double-execution guard. Never accept fresh model arguments for an approved
   call; use the stored ones. The agent runtime or application owns the pending
@@ -560,12 +563,15 @@ receives one entry per dispatch attempt:
 ```
 
 - `outcome` is `:ok`, `:error`, `:raised`, `:pending`, `:denied`, `:timeout`,
-  `:invalid_arguments` or `:unknown_tool`; resolve failures, non-map arguments
-  and unknown tools are recorded too.
+  `:invalid_arguments` or `:unknown_tool`; resolve failures, non-map arguments,
+  unknown tools and exceptions from a resolve/execute policy are recorded too.
+  A policy exception is an `:error` with `error: {:exception, message}`.
 - The outcome comes from the dispatch path, not from the error tuple: a tool
   returning `{:error, {:timeout, ...}}` or `{:error, {:approval_denied, ...}}`
   is recorded as `:error`, not as a dispatch timeout or denial.
-- `duration_us` covers the execution path; the result value is never recorded.
+- `duration_us` measures the phase that produced the outcome: resolve for an
+  argument error, execute for an invoked call, and zero for an unknown tool or
+  non-map arguments. The result value is never recorded.
 - The hook is synchronous. This is a hook, not a store: persistence, redaction,
   retention and a fail-closed policy are the application's. The library ignores
   an exception from `record/1`, so a broken audit does not change the tool
@@ -575,9 +581,8 @@ receives one entry per dispatch attempt:
 
 ### Timeouts
 
-`run/4` accepts a per-call timeout; without an effective timeout (from the
-call, the module default or a policy) the function runs in the caller with no
-task boundary:
+`run/4` accepts a per-call timeout; without one the call runs in the caller
+(unless `:task_supervisor` is given, which starts a task even for `:infinity`):
 
 ```elixir
 ToolCall.run(MyApp.Tools, :slow_query, args, timeout: 5_000)
@@ -585,9 +590,9 @@ ToolCall.run(MyApp.Tools, :slow_query, args, timeout: 5_000)
 ```
 
 `ToolCall.Runner.resolve/4` and `execute/2` expose the same boundary: `resolve`
-performs checks, coercion and positional construction, evaluates a configured
-timeout default or policy, and stores the result on the call; `execute` invokes
-the function, with an optional timeout:
+performs checks, coercion and positional construction, and stores the timeout
+constant and an optional timeout policy on the call; `execute` checks approval,
+then evaluates the policy and invokes the function, with an optional timeout:
 
 ```elixir
 {:ok, call} = ToolCall.Runner.resolve(MyApp.Tools, tool, args)
@@ -614,12 +619,13 @@ use ToolCall, timeout: MyTimeouts
 - `context: term` is passed to the timeout, approval and audit policies; use it
   for per-request budgets or user/tenant data. `resolve` stores it for
   `execute` unless `execute` overrides it.
-- The timeout policy runs after argument validation and receives the coerced
-  argument map, not the raw wire values; an invalid call returns before the
-  policy runs.
+- The timeout policy is evaluated by `execute/2`, after approval and before
+  the task. It receives the validated raw argument map, not the coerced values;
+  an invalid call or a denied/pending approval returns before the policy runs.
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
   `Task.Supervisor` instead of a task linked to the caller, including a timeout
-  supplied by the module. An unreachable supervisor answers
+  supplied by the module. With `timeout: :infinity` a supervisor still starts a
+  task. An unreachable supervisor answers
   `{:error, {:task_supervisor, reason}}`.
 - The timeout wraps the function invocation and its result validation; argument
   validation and coercion happen before the task starts. A resolve error is
@@ -737,7 +743,10 @@ end
 
 ### Error terms
 
-`ToolCall.run/3` never raises for bad input; it returns one of:
+`ToolCall.run/4` returns one of the following for bad input or a policy error;
+invalid options and an invalid explicitly configured timeout raise
+`ArgumentError` before or during dispatch, and a policy exception that is not a
+returned timeout error is re-raised after the audit entry is written:
 
 | Error | Meaning |
 |---|---|
@@ -750,6 +759,12 @@ end
 | `{:invalid_argument, {name, reason}}` | coercion failed, e.g. `{:expected_integer, "1.5"}` |
 | `{:raised, message}` | the function raised |
 | `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |
+| `{:timeout, ms}` | the invocation exceeded its timeout |
+| `{:invalid_timeout, reason}` | the timeout policy raised or returned an invalid value |
+| `{:task_supervisor, reason}` | the configured supervisor is unreachable |
+| `{:approval_denied, reason}` | the approval policy denied the call |
+| `{:invalid_approval, term}` | the approval policy returned an unknown term |
+| `{:invalid_result, reason}` | `validate_result: true` rejected the raw return |
 
 Top-level argument maps use string keys, as JSON decodes them, and nested object
 values should too; `keyword(t)` values also accept atom keys because a keyword
