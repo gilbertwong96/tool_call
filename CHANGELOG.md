@@ -46,6 +46,10 @@
   booleans are JSON literals, not atoms on the wire.
 - `Address.t() | nil` keeps the null branch for a struct parameter and for
   result validation; the resolved struct object previously dropped `nullable`.
+- A result type that cannot be validated — `term()`, an unknown remote type,
+  `fun()`/`pid()`, an `@opaque` struct, or a budget-truncated type — now warns
+  that `run/4` with `validate_result: true` accepts any value; the budget
+  warning names the same consequence.
 - `Mod.t(integer())` now resolves as a struct (the type arguments are not
   substituted), so a parameter keeps a callable tool and a result is validated
   as a struct; previously it degraded to `{}` and hid the tool.

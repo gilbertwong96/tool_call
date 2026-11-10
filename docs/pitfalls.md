@@ -359,9 +359,11 @@ their elements. An improper list or an exotic map key is an
 `Validate.valid?/3` accepts `:any` and `:unsupported` before any kind rule, so a
 return type declared as `term()`, an unknown remote type, `fun()`/`pid()` or a
 type that hit the definition budget answers `{:ok, value}` for any value.
-`no_return()`/`none()` skip validation entirely. Apart from the budget warning,
-the compile does not warn about a result that renders `{}` because the model
-never sees it. Narrow the return type when the result must be checked.
+`no_return()`/`none()` skip validation entirely. The compile warns for each of
+these: a top-level `:any`/`:unsupported` result, an `@opaque` or unresolved
+struct, and a budget-truncated return type. A nested `{}` inside an object,
+array or union is still accepted silently and only that part goes unchecked;
+narrow the return type when the whole result must be checked.
 
 ## A result struct must satisfy `@type t`, including nil defaults
 
