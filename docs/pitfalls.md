@@ -479,7 +479,9 @@ is `{:error, {:invalid_approval, term}}`; a policy that raises propagates its
 exception, and a module without `check/3` raises `ArgumentError`. Option values
 are checked when options are validated; module-level policies are checked when
 the module is resolved. `use ToolCall, approval: :granted` / `:denied` is a
-valid module-wide mode, not a policy module. Validate configuration at startup as well when the
+valid module-wide mode, not a policy module. Module-level values are not
+compile-time validated: a typo such as `approval: :grant` or
+`audit: :granted` compiles and fails when the module is resolved. Validate configuration at startup as well when the
 policy comes from outside the project. A pending `Request` stores args and
 context, not one-off execution options: on resume, re-supply `validate_result:`,
 `timeout:`, `audit:` and `task_supervisor:` if the original call used them. The

@@ -211,9 +211,11 @@ specs: :error
 
 The `docs` and `specs` lines show that the release stripped the chunks, while
 the companion beam is present. `emit/3` returns the typedoc description and
-`run/3` uses the generated per-tool dispatch and embedded IR; the typedoc
-companion affects descriptions, not dispatch. `run/3` returns the function
-result and does not read a description.
+`run/3` uses the generated per-tool dispatch and embedded IR when no
+module-level timeout/approval/audit policy is configured; the typedoc companion
+affects descriptions, not dispatch. `run/3` returns the function result on the
+fast path; with module-level policies it uses the generic runner and can return
+timeout, pending or approval errors instead. It does not read a description.
 
 ## Type mapping
 
@@ -419,7 +421,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
 ```
 
 - It runs through the generic `ToolCall.Runner` path, so no generated code
-  changes; `run/3` keeps the fast path and never validates.
+  changes; with no module-level timeout/approval/audit policy, `run/3` keeps the
+  fast path and never validates.
 - It validates the **raw** return value, before `Runner.normalize/1` unwraps
   `{:ok, value}` / `{:error, reason}`. The spec describes what the function
   returns, so `@spec f() :: {:ok, map()} | {:error, String.t()}` returning
@@ -492,7 +495,10 @@ args and the context (from the call unless `execute` overrides it) before the
 timeout policy and invocation. `{:required, reason}` returns a serializable `Request`;
 the application persists it and resumes with the stored args and
 `approval: :granted`. Option policies are checked for `check/3`; module-level
-policies are loaded on demand and checked when resolved. The request stores
+policies are loaded on demand and checked when resolved. Module-level option
+values are not compile-time validated: a typo such as `approval: :grant` or
+`audit: :granted` compiles and fails when the module is resolved; validate
+external configuration at startup. The request stores
 args and context, not one-off execution options: re-supply `validate_result:`,
 `timeout:`, `audit:` and `task_supervisor:` on resume if the original call used
 them (module policies are re-read). The pending audit entry carries the request
@@ -644,10 +650,11 @@ non-string-key check walks the value; the generated scalar fast path stays at
 about 0.17 µs. These are dispatch costs, three orders of magnitude below a
 provider round trip.
 
-Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module whose
-effective typedoc key map is empty reads the literals directly — `emit/3` costs
-about 0.07 µs per call, `__schemas__/0` about 13 ns and `run/3` about 0.15 µs
-for the generated scalar fast path. A local-type parameter that is already
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with no
+module-level timeout/approval/audit policy, a module whose effective typedoc key
+map is empty reads the literals directly — `emit/3` costs about 0.07 µs per
+call, `__schemas__/0` about 13 ns and `run/3` about 0.15 µs for the generated
+scalar fast path. A local-type parameter that is already
 documented by a `@doc` bullet or `@tool_param` description takes that same
 direct path, because `Typedoc.apply/3` would not touch it. With a typedoc
 companion present, `emit/3` costs about 0.14 µs; `run/3` uses the generated

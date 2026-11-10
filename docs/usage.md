@@ -334,9 +334,10 @@ exist, so the accessors call `Code.ensure_loaded?/1` and
 `function_exported?/3` first and fall back to the phase-one literals when the
 companion is stale or missing.
 
-Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): a module with an
-empty typedoc key map takes about 0.07 µs for `emit/3`, 13 ns for
-`__schemas__/0` and about 0.15 µs for `run/3` on the generated scalar fast path.
+Measured locally on a 20-tool module (Elixir 1.20.5, OTP 29): with no
+module-level timeout/approval/audit policy, a module with an empty typedoc key
+map takes about 0.07 µs for `emit/3`, 13 ns for `__schemas__/0` and about
+0.15 µs for `run/3` on the generated scalar fast path.
 A local-type parameter that is already documented by `@doc` or `@tool_param`
 takes that same direct path, because `Typedoc.apply/3` would not touch it. With
 a typedoc companion present, `emit/3` takes about 0.14 µs; `run/3` uses the
@@ -446,7 +447,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"},
 
 - It validates the **raw** return (`{:ok, value}`, not `value`) before the
   `{:ok, _}` / `{:error, _}` unwrap.
-- It is off by default; `run/3` uses the generated fast path and never validates.
+- It is off by default; with no module-level timeout/approval/audit policy,
+  `run/3` uses the generated fast path and never validates.
 - A tool with a `no_return()` spec has no result type and skips validation.
 - A function that raises keeps `{:error, {:raised, message}}`, not
   `{:invalid_result, _}`.
@@ -535,7 +537,9 @@ ToolCall.run(request.module, request.tool, request.args,
   so pass `request.id` in the resume context to correlate audit records.
 - A module option is checked for `check/3` when options are validated; a
   module-level policy is checked when the module is resolved. An audit module is
-  checked for `record/1` the same way.
+  checked for `record/1` the same way. Module-level option values are not
+  compile-time validated: a typo such as `approval: :grant` or
+  `audit: :granted` compiles and fails when the module is resolved.
 
 `ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve`
 stores the policy and the context, `execute` checks it, so a future runtime can
@@ -872,5 +876,7 @@ end
   `validate_result: true` checks the raw return value against the `@spec`; the
   result is still returned as a plain term and must be JSON-encodable by the
   caller.
-- **`run/3` has no timeout.** A tool that can hang should be wrapped in
-  `Task.async/1` + `Task.yield/2` by the caller.
+- **`run/3` uses module-level timeout/approval/audit policies.** With no
+  module-level policies it has no timeout and runs on the fast path; configure
+  `use ToolCall, timeout: ...` or use `run/4` for a per-call timeout. A tool
+  that can hang without either should still be wrapped by the caller.
