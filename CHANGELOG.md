@@ -27,8 +27,9 @@
 
 - `ToolCall.Stream` aggregates streaming tool-call deltas: `aggregate/2` or
   `new/1` + `feed/2` + `finish/1` for OpenAI Chat Completions, Anthropic
-  Messages and Gemini function calls. `arguments` is decoded, invalid JSON and a
-  missing name are errors. This completes the planned `0.3` items.
+  Messages and Gemini function calls. `arguments` is decoded; invalid JSON is
+  `{:invalid_stream_arguments, {id, name, json}}` and a call without a name is
+  `{:missing_name, id}`. This completes the planned `0.3` items.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one

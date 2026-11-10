@@ -289,11 +289,12 @@ parameter. Send `parametersJsonSchema` yourself when those must be preserved;
 
 ## Streaming covers one choice and decodes arguments
 
-`ToolCall.Stream` reads OpenAI's **first choice** only (Chat Completions, not
-the Responses API), returns Gemini calls with `id: nil`, and decodes the
+`ToolCall.Stream` reads OpenAI's **first choice** and Gemini's **first
+candidate** only (Chat Completions, not the Responses API), returns Gemini calls
+with `id: nil`, and decodes the
 concatenated JSON with the standard `JSON` module. With `n > 1`, keep one
 accumulator per choice; a malformed fragment is
-`{:error, {:invalid_arguments, ...}}` and a call that never receives a name is
+`{:error, {:invalid_stream_arguments, ...}}` and a call that never receives a name is
 `{:error, {:missing_name, id}}`.
 
 ## A hand-built `:ref` needs its `$defs` entry

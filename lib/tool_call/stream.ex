@@ -26,11 +26,11 @@ defmodule ToolCall.Stream do
     * `:anthropic` - Messages `content_block_start` for a `tool_use` block plus
       `input_json_delta` fragments (and the block's initial `input` when there
       are none).
-    * `:gemini` - `streamGenerateContent` parts with a complete `functionCall`.
-      Gemini has no call id, so `id` is `nil`.
+    * `:gemini` - the first candidate's `streamGenerateContent` parts with a
+      complete `functionCall`. Gemini has no call id, so `id` is `nil`.
 
   The concatenated JSON is decoded with the standard `JSON` module, so
-  `arguments` is a map. Invalid JSON is `{:error, {:invalid_arguments, {id,
+  `arguments` is a map. Invalid JSON is `{:error, {:invalid_stream_arguments, {id,
   name, json}}}`; a call that never receives a name is
   `{:error, {:missing_name, id}}`.
   """
@@ -45,7 +45,7 @@ defmodule ToolCall.Stream do
 
   @type error ::
           {:missing_name, String.t() | nil}
-          | {:invalid_arguments, {String.t() | nil, String.t() | nil, term()}}
+          | {:invalid_stream_arguments, {String.t() | nil, String.t() | nil, term()}}
 
   @type t :: %__MODULE__{
           provider: provider(),
@@ -165,9 +165,10 @@ defmodule ToolCall.Stream do
 
   defp anthropic(acc, _chunk), do: acc
 
-  defp gemini(acc, %{"candidates" => candidates}) when is_list(candidates) do
-    candidates
-    |> Enum.flat_map(fn candidate -> get_in(candidate, ["content", "parts"]) || [] end)
+  defp gemini(acc, %{"candidates" => [candidate | _rest]}) when is_map(candidate) do
+    candidate
+    |> get_in(["content", "parts"])
+    |> List.wrap()
     |> Enum.reduce(acc, fn
       %{"functionCall" => %{"name" => name} = call}, acc ->
         complete(acc, name, call["args"] || %{})
@@ -238,7 +239,7 @@ defmodule ToolCall.Stream do
     if is_map(args) do
       {:ok, %{id: call.id, name: call.name, arguments: args}}
     else
-      {:error, {:invalid_arguments, {call.id, call.name, args}}}
+      {:error, {:invalid_stream_arguments, {call.id, call.name, args}}}
     end
   end
 
@@ -265,7 +266,7 @@ defmodule ToolCall.Stream do
         {:ok, %{id: call.id, name: call.name, arguments: arguments}}
 
       _other ->
-        {:error, {:invalid_arguments, {call.id, call.name, json}}}
+        {:error, {:invalid_stream_arguments, {call.id, call.name, json}}}
     end
   end
 end

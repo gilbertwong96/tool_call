@@ -491,12 +491,12 @@ acc = Enum.reduce(chunks, acc, &ToolCall.Stream.feed(&2, &1))
 - `:anthropic` — Messages `content_block_start` for a `tool_use` block plus
   `input_json_delta` fragments; a block with no fragments uses its initial
   `input` (`{}` for no arguments).
-- `:gemini` — `streamGenerateContent` parts with a complete `functionCall`.
-  Gemini has no call id, so `id` is `nil`.
+- `:gemini` — the first candidate's `streamGenerateContent` parts with a
+  complete `functionCall`. Gemini has no call id, so `id` is `nil`.
 
 The concatenated JSON is decoded with the standard `JSON` module, so
 `arguments` is a map. Invalid JSON is
-`{:error, {:invalid_arguments, {id, name, json}}}`; a call that never receives a
+`{:error, {:invalid_stream_arguments, {id, name, json}}}`; a call that never receives a
 name is `{:error, {:missing_name, id}}`. Chunks that carry no tool-call data
 (text deltas, metadata) are ignored, and an empty stream is `{:ok, []}`.
 
@@ -651,11 +651,13 @@ end
   values, or leave the constraint out, when the tool targets a fine-tuned model.
 - **Tool names are function names; there is no namespace.** When you concatenate
   tools from several modules, keep the names unique and route back to the right
-  module. Both providers require `^[a-zA-Z0-9_-]{1,64}$`, so a function named
-  `find?` warns. Two arities of one function share a name; only the first is
+  module. OpenAI and Anthropic require `^[a-zA-Z0-9_-]{1,64}$`; Gemini accepts
+  longer names and dots/colons, but the library keeps the stricter pattern so
+  one name works everywhere. A function named `find?` warns. Two arities of one function share a name; only the first is
   exposed, with a warning.
 - **`use ToolCall` only accepts `:types`.** `use ToolCall, emit: [...]` raises; the
-  three provider variants are always rendered.
+  precompiled OpenAI/Anthropic variants are always rendered; MCP and Gemini
+  render on demand.
 - **`@tool_param` needs `fun:`**:
   `@tool_param %{fun: :transfer, name: "user_id", wire: :string_integer}`.
   Large integers travel as decimal strings; see

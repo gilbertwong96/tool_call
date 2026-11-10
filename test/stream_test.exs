@@ -78,7 +78,7 @@ defmodule ToolCall.StreamTest do
     end
 
     test "reports invalid JSON" do
-      assert {:error, {:invalid_arguments, {"call_1", "go", "{"}}} =
+      assert {:error, {:invalid_stream_arguments, {"call_1", "go", "{"}}} =
                openai([
                  %{
                    "tool_calls" => [
@@ -192,6 +192,19 @@ defmodule ToolCall.StreamTest do
   end
 
   describe "Gemini" do
+    test "only reads the first candidate" do
+      chunks = [
+        %{
+          "candidates" => [
+            %{"content" => %{"parts" => [%{"functionCall" => %{"name" => "a"}}]}},
+            %{"content" => %{"parts" => [%{"functionCall" => %{"name" => "b"}}]}}
+          ]
+        }
+      ]
+
+      assert {:ok, [%{name: "a"}]} = Stream.aggregate(chunks, :gemini)
+    end
+
     test "collects complete functionCall parts" do
       chunks = [
         %{"candidates" => [%{"content" => %{"parts" => [%{"text" => "thinking"}]}}]},

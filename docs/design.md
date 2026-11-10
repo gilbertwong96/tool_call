@@ -472,10 +472,10 @@ Not included: converting a value into a JSON value (struct → map, `Date` → I
 provider deltas and returns `%{id, name, arguments}` with `arguments` decoded.
 It does not run the tool. OpenAI is read from `choices[0].delta.tool_calls`
 (Chat Completions, first choice only); Anthropic from a `tool_use`
-`content_block_start` plus `input_json_delta`; Gemini from complete
-`functionCall` parts (no id). The concatenated JSON is decoded with the standard
-`JSON` module; a malformed fragment is an error, and a call without a name is
-refused. Chunks for other event types are ignored.
+`content_block_start` plus `input_json_delta`; Gemini from the first candidate's
+complete `functionCall` parts (no id). The concatenated JSON is decoded with the
+standard `JSON` module; a malformed fragment is an error, and a call without a
+name is refused. Chunks for other event types are ignored.
 
 ## Provider subsets
 
