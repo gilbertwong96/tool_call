@@ -84,7 +84,7 @@ defmodule ToolCall.StructsTest do
     File.write!(file, """
     defmodule #{inspect(module)} do
       alias ToolCall.TestFixtures.Address
-      alias ToolCall.TestFixtures.Address, as: Addr
+      alias ToolCall.TestFixtures.Address, as: Addr, warn: false
       defstruct [:a, :b]
       @type t :: %__MODULE__{a: Address.t(), b: Addr.t()}
     end
@@ -96,6 +96,35 @@ defmodule ToolCall.StructsTest do
     assert {:ok, fields, [], :ok, false} = Structs.fields(module)
     assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.a)
     assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.b)
+  end
+
+  test "fields/1 applies source aliases only after their declaration" do
+    dir =
+      Path.join(System.tmp_dir!(), "tool_call_alias_order_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "alias_order_struct.ex")
+
+    module =
+      Module.concat([
+        ToolCall.TestFixtures,
+        :"AliasOrderStruct#{System.unique_integer([:positive])}"
+      ])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      defstruct [:early, :late]
+      @type t :: %__MODULE__{early: EarlyAlias.t()}
+      alias ToolCall.TestFixtures.Address, as: EarlyAlias
+      @type late :: %__MODULE__{late: EarlyAlias.t()}
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {EarlyAlias, :t, []} = unwrap_remote(fields.early)
   end
 
   test "fields/1 falls back to source for a beam compiled without debug info" do

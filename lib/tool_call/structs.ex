@@ -319,8 +319,7 @@ defmodule ToolCall.Structs do
   defp module_name(_other, _prefix), do: nil
 
   defp from_source_body(module, body) do
-    aliases = source_aliases(body)
-    entries = source_entries(body, module, aliases)
+    entries = source_entries(body, module)
     definitions = Map.new(entries, fn {key, {params, _kind, type}} -> {key, {params, type}} end)
 
     case Enum.find(entries, &match?({{:t, 0}, _value}, &1)) do
@@ -345,20 +344,27 @@ defmodule ToolCall.Structs do
     end)
   end
 
-  defp source_entries(body, module, aliases) do
-    body |> source_statements() |> Enum.flat_map(&source_type_entry(&1, module, aliases))
-  end
-
-  defp source_aliases(body) do
+  defp source_entries(body, module) do
     body
     |> source_statements()
-    |> Enum.reduce(%{}, fn
-      {:alias, _meta, [{:__aliases__, _alias_meta, parts} | rest]}, acc ->
-        put_source_alias(acc, parts, rest)
-
-      _statement, acc ->
-        acc
+    |> Enum.reduce({%{}, []}, fn statement, {aliases, entries} ->
+      source_entry(statement, module, aliases, entries)
     end)
+    |> elem(1)
+    |> Enum.reverse()
+  end
+
+  defp source_entry(
+         {:alias, _meta, [{:__aliases__, _alias_meta, parts} | rest]},
+         _module,
+         aliases,
+         entries
+       ) do
+    {put_source_alias(aliases, parts, rest), entries}
+  end
+
+  defp source_entry(statement, module, aliases, entries) do
+    {aliases, source_type_entry(statement, module, aliases) ++ entries}
   end
 
   defp put_source_alias(acc, [head | _rest] = parts, rest_opts) when is_atom(head) do
@@ -372,8 +378,11 @@ defmodule ToolCall.Structs do
     acc
   end
 
-  defp alias_key(parts, [[as: {:__aliases__, _meta, as_parts}]]) do
-    List.last(as_parts) || List.last(parts)
+  defp alias_key(parts, [opts | _rest]) when is_list(opts) do
+    case Keyword.get(opts, :as) do
+      {:__aliases__, _meta, as_parts} -> List.last(as_parts) || List.last(parts)
+      _other -> List.last(parts)
+    end
   end
 
   defp alias_key(parts, _rest) do

@@ -35,7 +35,8 @@
   which fine-tuned models reject. It renders on demand.
 - A struct compiled without a typespec chunk (in memory or with
   `debug_info: false`) now falls back to parsing its source file for `@type t`
-  (simple `alias` directives are expanded); a module with no source warns
+  (simple `alias` directives are expanded in declaration order); a module with
+  no source warns
   "has no readable typespec" instead of degrading silently.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is

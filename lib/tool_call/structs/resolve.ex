@@ -227,7 +227,7 @@ defmodule ToolCall.Structs.Resolve do
     add_warning(
       state,
       "#{inspect(module)} has no readable typespec (compiled without debug info or in " <>
-        "memory, and no source file is available); every field is treated as {}"
+        "memory, and no readable source is available); every field is treated as {}"
     )
   end
 
