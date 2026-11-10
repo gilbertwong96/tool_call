@@ -17,6 +17,11 @@ mix coveralls.html
   environment.
 - Use `mix coveralls.html` to write the coverage report to `cover/`.
 - Keep changes small, tested, and formatted.
+- Refactor source with pi-elixir, not ad hoc text scripts. Use
+  `elixir_ast_search` / `elixir_ast_replace` for structural edits and the LSP
+  `rename` action for symbol renames; reserve `edit` for small exact changes.
+  Do not use Python/Perl/shell one-off scripts for code migrations or API
+  renames, and dry-run an AST rewrite before applying it.
 - `.credo.exs` and `.reach.exs` come from the VibeKit 0.1.7 installer. VibeKit
   itself is not a dependency: re-run `mix igniter.install vibe_kit --agents-md`
   only if the quality config needs regenerating, then check that it did not
