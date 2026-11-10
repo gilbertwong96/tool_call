@@ -294,7 +294,7 @@ defmodule ToolCall.ResultTypesTest do
         """)
 
       refute warnings =~ "treated as {}"
-      refute warnings =~ "is @opaque"
+      refute warnings =~ "field set is hidden"
     end
   end
 
@@ -342,6 +342,115 @@ defmodule ToolCall.ResultTypesTest do
 
     assert {:error, {:invalid_result, {:expected_struct, 1}}} =
              ToolCall.run(module, :bad, %{"x" => 1}, validate_result: true)
+  end
+
+  test "warns when the result type cannot be validated" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: term()
+        def go(_x), do: :anything
+      end
+      """)
+
+    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "accept any value"
+    [tool] = ToolCall.tools(module)
+    assert %Type{kind: :any} = tool.result
+    assert {:ok, :anything} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "warns for an unsupported result type" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: fun()
+        def go(_x), do: fn -> :ok end
+      end
+      """)
+
+    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "accept any value"
+  end
+
+  test "warns for an unknown remote result type" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: Totally.Missing.t()
+        def go(_x), do: :anything
+      end
+      """)
+
+    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "accept any value"
+  end
+
+  test "warns for an opaque struct result type" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.OpaqueBox.t()
+        def go(_x), do: :anything
+      end
+      """)
+
+    assert warnings =~ "is ToolCall.TestFixtures.OpaqueBox.t(), which is @opaque"
+    assert warnings =~ "accept any value"
+    [tool] = ToolCall.tools(module)
+    assert %Type{kind: :any} = tool.result
+  end
+
+  test "does not warn for a result type that can be validated" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: map()
+        def go(_x), do: %{}
+      end
+      """)
+
+    refute warnings =~ "accept any value"
+  end
+
+  test "a truncated result type reports the validation blind spot once" do
+    cycle =
+      for i <- 0..32 do
+        next = rem(i + 1, 33)
+        "  @type r#{i} :: {r#{next}()}\n"
+      end
+      |> Enum.join()
+
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+      #{cycle}
+        @doc "Go."
+        @spec go(x :: integer()) :: r0()
+        def go(_x), do: {{}}
+      end
+      """)
+
+    assert warnings =~ "expansion budget"
+    assert warnings =~ "Result validation will accept any value there"
+    refute warnings =~ "Narrow the type if the result must be checked"
   end
 
   test "Runner.run/5 rejects a non-boolean validate_result" do

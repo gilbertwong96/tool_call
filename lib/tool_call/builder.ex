@@ -355,11 +355,23 @@ defmodule ToolCall.Builder do
         context.module,
         location,
         "return type of #{name}/#{arity} hit the type expansion budget; the rest of " <>
-          "the type is treated as {}."
+          "the type is treated as {}. Result validation will accept any value there."
       )
     end
 
-    {Typespec.to_type(type_ast, context.providers), defs}
+    type = Typespec.to_type(type_ast, context.providers)
+
+    if not truncated? and type.kind in [:any, :unsupported] do
+      warn(
+        context.module,
+        location,
+        "return type of #{name}/#{arity} has no JSON type; run/4 with " <>
+          "validate_result: true will accept any value. Narrow the type if the result " <>
+          "must be checked."
+      )
+    end
+
+    {type, defs}
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
@@ -581,6 +593,33 @@ defmodule ToolCall.Builder do
         warn_def(module, location, name, type, tool.fun, arity)
       end
     end)
+
+    warn_result_type(module, location, tool, arity)
+  end
+
+  defp warn_result_type(_module, _location, %Tool{result: nil}, _arity), do: :ok
+
+  defp warn_result_type(module, location, %Tool{result: %Type{} = result} = tool, arity) do
+    case result.source do
+      {:opaque_struct, struct} ->
+        warn(
+          module,
+          location,
+          "return type of #{tool.fun}/#{arity} is #{inspect(struct)}.t(), which is " <>
+            "@opaque; run/4 with validate_result: true will accept any value."
+        )
+
+      {:unresolved_struct, struct} ->
+        warn(
+          module,
+          location,
+          "return type of #{tool.fun}/#{arity} could not resolve #{inspect(struct)}; " <>
+            "run/4 with validate_result: true will accept any value."
+        )
+
+      _other ->
+        :ok
+    end
   end
 
   defp warn_def(module, location, name, type, fun, arity) do
