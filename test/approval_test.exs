@@ -161,6 +161,23 @@ defmodule ToolCall.ApprovalTest do
     end
   end
 
+  test "a module-level approval policy without check/3 raises" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, approval: :nope
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert_raise ArgumentError, ~r/does not export check\/3/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1})
+    end
+  end
+
   test "a boolean approval policy is rejected" do
     module = module_with_policy()
 

@@ -527,6 +527,14 @@ ToolCall.run(request.module, request.tool, request.args,
   double-execution guard. Never accept fresh model arguments for an approved
   call; use the stored ones. The agent runtime or application owns the pending
   state.
+- The request stores `args` and `context`, not one-off execution options.
+  Re-supply `validate_result:`, `timeout:`, `audit:` and `task_supervisor:` on
+  resume if the original call used them; module-level policies are re-read. The
+  pending audit entry carries `approval_request_id`; a resumed entry does not,
+  so pass `request.id` in the resume context to correlate audit records.
+- A module option is checked for `check/3` when options are validated; a
+  module-level policy is checked when the module is resolved. An audit module is
+  checked for `record/1` the same way.
 
 `ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve`
 stores the policy and the context, `execute` checks it, so a future runtime can
@@ -565,17 +573,22 @@ receives one entry per dispatch attempt:
 - `outcome` is `:ok`, `:error`, `:raised`, `:pending`, `:denied`, `:timeout`,
   `:invalid_arguments` or `:unknown_tool`; resolve failures, non-map arguments,
   unknown tools and exceptions from a resolve/execute policy are recorded too.
-  A policy exception is an `:error` with `error: {:exception, message}`.
+  An approval or other dispatch exception is an `:error` with
+  `error: {:exception, message}`; a timeout policy failure is an `:error` with
+  `error: {:invalid_timeout, reason}`.
 - The outcome comes from the dispatch path, not from the error tuple: a tool
   returning `{:error, {:timeout, ...}}` or `{:error, {:approval_denied, ...}}`
   is recorded as `:error`, not as a dispatch timeout or denial.
 - `duration_us` measures the phase that produced the outcome: resolve for an
   argument error, execute for an invoked call, and zero for an unknown tool or
-  non-map arguments. The result value is never recorded.
+  non-map arguments. Policy exceptions and invalid runtime IR use the phase
+  that raised; this is not a total dispatch latency. The result value is never
+  recorded.
 - The hook is synchronous. This is a hook, not a store: persistence, redaction,
   retention and a fail-closed policy are the application's. The library ignores
   an exception from `record/1`, so a broken audit does not change the tool
-  result.
+  result; a module without `record/1` raises `ArgumentError` before the hook
+  runs. Policy and hook execution is not covered by a timeout.
 - `args` and `context` are raw; redact them in `record/1` when they contain
   secrets.
 
@@ -625,8 +638,11 @@ use ToolCall, timeout: MyTimeouts
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
   `Task.Supervisor` instead of a task linked to the caller, including a timeout
   supplied by the module. With `timeout: :infinity` a supervisor still starts a
-  task. An unreachable supervisor answers
+  task. An unreachable or invalid supervisor answers
   `{:error, {:task_supervisor, reason}}`.
+- Approval, timeout and audit policies run synchronously in the caller; only
+  the invocation and its result validation are covered by the timeout. Keep
+  policies fast; the overall deadline is the caller's.
 - The timeout wraps the function invocation and its result validation; argument
   validation and coercion happen before the task starts. A resolve error is
   returned without starting a task.
@@ -743,9 +759,10 @@ end
 
 ### Error terms
 
-`ToolCall.run/4` returns one of the following for bad input or a policy error;
-invalid options and an invalid explicitly configured timeout raise
-`ArgumentError` before or during dispatch, and a policy exception that is not a
+`ToolCall.run/4` returns one of the following for bad input or a policy error.
+Invalid options raise `ArgumentError`. An invalid explicit `:timeout` raises
+when a known tool is resolved or `execute/2` runs; an unknown tool or non-map
+`args` returns before timeout validation. A policy exception that is not a
 returned timeout error is re-raised after the audit entry is written:
 
 | Error | Meaning |
@@ -761,7 +778,7 @@ returned timeout error is re-raised after the audit entry is written:
 | `{:thrown, value}` / `{:exited, reason}` | the function threw or exited |
 | `{:timeout, ms}` | the invocation exceeded its timeout |
 | `{:invalid_timeout, reason}` | the timeout policy raised or returned an invalid value |
-| `{:task_supervisor, reason}` | the configured supervisor is unreachable |
+| `{:task_supervisor, reason}` | the configured supervisor is unreachable or invalid |
 | `{:approval_denied, reason}` | the approval policy denied the call |
 | `{:invalid_approval, term}` | the approval policy returned an unknown term |
 | `{:invalid_result, reason}` | `validate_result: true` rejected the raw return |

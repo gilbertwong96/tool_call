@@ -11,8 +11,10 @@ defmodule ToolCall.Audit do
   This is a hook, not a log store: the application persists the entry, applies
   redaction and retention, and decides whether a failed audit is fatal. The
   library calls the hook synchronously and ignores an exception it raises, so
-  a broken audit does not change the tool result. The raw `args` and `context`
-  are passed through; redact them in `record/1` when they contain secrets.
+  a broken audit does not change the tool result. A policy module without
+  `record/1` is a configuration error and raises `ArgumentError` before the
+  hook runs. The raw `args` and `context` are passed through; redact them in
+  `record/1` when they contain secrets.
   """
 
   @type outcome ::
@@ -33,8 +35,11 @@ defmodule ToolCall.Audit do
     `:timeout`, `:invalid_arguments` or `:unknown_tool`. `duration_us` covers
     the phase that produced the outcome: resolve for an argument error, execute
     for an invoked call, and zero for an unknown tool or non-map arguments.
-    `error` carries the reason for failure outcomes and `approval_request_id`
-    correlates a pending request. The result value is never recorded.
+    Policy exceptions and invalid runtime IR use the phase that raised; this is
+    not a total dispatch latency. `error` carries the reason for failure
+    outcomes and `approval_request_id` correlates a pending request (a resumed
+    execution has no request id unless the caller passes it in the context).
+    The result value is never recorded.
     """
 
     @enforce_keys [:id, :at, :module, :tool, :args, :outcome]

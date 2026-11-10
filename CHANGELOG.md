@@ -132,8 +132,8 @@
   `{:error, {:invalid_timeout, reason}}`.
 - `run/4` honors `:task_supervisor` when the timeout comes from the module
   default, and `:infinity` with a supervisor now starts a supervised task. An
-  unreachable supervisor answers `{:error, {:task_supervisor, reason}}` instead
-  of exiting the caller.
+  unreachable or invalid supervisor answers `{:error, {:task_supervisor,
+  reason}}` instead of exiting the caller.
 - `execute/2` validates an explicit `:timeout` override before approval, so a
   pending/denied decision cannot hide an invalid timeout.
 - `ToolCall.Call` stores the `:context` given to `resolve/4`, so `execute/2`
@@ -150,7 +150,9 @@
 - `ToolCall.run/4` uses the prepared-tool path for compiled modules instead of
   revalidating every tool on each option-carrying call.
 - `Runner` validates its public option keys and rejects boolean/invalid
-  approval or audit values before dispatch.
+  approval or audit values before dispatch. Approval/audit options are checked
+  for `check/3` / `record/1`; module-level policies are loaded on demand and
+  checked when resolved.
 - `:crypto` is declared in `extra_applications`; audit and approval ids work in
   a release that contains only this library.
 - An Anthropic stream whose initial `input` is not a map, and has no

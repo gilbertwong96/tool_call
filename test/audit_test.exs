@@ -310,6 +310,23 @@ defmodule ToolCall.AuditTest do
     assert message =~ "unknown kind"
   end
 
+  test "a module-level audit policy without record/1 raises" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, audit: :nope
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert_raise ArgumentError, ~r/does not export record\/1/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1})
+    end
+  end
+
   test "a boolean audit policy is rejected" do
     module = plain_module()
 

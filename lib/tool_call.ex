@@ -477,13 +477,15 @@ defmodule ToolCall do
       `{:error, {:invalid_result, reason}}`. Defaults to false, which is the
       generated fast path. Validation uses the generic runner path.
     * `:timeout` - a per-invocation timeout in milliseconds or `:infinity`;
-      defaults to the module's `use ToolCall, timeout: ...` policy. A timeout
-      answers `{:error, {:timeout, ms}}` and runs the function in a task.
+      defaults to the module's `use ToolCall, timeout: ...` policy. A finite
+      timeout answers `{:error, {:timeout, ms}}` and runs the function in a
+      task; `:infinity` runs in the caller unless `:task_supervisor` is given,
+      which starts a task.
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
       invocation, including one supplied by the module timeout. With
       `:infinity` a supervisor still starts a task; without a supervisor a
       finite timeout uses a task linked to the caller and `:infinity` runs in
-      the caller. An unreachable supervisor answers
+      the caller. An unreachable or invalid supervisor answers
       `{:error, {:task_supervisor, reason}}`.
     * `:context` - passed to the timeout, approval and audit policies. It is
       also stored on the call by `Runner.resolve/4` for `execute/2`.
@@ -493,8 +495,10 @@ defmodule ToolCall do
       `{:pending, %ToolCall.Approval.Request{}}`; the call is not invoked.
     * `:audit` - a `ToolCall.Audit` policy module; `nil` disables the module
       policy for one call. The hook receives one `%ToolCall.Audit.Entry{}` per
-      dispatch attempt, including a resolve/execute exception; an exception is
-      recorded as `:error` with `error: {:exception, message}`.
+      dispatch attempt, including a resolve/execute exception. An approval or
+      other dispatch exception is recorded as `:error` with
+      `error: {:exception, message}`; a timeout policy failure is recorded as
+      `:error` with `error: {:invalid_timeout, reason}`.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}

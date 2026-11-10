@@ -164,7 +164,8 @@ defmodule ToolCall.Runner do
   The module's timeout default, the caller's `:timeout` or an optional
   `ToolCall.Timeout` policy is stored in the call; a policy is evaluated by
   `execute/2`, after approval. `:context` is stored for the approval, audit and
-  timeout policies. A hand-built tool is validated first; invalid IR raises
+  timeout policies. Module-level timeout, approval and audit policies are
+  loaded on demand. A hand-built tool is validated first; invalid IR raises
   `ArgumentError`.
   """
   @spec resolve(module(), Tool.t(), map(), keyword()) ::
@@ -331,8 +332,19 @@ defmodule ToolCall.Runner do
   end
 
   defp module_audit(module) do
-    if function_exported?(module, :__audit_policy__, 0) do
-      module.__audit_policy__()
+    case module_policy(module, :__audit_policy__) do
+      nil ->
+        nil
+
+      policy ->
+        ToolCall.Options.validate_policy!(policy, :record, 1, "audit")
+        policy
+    end
+  end
+
+  defp module_policy(module, function) do
+    if Code.ensure_loaded?(module) and function_exported?(module, function, 0) do
+      apply(module, function, [])
     else
       nil
     end
@@ -445,9 +457,7 @@ defmodule ToolCall.Runner do
   defp audit_fields(_outcome, _result), do: {nil, nil, nil}
 
   defp record_entry(policy, entry) when is_atom(policy) do
-    unless Code.ensure_loaded?(policy) and function_exported?(policy, :record, 1) do
-      raise ArgumentError, "audit policy #{inspect(policy)} does not export record/1"
-    end
+    ToolCall.Options.validate_policy!(policy, :record, 1, "audit")
 
     try do
       policy.record(entry)
@@ -470,10 +480,13 @@ defmodule ToolCall.Runner do
   end
 
   defp module_approval(module) do
-    if function_exported?(module, :__approval_policy__, 0) do
-      module.__approval_policy__()
-    else
-      nil
+    case module_policy(module, :__approval_policy__) do
+      nil ->
+        nil
+
+      policy ->
+        ToolCall.Options.validate_policy!(policy, :check, 3, "approval")
+        policy
     end
   end
 
@@ -482,23 +495,20 @@ defmodule ToolCall.Runner do
   defp approve(_call, :denied, _context), do: {:error, {:approval_denied, :denied}}
 
   defp approve(call, policy, context) when is_atom(policy) do
-    if Code.ensure_loaded?(policy) and function_exported?(policy, :check, 3) do
-      case policy.check(call.tool, call.args, context) do
-        :approve ->
-          :ok
+    ToolCall.Options.validate_policy!(policy, :check, 3, "approval")
 
-        {:deny, reason} ->
-          {:error, {:approval_denied, reason}}
+    case policy.check(call.tool, call.args, context) do
+      :approve ->
+        :ok
 
-        {:required, reason} ->
-          {:pending,
-           ToolCall.Approval.request(call.module, call.tool, call.args, reason, context)}
+      {:deny, reason} ->
+        {:error, {:approval_denied, reason}}
 
-        other ->
-          {:error, {:invalid_approval, other}}
-      end
-    else
-      raise ArgumentError, "approval policy #{inspect(policy)} does not export check/3"
+      {:required, reason} ->
+        {:pending, ToolCall.Approval.request(call.module, call.tool, call.args, reason, context)}
+
+      other ->
+        {:error, {:invalid_approval, other}}
     end
   end
 
@@ -539,26 +549,22 @@ defmodule ToolCall.Runner do
   end
 
   defp module_timeout_config(module) do
-    if function_exported?(module, :__timeout_policy__, 0) do
-      case module.__timeout_policy__() do
-        nil ->
-          {:infinity, nil}
+    case module_policy(module, :__timeout_policy__) do
+      nil ->
+        {:infinity, nil}
 
-        :infinity ->
-          {:infinity, nil}
+      :infinity ->
+        {:infinity, nil}
 
-        timeout when is_integer(timeout) ->
-          {ToolCall.Timeout.validate!(timeout), nil}
+      timeout when is_integer(timeout) ->
+        {ToolCall.Timeout.validate!(timeout), nil}
 
-        policy when is_atom(policy) and policy not in [true, false] ->
-          {:infinity, policy}
+      policy when is_atom(policy) and policy not in [true, false] ->
+        {:infinity, policy}
 
-        other ->
-          raise ArgumentError,
-                "timeout must be :infinity or a non-negative integer, got: #{inspect(other)}"
-      end
-    else
-      {:infinity, nil}
+      other ->
+        raise ArgumentError,
+              "timeout must be :infinity or a non-negative integer, got: #{inspect(other)}"
     end
   end
 

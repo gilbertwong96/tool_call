@@ -14,7 +14,8 @@ defmodule ToolCall.Timeout do
   `use ToolCall, timeout: MyPolicy`; `ToolCall.run/4` with `timeout: ms` wins
   over the policy. `timeout/3` receives the tool IR, the validated raw argument
   map and the caller's context. It runs when the call executes, after approval,
-  not during `resolve/4`.
+  not during `resolve/4`; its own execution is not covered by the timeout it
+  computes.
   """
 
   alias ToolCall.IR.Tool
@@ -29,9 +30,9 @@ defmodule ToolCall.Timeout do
     * `:task_supervisor` - a `Task.Supervisor` name. With a finite timeout the
       task is started under the supervisor; with `:infinity` a supervisor still
       starts a task. Without a supervisor, a finite timeout uses a task linked
-      to the caller and `:infinity` runs in the caller. An unreachable
-      supervisor answers `{:error, {:task_supervisor, reason}}` instead of
-      exiting the caller.
+      to the caller and `:infinity` runs in the caller. An unreachable or
+      invalid supervisor answers `{:error, {:task_supervisor, reason}}` instead
+      of exiting the caller.
   """
   @spec run((-> term()), timeout(), keyword()) :: term()
   def run(fun, timeout, opts) do
@@ -83,12 +84,18 @@ defmodule ToolCall.Timeout do
       nil ->
         {:ok, Task.async(fun)}
 
-      supervisor ->
+      supervisor when is_atom(supervisor) or is_pid(supervisor) ->
         try do
           {:ok, Task.Supervisor.async_nolink(supervisor, fun)}
+        rescue
+          exception -> {:error, {:task_supervisor, exception}}
         catch
           :exit, reason -> {:error, {:task_supervisor, reason}}
+          kind, value -> {:error, {:task_supervisor, {kind, value}}}
         end
+
+      other ->
+        {:error, {:task_supervisor, {:invalid, other}}}
     end
   end
 

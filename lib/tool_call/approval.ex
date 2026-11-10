@@ -33,6 +33,13 @@ defmodule ToolCall.Approval do
     the caller passed to `run/4`. `inserted_at` lets the application expire
     stale requests. The struct itself contains no pids or closures; `args` and
     `context` are caller-provided and serializable only when those values are.
+
+    The request does not store one-off execution options. On resume, re-supply
+    `validate_result:`, `timeout:`, `audit:` and `task_supervisor:` if the
+    original call used them, or keep using the `Call` returned by
+    `Runner.resolve/4`. The pending audit entry carries the request id; a
+    resumed entry does not, so pass `request.id` in the resume context when
+    correlating audit records.
     """
 
     @enforce_keys [:id, :module, :tool, :args]

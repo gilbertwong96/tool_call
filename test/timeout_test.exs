@@ -456,6 +456,14 @@ defmodule ToolCall.TimeoutTest do
     assert message =~ "timeout must be"
   end
 
+  test "Timeout.run/3 treats an invalid supervisor term as an error" do
+    assert {:error, {:task_supervisor, _reason}} =
+             ToolCall.Timeout.run(fn -> :ok end, 100, task_supervisor: "bad")
+
+    assert {:error, {:task_supervisor, _reason}} =
+             ToolCall.Timeout.run(fn -> :ok end, :infinity, task_supervisor: "bad")
+  end
+
   test "resolve/4 validates a hand-built tool" do
     bad = %ToolCall.IR.Tool{
       name: "go",

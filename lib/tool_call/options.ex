@@ -12,6 +12,16 @@ defmodule ToolCall.Options do
     :ok
   end
 
+  @spec validate_policy!(atom(), atom(), non_neg_integer(), String.t()) :: :ok
+  def validate_policy!(policy, function, arity, label) do
+    unless Code.ensure_loaded?(policy) and function_exported?(policy, function, arity) do
+      raise ArgumentError,
+            "#{label} policy #{inspect(policy)} does not export #{function}/#{arity}"
+    end
+
+    :ok
+  end
+
   defp validate_keys!(opts, allowed) do
     case Keyword.keys(opts) -- allowed do
       [] -> :ok
@@ -73,7 +83,7 @@ defmodule ToolCall.Options do
         :ok
 
       policy when is_atom(policy) and policy not in [true, false] ->
-        :ok
+        validate_policy!(policy, :check, 3, "approval")
 
       other ->
         raise ArgumentError,
@@ -87,7 +97,7 @@ defmodule ToolCall.Options do
         :ok
 
       policy when is_atom(policy) and policy not in [true, false, :granted, :denied] ->
-        :ok
+        validate_policy!(policy, :record, 1, "audit")
 
       other ->
         raise ArgumentError, "audit must be a module or nil, got: #{inspect(other)}"

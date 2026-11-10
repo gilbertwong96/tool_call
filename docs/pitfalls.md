@@ -476,19 +476,28 @@ so a retry cannot run side effects twice. `{:pending, _}` is a third `run/4`
 outcome next to `{:ok, _}` and `{:error, _}`; an agent loop must pause instead of
 sending it to the model as a tool result. A policy that returns an unknown term
 is `{:error, {:invalid_approval, term}}`; a policy that raises propagates its
-exception, and a module without `check/3` raises `ArgumentError`. Validate
-configuration at startup when the policy comes from outside the project.
+exception, and a module without `check/3` raises `ArgumentError`. Option values
+are checked when options are validated; module-level policies are checked when
+the module is resolved. Validate configuration at startup as well when the
+policy comes from outside the project. A pending `Request` stores args and
+context, not one-off execution options: on resume, re-supply `validate_result:`,
+`timeout:`, `audit:` and `task_supervisor:` if the original call used them. The
+pending audit entry has the request id; a resumed entry does not, so pass it in
+the resume context if you need correlation.
 
 ## An audit hook is not an audit log
 
-`ToolCall.Audit` receives one `%Entry{}` per dispatch, including an exception
-from a resolve/execute policy (recorded as `:error` with
-`error: {:exception, message}`), but it does not persist, redact, rotate or
-retain anything, and an exception from `record/1` is ignored (fail-open). The
-raw `args` and `context` are passed through; redact them before storage. The
-hook runs after the dispatch, so it cannot fail-closed; use an approval policy
-if a call must be blocked before execution. The result value is not recorded;
-store a business id or a digest if needed.
+`ToolCall.Audit` receives one `%Entry{}` per dispatch, including an approval or
+other dispatch exception (recorded as `:error` with
+`error: {:exception, message}`) and a timeout policy failure (`:error` with
+`error: {:invalid_timeout, reason}`), but it does not persist, redact, rotate or
+retain anything. An exception from `record/1` is ignored (fail-open); a module
+without `record/1` raises `ArgumentError`. The raw `args` and `context` are
+passed through; redact them before storage. The hook runs after the dispatch,
+so it cannot fail-closed; use an approval policy if a call must be blocked
+before execution. Policy execution is synchronous and not covered by a
+timeout. The result value is not recorded; store a business id or a digest if
+needed.
 
 ## A timeout is a hard kill, not a cancellation
 
@@ -500,11 +509,12 @@ The task is a different process: `self/0`, the process dictionary,
 Prefer a cooperative timeout inside the tool (Ecto `timeout:`, Req
 `receive_timeout`) for resources and NIFs. Without `task_supervisor:` a finite
 timeout uses a task linked to the caller and `:infinity` runs in the caller;
-with it the supervisor owns the task, including `:infinity`. An unreachable
-supervisor answers `{:error, {:task_supervisor, reason}}`. The timeout policy
-runs at `execute/2` after approval, receives the raw args, and is not a
-cancellation; the timeout is a per-invocation cap, not a run deadline. The
-caller or agent framework owns the overall budget.
+with it the supervisor owns the task, including `:infinity`. An unreachable or
+invalid supervisor answers `{:error, {:task_supervisor, reason}}`. The timeout
+policy runs at `execute/2` after approval, receives the raw args, and is not a
+cancellation; policy execution itself is not covered by the timeout. The
+timeout is a per-invocation cap, not a run deadline. The caller or agent
+framework owns the overall budget.
 
 ## Remaining design boundaries
 
