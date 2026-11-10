@@ -476,6 +476,51 @@ rejects a struct value. The result also shares the tool's 32-definition budget
 with the parameters: if they exhaust it, the result degrades to `:any` and
 validation accepts anything.
 
+### Timeouts
+
+`run/4` accepts a per-call timeout; without one the call runs in the caller
+with no task boundary:
+
+```elixir
+ToolCall.run(MyApp.Tools, :slow_query, args, timeout: 5_000)
+#=> {:error, {:timeout, 5_000}}
+```
+
+`ToolCall.Runner.resolve/4` and `execute/2` expose the same boundary: `resolve`
+is pure (checks, coercion, positional arguments), and `execute` invokes the
+function, with an optional timeout:
+
+```elixir
+{:ok, call} = ToolCall.Runner.resolve(MyApp.Tools, tool, args)
+ToolCall.Runner.execute(call, timeout: 5_000)
+```
+
+Set a default or a policy at compile time:
+
+```elixir
+use ToolCall, timeout: 5_000
+
+# or per tool
+defmodule MyTimeouts do
+  @behaviour ToolCall.Timeout
+
+  def timeout(%ToolCall.IR.Tool{name: "slow_query"}, _args, _context), do: 30_000
+  def timeout(_tool, _args, _context), do: 5_000
+end
+
+use ToolCall, timeout: MyTimeouts
+```
+
+- `timeout: :infinity` disables the module policy for one call.
+- `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
+  `Task.Supervisor` instead of a task linked to the caller.
+- The timeout wraps only the function invocation, after validation and before
+  result validation. A resolve error is returned without starting a task.
+- It is a per-invocation cap, not a run deadline. The caller or agent framework
+  owns the overall deadline.
+- A timeout is a hard kill, not a cancellation: see
+  [`pitfalls.md`](pitfalls.md#a-timeout-is-a-hard-kill-not-a-cancellation).
+
 ### Streaming
 
 A streamed response delivers a tool call in pieces. `ToolCall.Stream` folds the

@@ -46,8 +46,12 @@ defmodule ToolCall.TestModule do
 
     {module, _binary} =
       Enum.find(compiled, fn {compiled_module, _binary} ->
-        not String.ends_with?(Atom.to_string(compiled_module), ".__ToolCall__")
-      end)
+        not String.ends_with?(Atom.to_string(compiled_module), ".__ToolCall__") and
+          function_exported?(compiled_module, :__tools__, 0)
+      end) ||
+        Enum.find(compiled, fn {compiled_module, _binary} ->
+          not String.ends_with?(Atom.to_string(compiled_module), ".__ToolCall__")
+        end)
 
     {module, diagnostics}
   end

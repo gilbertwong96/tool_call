@@ -7,16 +7,18 @@ defmodule ToolCall.Codegen do
 
   @max_optional 6
 
-  @spec runner_clauses([Tool.t()], [String.t()]) :: [Macro.t()]
-  def runner_clauses(tools, indirect) do
+  @spec runner_clauses([Tool.t()], [String.t()], nil | non_neg_integer() | module()) :: [
+          Macro.t()
+        ]
+  def runner_clauses(tools, indirect, timeout \\ nil) do
     tools
     |> Enum.with_index()
     |> Enum.flat_map(fn {tool, index} ->
-      clauses(tool, index, tool.name in indirect)
+      clauses(tool, index, tool.name in indirect, timeout)
     end)
   end
 
-  defp clauses(tool, index, indirect?) do
+  defp clauses(tool, index, indirect?, timeout) do
     runner = :"__tool_call_run_#{index}__"
 
     clauses = [
@@ -27,9 +29,9 @@ defmodule ToolCall.Codegen do
     ]
 
     definition =
-      if fast_tool?(tool),
+      if timeout == nil and fast_tool?(tool),
         do: fast_runner(tool, runner, indirect?),
-        else: generic_runner(tool, runner)
+        else: generic_runner(tool, runner, timeout)
 
     clauses ++ [definition]
   end
@@ -75,9 +77,16 @@ defmodule ToolCall.Codegen do
     end
   end
 
-  defp generic_runner(tool, runner) do
+  defp generic_runner(tool, runner, timeout) do
     known = Enum.map(tool.params || [], & &1.name)
     nested? = Enum.any?(tool.params || [], &nested_key_check?(&1.type))
+
+    opts =
+      case timeout do
+        nil -> []
+        timeout when is_integer(timeout) -> [timeout: timeout]
+        policy -> [timeout_policy: policy]
+      end
 
     quote do
       defp unquote(runner)(args) do
@@ -86,7 +95,8 @@ defmodule ToolCall.Codegen do
           unquote(Macro.escape(tool)),
           args,
           unquote(nested?),
-          unquote(known)
+          unquote(known),
+          unquote(opts)
         )
       end
     end

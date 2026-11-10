@@ -481,6 +481,20 @@ complete `functionCall` parts (no id). The concatenated JSON is decoded with the
 standard `JSON` module; a malformed fragment is an error, and a call without a
 name is refused. Chunks for other event types are ignored.
 
+## Timeouts
+
+`Runner.resolve/4` performs the key checks, coercion and positional
+construction without side effects; `execute/2` invokes the function (and
+validates the result). A timeout wraps only the invocation in a task, after
+validation, so an invalid call fails before a human or timer is involved.
+`run/4 timeout:` overrides the module default; `use ToolCall, timeout: ...`
+embeds a constant or a `ToolCall.Timeout` policy in the generated runner and
+disables the fast path for that module. The task is killed with `:brutal_kill`;
+process-local state, ETS ownership, Ecto sandbox ownership and NIFs are not
+carried over, so cooperative timeouts inside the tool remain the better choice
+for DB/HTTP work. The timeout is per invocation; the overall run deadline
+belongs to the caller or agent framework.
+
 ## Provider subsets
 
 The same IR is normalized for the provider formats below. Runtime emitters exist

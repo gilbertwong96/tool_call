@@ -38,6 +38,11 @@
   (simple aliases, multi-aliases, enclosing-module aliases and `@typep` are
   expanded in declaration order); a module with no source warns
   "has no readable typespec" instead of degrading silently.
+- `ToolCall.Runner.resolve/4` and `execute/2` split preparation from the side
+  effect. `ToolCall.run/4` accepts `timeout:` and `task_supervisor:`, and
+  `use ToolCall, timeout: ...` sets a default or a `ToolCall.Timeout` policy; a
+  timeout answers `{:error, {:timeout, ms}}`. Timeouts are per invocation and a
+  hard kill, not a cancellation.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one

@@ -46,16 +46,20 @@ defmodule ToolCall do
 
   @doc false
   defmacro __using__(opts) do
-    {types, rest} = Keyword.pop(opts, :types, [])
+    {types, opts} = Keyword.pop(opts, :types, [])
+    {timeout, rest} = Keyword.pop(opts, :timeout)
 
     if rest != [] do
-      raise ArgumentError, "use ToolCall accepts only :types, got: #{inspect(rest)}"
+      raise ArgumentError,
+            "use ToolCall accepts only :types and :timeout, got: #{inspect(rest)}"
     end
 
+    timeout = expand_timeout(timeout, __CALLER__)
     providers = ToolCall.Typespec.builtin_providers() ++ expand_providers(types, __CALLER__)
 
     quote do
       @tool_call_type_providers unquote(providers)
+      @tool_call_timeout unquote(timeout)
       Module.register_attribute(__MODULE__, :tool_call_defs, accumulate: true)
       Module.register_attribute(__MODULE__, :tool_call_struct_fields, [])
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
@@ -80,6 +84,22 @@ defmodule ToolCall do
 
   defp expand_providers(other, _env) do
     raise ArgumentError, ":types must be a list of modules, got: #{inspect(other)}"
+  end
+
+  defp expand_timeout(nil, _env), do: nil
+  defp expand_timeout(:infinity, _env), do: nil
+  defp expand_timeout(timeout, _env) when is_integer(timeout) and timeout >= 0, do: timeout
+
+  defp expand_timeout(timeout, env) do
+    case Macro.expand(timeout, env) do
+      module when is_atom(module) and module not in [nil, true, false] ->
+        module
+
+      other ->
+        raise ArgumentError,
+              "timeout must be :infinity, a non-negative integer or a module, " <>
+                "got: #{inspect(other)}"
+    end
   end
 
   @doc false
@@ -125,6 +145,7 @@ defmodule ToolCall do
         typedoc_keys
       end
 
+    timeout = Module.get_attribute(module, :tool_call_timeout)
     generation = Generated.generation()
     companion = Generated.companion(module)
     schemas = Emit.precompile(tools)
@@ -140,33 +161,10 @@ defmodule ToolCall do
     # A module with an empty effective key map can never gain a companion, so
     # its accessors return the phase-one literals directly. Only modules that
     # may receive a companion pay for the generation guard at runtime.
-    tools_body =
-      if map_size(typedoc_keys) == 0 do
-        Macro.escape(embedded)
-      else
-        quote do
-          ToolCall.Generated.tools(
-            unquote(companion),
-            unquote(generation),
-            unquote(Macro.escape(embedded))
-          )
-        end
-      end
+    tools_body = tools_body(embedded, companion, generation, typedoc_keys)
+    schemas_body = schemas_body(schemas, companion, generation, typedoc_keys)
 
-    schemas_body =
-      if map_size(typedoc_keys) == 0 do
-        Macro.escape(schemas)
-      else
-        quote do
-          ToolCall.Generated.schemas(
-            unquote(companion),
-            unquote(generation),
-            unquote(Macro.escape(schemas))
-          )
-        end
-      end
-
-    runner_clauses = runner_clauses(tools, embedded)
+    runner_clauses = runner_clauses(tools, embedded, timeout)
 
     quote do
       @doc false
@@ -178,6 +176,9 @@ defmodule ToolCall do
       @doc false
       def __tool__(name), do: Enum.find(__tools__(), &(&1.name == to_string(name)))
 
+      @doc false
+      def __timeout_policy__, do: unquote(timeout)
+
       unquote_splicing(runner_clauses)
 
       @doc false
@@ -186,9 +187,37 @@ defmodule ToolCall do
     end
   end
 
-  defp runner_clauses(tools, embedded) do
+  defp tools_body(embedded, companion, generation, typedoc_keys) do
+    if map_size(typedoc_keys) == 0 do
+      Macro.escape(embedded)
+    else
+      quote do
+        ToolCall.Generated.tools(
+          unquote(companion),
+          unquote(generation),
+          unquote(Macro.escape(embedded))
+        )
+      end
+    end
+  end
+
+  defp schemas_body(schemas, companion, generation, typedoc_keys) do
+    if map_size(typedoc_keys) == 0 do
+      Macro.escape(schemas)
+    else
+      quote do
+        ToolCall.Generated.schemas(
+          unquote(companion),
+          unquote(generation),
+          unquote(Macro.escape(schemas))
+        )
+      end
+    end
+  end
+
+  defp runner_clauses(tools, embedded, timeout) do
     indirect = for tool <- tools, no_return_spec?(tool.source), do: tool.name
-    ToolCall.Codegen.runner_clauses(embedded, indirect)
+    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout)
   end
 
   defp no_return_spec?({:"::", _, [_args, {:no_return, _, []}]}), do: true
@@ -407,37 +436,85 @@ defmodule ToolCall do
       `{:ok, value}` / `{:error, reason}` is unwrapped. A mismatch returns
       `{:error, {:invalid_result, reason}}`. Defaults to false, which is the
       generated fast path. Validation uses the generic runner path.
+    * `:timeout` - a per-invocation timeout in milliseconds or `:infinity`;
+      defaults to the module's `use ToolCall, timeout: ...` policy. A timeout
+      answers `{:error, {:timeout, ms}}` and runs the function in a task.
+    * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
+      invocation. Without it the task is linked to the caller.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
   def run(module, name, args, opts \\ [])
 
   def run(module, name, args, opts) do
-    validate_result? = validate_result_option!(opts)
+    validate_run_options!(opts)
     ensure_tool_module!(module, :__run__)
 
-    if validate_result? do
-      ToolCall.Runner.run(module, module.__tools__(), name, args, validate_result: true)
+    if runner_path?(opts) do
+      opts = inject_timeout_policy(module, opts)
+      ToolCall.Runner.run(module, module.__tools__(), name, args, opts)
     else
       module.__run__(name, args)
     end
   end
 
-  defp validate_result_option!(opts) do
-    case Keyword.keys(opts) -- [:validate_result] do
+  defp runner_path?(opts) do
+    Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout)
+  end
+
+  defp inject_timeout_policy(module, opts) do
+    if Keyword.has_key?(opts, :timeout) do
+      opts
+    else
+      case module.__timeout_policy__() do
+        nil -> opts
+        :infinity -> opts
+        timeout when is_integer(timeout) -> Keyword.put(opts, :timeout, timeout)
+        policy -> Keyword.put(opts, :timeout_policy, policy)
+      end
+    end
+  end
+
+  defp validate_run_options!(opts) do
+    validate_option_keys!(opts)
+    validate_validate_result!(opts)
+    validate_timeout_option!(opts)
+    validate_task_supervisor!(opts)
+    :ok
+  end
+
+  defp validate_option_keys!(opts) do
+    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor] do
       [] -> :ok
       unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
     end
+  end
 
-    case Keyword.fetch(opts, :validate_result) do
-      {:ok, value} when is_boolean(value) ->
-        value
+  defp validate_validate_result!(opts) do
+    case Keyword.get(opts, :validate_result, false) do
+      value when is_boolean(value) -> :ok
+      other -> raise ArgumentError, "validate_result must be a boolean, got: #{inspect(other)}"
+    end
+  end
 
-      {:ok, other} ->
-        raise ArgumentError, "validate_result must be a boolean, got: #{inspect(other)}"
+  defp validate_timeout_option!(opts) do
+    case Keyword.fetch(opts, :timeout) do
+      {:ok, timeout} -> ToolCall.Timeout.validate!(timeout)
+      :error -> :ok
+    end
+  end
 
-      :error ->
-        false
+  defp validate_task_supervisor!(opts) do
+    case Keyword.get(opts, :task_supervisor) do
+      nil ->
+        :ok
+
+      supervisor when is_atom(supervisor) or is_pid(supervisor) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "task_supervisor must be a supervisor name or pid, got: #{inspect(other)}"
     end
   end
 

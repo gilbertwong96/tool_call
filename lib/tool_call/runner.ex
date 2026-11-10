@@ -73,20 +73,93 @@ defmodule ToolCall.Runner do
           {:ok, term()} | {:error, term()}
   def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
       when is_map(args) do
+    with {:ok, call} <- resolve_tool(module, tool, args, check_nested?, known, opts) do
+      execute(call, opts)
+    end
+  end
+
+  def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known, _opts),
+    do: {:error, {:invalid_arguments, args}}
+
+  @doc """
+  Resolves a tool call without invoking it.
+
+  Runs the key checks, coercion and positional construction and answers a
+  `ToolCall.Call` that `execute/2` can run later. No side effect is performed.
+  """
+  @spec resolve(module(), Tool.t(), map(), keyword()) ::
+          {:ok, ToolCall.Call.t()} | {:error, term()}
+  def resolve(module, tool, args, opts \\ [])
+
+  def resolve(module, %Tool{} = tool, args, opts) when is_map(args) do
+    resolve_tool(module, tool, args, true, nil, opts)
+  end
+
+  def resolve(_module, %Tool{}, args, _opts), do: {:error, {:invalid_arguments, args}}
+
+  @doc """
+  Executes a call produced by `resolve/4`.
+
+  The call's timeout applies unless `:timeout` is given. `:task_supervisor` is
+  passed to `ToolCall.Timeout.run/3`.
+  """
+  @spec execute(ToolCall.Call.t(), keyword()) :: {:ok, term()} | {:error, term()}
+  def execute(%ToolCall.Call{} = call, opts \\ []) do
+    timeout = Keyword.get(opts, :timeout, call.timeout)
+    ToolCall.Timeout.validate!(timeout)
+
+    ToolCall.Timeout.run(
+      fn -> invoke(call.module, call.tool, call.positional, call.validate_result?) end,
+      timeout,
+      opts
+    )
+  end
+
+  defp resolve_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
+       when is_map(args) do
     known = known || Enum.map(tool.params || [], & &1.name)
     validate_result? = validate_result_opt!(opts)
+    timeout = timeout_for(tool, args, opts)
 
     with :ok <- reject_non_string_keys(args),
          :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
          :ok <- reject_unknown_arguments(args, known),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
-      invoke(module, tool, positional, validate_result?)
+      {:ok,
+       %ToolCall.Call{
+         module: module,
+         tool: tool,
+         args: args,
+         values: values,
+         positional: positional,
+         timeout: timeout,
+         validate_result?: validate_result?
+       }}
     end
   end
 
-  def run_prepared_tool(_module, %Tool{}, args, _check_nested?, _known, _opts),
-    do: {:error, {:invalid_arguments, args}}
+  defp timeout_for(tool, args, opts) do
+    timeout =
+      case Keyword.fetch(opts, :timeout) do
+        {:ok, timeout} ->
+          timeout
+
+        :error ->
+          case Keyword.get(opts, :timeout_policy) do
+            nil ->
+              :infinity
+
+            timeout when is_integer(timeout) or timeout == :infinity ->
+              timeout
+
+            policy when is_atom(policy) ->
+              policy.timeout(tool, args, Keyword.get(opts, :context))
+          end
+      end
+
+    ToolCall.Timeout.validate!(timeout)
+  end
 
   @doc false
   @spec check_arguments(term(), [String.t()]) :: :ok | {:error, term()}

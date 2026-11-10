@@ -41,8 +41,11 @@ All planned items are implemented and awaiting a release.
 ## 0.4 — runtime governance
 
 - Approval / human-in-the-loop hooks.
-- Per-tool timeouts. Callers currently have to wrap `ToolCall.run/3` in their
-  own timeout.
+- Per-tool timeouts: done as an opt-in per-invocation cap. `ToolCall.run/4`
+  accepts `timeout:`/`task_supervisor:`, `Runner.execute/2` takes the same
+  override, and `use ToolCall, timeout: ...` sets a default or a
+  `ToolCall.Timeout` policy. The overall run deadline stays with the caller or
+  agent framework.
 - Audit log for dispatches.
 
 ## Later / not scheduled
