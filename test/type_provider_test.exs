@@ -891,6 +891,22 @@ defmodule ToolCall.TypeProviderTest do
              ToolCall.run(module, :bad, %{"x" => 1}, validate_result: true)
   end
 
+  test "a validator-only result type is not reported as unvalidated" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall, types: [ToolCall.TestFixtures.AnyValidatorProvider]
+
+        @doc "Go."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.AnyValidated.t()
+        def go(_x), do: "ok"
+      end
+      """)
+
+    refute warnings =~ "accept any value"
+    assert {:ok, "ok"} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
   test "an explicit validator wins over the provider shorthand" do
     module =
       compile!("""

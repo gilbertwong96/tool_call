@@ -46,3 +46,19 @@ defmodule ToolCall.TestFixtures.PrecedenceProvider do
   @impl true
   def validate(_type, _value, _defs), do: true
 end
+
+defmodule ToolCall.TestFixtures.AnyValidatorProvider do
+  @moduledoc false
+  @behaviour ToolCall.TypeProvider
+
+  @impl true
+  def resolve(ToolCall.TestFixtures.AnyValidated, :t, []) do
+    {:ok,
+     %ToolCall.IR.Type{
+       kind: :any,
+       validator: {ToolCall.TestFixtures.ValidatingProvider, :validate}
+     }}
+  end
+
+  def resolve(_module, _function, _args), do: :error
+end

@@ -361,13 +361,13 @@ defmodule ToolCall.Builder do
 
     type = Typespec.to_type(type_ast, context.providers)
 
-    if not truncated? and type.kind in [:any, :unsupported] do
+    if not truncated? and type.kind in [:any, :unsupported] and is_nil(type.validator) do
       warn(
         context.module,
         location,
-        "return type of #{name}/#{arity} has no JSON type; run/4 with " <>
-          "validate_result: true will accept any value. Narrow the type if the result " <>
-          "must be checked."
+        "return type of #{name}/#{arity} cannot be validated; run/4 with " <>
+          "validate_result: true will accept any value. Narrow the type or add a " <>
+          "validator if the result must be checked."
       )
     end
 

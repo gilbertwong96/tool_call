@@ -405,7 +405,7 @@ defmodule ToolCall.ResultTypesTest do
       end
       """)
 
-    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "return type of go/1 cannot be validated"
     assert warnings =~ "accept any value"
     [tool] = ToolCall.tools(module)
     assert %Type{kind: :any} = tool.result
@@ -424,7 +424,7 @@ defmodule ToolCall.ResultTypesTest do
       end
       """)
 
-    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "return type of go/1 cannot be validated"
     assert warnings =~ "accept any value"
   end
 
@@ -440,7 +440,7 @@ defmodule ToolCall.ResultTypesTest do
       end
       """)
 
-    assert warnings =~ "return type of go/1 has no JSON type"
+    assert warnings =~ "return type of go/1 cannot be validated"
     assert warnings =~ "accept any value"
   end
 

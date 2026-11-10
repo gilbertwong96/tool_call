@@ -49,7 +49,8 @@
 - A result type that cannot be validated — `term()`, an unknown remote type,
   `fun()`/`pid()`, an `@opaque` struct, or a budget-truncated type — now warns
   that `run/4` with `validate_result: true` accepts any value; the budget
-  warning names the same consequence.
+  warning names the same consequence. A provider `validator` suppresses the
+  warning because the value is checked.
 - The embedded IR drops AST `Type.source` values from parameters, the result and
   `$defs`, while keeping the string sub-kind atoms that dispatch and result
   validation read; this shrinks the beam.
