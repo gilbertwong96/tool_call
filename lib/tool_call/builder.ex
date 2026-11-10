@@ -620,12 +620,31 @@ defmodule ToolCall.Builder do
       |> Enum.uniq()
 
     case Enum.find(paths, fn {path, _reason} -> is_nil(path) end) do
-      {nil, reason} -> warn_root_result(module, location, fun, arity, reason)
-      nil -> warn_nested_result(module, location, fun, arity, paths)
+      {nil, reason} ->
+        warn_root_result(
+          module,
+          location,
+          fun,
+          arity,
+          reason,
+          Map.get(result, :kind),
+          Map.get(result, :source)
+        )
+
+      nil ->
+        warn_nested_result(module, location, fun, arity, paths)
     end
   end
 
-  defp warn_root_result(module, location, fun, arity, {:opaque, struct}) do
+  defp warn_root_result(
+         module,
+         location,
+         fun,
+         arity,
+         {:opaque, struct},
+         :any,
+         {:opaque_struct, struct}
+       ) do
     warn(
       module,
       location,
@@ -634,7 +653,15 @@ defmodule ToolCall.Builder do
     )
   end
 
-  defp warn_root_result(module, location, fun, arity, {:unresolved, struct}) do
+  defp warn_root_result(
+         module,
+         location,
+         fun,
+         arity,
+         {:unresolved, struct},
+         :any,
+         {:unresolved_struct, struct}
+       ) do
     warn(
       module,
       location,
@@ -643,7 +670,7 @@ defmodule ToolCall.Builder do
     )
   end
 
-  defp warn_root_result(module, location, fun, arity, _reason) do
+  defp warn_root_result(module, location, fun, arity, _reason, _kind, _source) do
     warn(
       module,
       location,

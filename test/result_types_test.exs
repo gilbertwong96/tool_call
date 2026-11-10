@@ -462,6 +462,22 @@ defmodule ToolCall.ResultTypesTest do
     assert %Type{kind: :any} = tool.result
   end
 
+  test "a union with an opaque variant uses the generic message" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: ToolCall.TestFixtures.OpaqueBox.t() | String.t()
+        def go(_x), do: "ok"
+      end
+      """)
+
+    assert warnings =~ "cannot be validated"
+    refute warnings =~ "which is @opaque"
+  end
+
   test "does not warn for a result type that can be validated" do
     {_module, warnings} =
       compile_with_warnings!("""
