@@ -258,8 +258,8 @@ defmodule ToolCall.Structs do
     with {:ok, path} <- source_path(module),
          {:ok, source} <- File.read(path),
          {:ok, ast} <- Code.string_to_quoted(source),
-         {:ok, body} <- find_module(ast, module) do
-      from_source_body(module, body)
+         {:ok, body, inherited_aliases} <- find_module(ast, module) do
+      from_source_body(module, body, inherited_aliases)
     else
       _other -> {:ok, any_fields(module), [], :no_typespec, false}
     end
@@ -280,26 +280,48 @@ defmodule ToolCall.Structs do
     _exception -> :error
   end
 
-  defp find_module(ast, target, prefix \\ nil)
+  defp find_module(ast, target, prefix \\ nil, inherited_aliases \\ %{})
 
-  defp find_module({:defmodule, _meta, [name_ast, [do: body]]}, target, prefix) do
+  defp find_module({:defmodule, _meta, [name_ast, [do: body]]}, target, prefix, inherited_aliases) do
     case module_name(name_ast, prefix) do
-      ^target -> {:ok, body}
+      ^target -> {:ok, body, inherited_aliases}
       nil -> :error
-      module -> find_in(body, target, module)
+      module -> find_in(source_statements(body), target, module, inherited_aliases)
     end
   end
 
-  defp find_module({:__block__, _meta, statements}, target, prefix),
-    do: find_in(statements, target, prefix)
-
-  defp find_module(_ast, _target, _prefix), do: :error
-
-  defp find_in(statements, target, prefix) when is_list(statements) do
-    Enum.find_value(statements, :error, &find_module(&1, target, prefix))
+  defp find_module({:__block__, _meta, statements}, target, prefix, inherited_aliases) do
+    find_in(statements, target, prefix, inherited_aliases)
   end
 
-  defp find_in(_other, _target, _prefix), do: :error
+  defp find_module(_ast, _target, _prefix, _inherited_aliases) do
+    :error
+  end
+
+  defp find_in(statements, target, prefix, inherited_aliases) when is_list(statements) do
+    statements
+    |> Enum.reduce_while({inherited_aliases, :error}, &find_step(&1, &2, target, prefix))
+    |> find_result()
+  end
+
+  defp find_in(_other, _target, _prefix, _inherited_aliases) do
+    :error
+  end
+
+  defp find_step(statement, {aliases, _error}, target, prefix) do
+    case find_module(statement, target, prefix, aliases) do
+      {:ok, body, inherited_aliases} -> {:halt, {:ok, body, inherited_aliases}}
+      :error -> {:cont, {put_statement_aliases(aliases, statement, prefix), :error}}
+    end
+  end
+
+  defp find_result({:ok, body, inherited_aliases}) do
+    {:ok, body, inherited_aliases}
+  end
+
+  defp find_result({_aliases, :error}) do
+    :error
+  end
 
   defp module_name({:__aliases__, _meta, [{:__MODULE__, _mod_meta, _context} | rest]}, prefix)
        when is_atom(prefix) do
@@ -318,8 +340,8 @@ defmodule ToolCall.Structs do
   defp module_name(atom, _prefix) when is_atom(atom), do: atom
   defp module_name(_other, _prefix), do: nil
 
-  defp from_source_body(module, body) do
-    entries = source_entries(body, module)
+  defp from_source_body(module, body, inherited_aliases) do
+    entries = source_entries(body, module, inherited_aliases)
     definitions = Map.new(entries, fn {key, {params, _kind, type}} -> {key, {params, type}} end)
 
     case Enum.find(entries, &match?({{:t, 0}, _value}, &1)) do
@@ -344,27 +366,66 @@ defmodule ToolCall.Structs do
     end)
   end
 
-  defp source_entries(body, module) do
+  defp source_entries(body, module, initial_aliases) do
     body
     |> source_statements()
-    |> Enum.reduce({%{}, []}, fn statement, {aliases, entries} ->
-      source_entry(statement, module, aliases, entries)
+    |> Enum.reduce({initial_aliases, []}, fn statement, {aliases, entries} ->
+      {put_statement_aliases(aliases, statement, module),
+       source_type_entry(statement, module, aliases) ++ entries}
     end)
     |> elem(1)
     |> Enum.reverse()
   end
 
-  defp source_entry(
+  defp put_statement_aliases(
+         acc,
          {:alias, _meta, [{:__aliases__, _alias_meta, parts} | rest]},
-         _module,
-         aliases,
-         entries
+         module
        ) do
-    {put_source_alias(aliases, parts, rest), entries}
+    put_source_alias(acc, rewrite_alias_parts(parts, module), rest)
   end
 
-  defp source_entry(statement, module, aliases, entries) do
-    {aliases, source_type_entry(statement, module, aliases) ++ entries}
+  defp put_statement_aliases(
+         acc,
+         {:alias, _meta, [{{:., _, [base_ast, :{}]}, _, aliases}]},
+         module
+       ) do
+    case alias_base(base_ast, module) do
+      nil ->
+        acc
+
+      base ->
+        Enum.reduce(aliases, acc, fn
+          {:__aliases__, _, parts}, acc ->
+            put_source_alias(acc, base ++ rewrite_alias_parts(parts, module), [])
+
+          _other, acc ->
+            acc
+        end)
+    end
+  end
+
+  defp put_statement_aliases(acc, _statement, _module) do
+    acc
+  end
+
+  defp rewrite_alias_parts(parts, module) do
+    Enum.map(parts, fn
+      {:__MODULE__, _meta, _context} -> module
+      other -> other
+    end)
+  end
+
+  defp alias_base({:__aliases__, _meta, parts}, module) do
+    rewrite_alias_parts(parts, module)
+  end
+
+  defp alias_base({:__MODULE__, _meta, _context}, module) do
+    [module]
+  end
+
+  defp alias_base(_other, _module) do
+    nil
   end
 
   defp put_source_alias(acc, [head | _rest] = parts, rest_opts) when is_atom(head) do
@@ -398,7 +459,7 @@ defmodule ToolCall.Structs do
          module,
          aliases
        )
-       when kind in [:type, :opaque] and is_atom(name) do
+       when kind in [:type, :opaque, :typep] and is_atom(name) do
     params = params || []
     type = rewrite_source_type(type, module, aliases)
     [{{name, length(params)}, {params, kind, type}}]

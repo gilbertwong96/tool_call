@@ -127,6 +127,93 @@ defmodule ToolCall.StructsTest do
     assert {EarlyAlias, :t, []} = unwrap_remote(fields.early)
   end
 
+  test "fields/1 expands multi-aliases and __MODULE__ aliases" do
+    dir =
+      Path.join(System.tmp_dir!(), "tool_call_multi_alias_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "multi_alias_struct.ex")
+
+    module =
+      Module.concat([ToolCall.TestFixtures, :"MultiAlias#{System.unique_integer([:positive])}"])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      defstruct [:address, :node, :helper]
+
+      defmodule Helper do
+        @type t :: String.t()
+      end
+
+      alias ToolCall.TestFixtures.{Address, TreeNode}
+      alias __MODULE__.Helper
+
+      @type t :: %__MODULE__{
+              address: Address.t(),
+              node: TreeNode.t(),
+              helper: Helper.t()
+            }
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.address)
+    assert {ToolCall.TestFixtures.TreeNode, :t, []} = unwrap_remote(fields.node)
+    helper = Module.concat([module, :Helper])
+    assert {^helper, :t, []} = unwrap_remote(fields.helper)
+  end
+
+  test "fields/1 inherits aliases from the enclosing module" do
+    dir =
+      Path.join(System.tmp_dir!(), "tool_call_parent_alias_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "parent_alias_struct.ex")
+    outer = Module.concat([ToolCall.TestFixtures, :"Outer#{System.unique_integer([:positive])}"])
+    inner = Module.concat([outer, :Inner])
+
+    File.write!(file, """
+    defmodule #{inspect(outer)} do
+      alias ToolCall.TestFixtures.Address
+
+      defmodule Inner do
+        defstruct [:address]
+        @type t :: %__MODULE__{address: Address.t()}
+      end
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(inner)
+    assert {ToolCall.TestFixtures.Address, :t, []} = unwrap_remote(fields.address)
+  end
+
+  test "fields/1 reads @typep aliases from the source" do
+    dir = Path.join(System.tmp_dir!(), "tool_call_typep_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "typep_struct.ex")
+    module = Module.concat([ToolCall.TestFixtures, :"Typep#{System.unique_integer([:positive])}"])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      defstruct [:city]
+      @typep city :: String.t()
+      @type t :: %__MODULE__{city: city()}
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {String, :t, []} = unwrap_remote(fields.city)
+  end
+
   test "fields/1 falls back to source for a beam compiled without debug info" do
     dir = Path.join(System.tmp_dir!(), "tool_call_dbg_#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)

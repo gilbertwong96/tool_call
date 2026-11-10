@@ -260,10 +260,11 @@ end
 - A struct whose typespec chunk is missing (an in-memory `Code.compile_string/1`
   module, or `@compile {:debug_info, false}`) falls back to parsing the module's
   source file for `@type t` when that file is readable; `__MODULE__`, local
-  types and simple `alias` directives (including `as:`) resolve, while a
-  multi-alias or an alias declared after the type can degrade to `{}`. A module
-  with no source (Livebook) warns "has no readable typespec" and keeps `{}`
-  fields. A struct defined in the same module as its
+  types, simple aliases (including `as:` and multi-aliases) and aliases from an
+  enclosing module resolve, and `@typep` aliases are read. Only aliases declared
+  before the type apply; a `use`-injected alias is not visible in the source and
+  degrades to `{}`. A module with no source (Livebook) warns "has no readable
+  typespec" and keeps `{}` fields. A struct defined in the same module as its
   tools is exempt. See
   [`pitfalls.md`](pitfalls.md#a-struct-without-a-typespec-chunk-falls-back-to-its-source).
 - Field properties carry no description: a typespec has no per-field doc. Put the

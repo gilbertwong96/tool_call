@@ -199,14 +199,15 @@ the chunk; `Code.Typespec.fetch_types/1` then answers `:error`.
 
 When the module's `compile_info.source` points at a readable file, `Structs`
 parses that file and reads the module's `@type t` as a best-effort fallback:
-`__MODULE__`, fully-qualified aliases, local types and simple `alias`
-directives (including `as:`) resolve; only aliases declared before the type
-are applied, so a multi-alias (`alias Foo.{Bar, Baz}`) or an alias declared
-after it is not expanded and degrades to `{}`. A `Code.compile_string/1` module
-has no source file (`nofile`), so its fields stay `{}` and the compile warns
-"has no readable typespec". A struct
-defined in the same module as its tools is exempt (module attributes).
-`@typep`-typed fields still stay `{}` because private types are not collected.
+`__MODULE__`, local types and simple `alias` directives (including `as:` and
+multi-aliases such as `alias Foo.{Bar, Baz}`) resolve, and aliases declared in
+an enclosing module are inherited. Only aliases declared before the type are
+applied; an alias declared after it is not. An alias injected by a `use` macro
+is not visible in the source AST and degrades to `{}`. `@typep` aliases are
+read too, so a field typed with one resolves (the beam path cannot). A
+`Code.compile_string/1` module has no source file (`nofile`), so its fields
+stay `{}` and the compile warns "has no readable typespec". A struct defined
+in the same module as its tools is exempt.
 
 ## Struct defaults are not sent to the model
 
