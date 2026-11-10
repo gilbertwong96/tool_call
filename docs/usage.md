@@ -497,6 +497,7 @@ end
 use ToolCall, approval: MyApproval
 ```
 
+The module option also accepts `:granted` or `:denied` as a module-wide decision.
 `run/4` then answers one of:
 
 ```elixir

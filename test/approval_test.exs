@@ -91,6 +91,33 @@ defmodule ToolCall.ApprovalTest do
              ToolCall.run(module, :danger, %{"x" => 1}, approval: :denied)
   end
 
+  test "module-level grant and deny modes" do
+    granted =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, approval: :granted
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    denied =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, approval: :denied
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert {:ok, 1} = ToolCall.run(granted, :ok, %{"x" => 1})
+    assert {:error, {:approval_denied, :denied}} = ToolCall.run(denied, :ok, %{"x" => 1})
+  end
+
   test "an explicit policy overrides the module policy" do
     module = module_with_policy()
 

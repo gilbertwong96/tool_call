@@ -478,7 +478,8 @@ sending it to the model as a tool result. A policy that returns an unknown term
 is `{:error, {:invalid_approval, term}}`; a policy that raises propagates its
 exception, and a module without `check/3` raises `ArgumentError`. Option values
 are checked when options are validated; module-level policies are checked when
-the module is resolved. Validate configuration at startup as well when the
+the module is resolved. `use ToolCall, approval: :granted` / `:denied` is a
+valid module-wide mode, not a policy module. Validate configuration at startup as well when the
 policy comes from outside the project. A pending `Request` stores args and
 context, not one-off execution options: on resume, re-supply `validate_result:`,
 `timeout:`, `audit:` and `task_supervisor:` if the original call used them. The

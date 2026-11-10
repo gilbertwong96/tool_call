@@ -4,8 +4,9 @@ defmodule ToolCall.Approval do
 
   A policy is a module implementing `check/3`; `use ToolCall, approval: Policy`
   installs it for every tool in the module, and `run/4` with `approval:` can
-  override it per call. `check/3` receives the tool IR, the raw argument map and
-  the caller's context, and answers:
+  override it per call. The module option also accepts `:granted` or `:denied`
+  as a module-wide decision. `check/3` receives the tool IR, the raw argument map
+  and the caller's context, and answers:
 
     * `:approve` - invoke the tool;
     * `{:deny, reason}` - `{:error, {:approval_denied, reason}}`;

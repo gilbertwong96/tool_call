@@ -152,7 +152,10 @@
 - `Runner` validates its public option keys and rejects boolean/invalid
   approval or audit values before dispatch. Approval/audit options are checked
   for `check/3` / `record/1`; module-level policies are loaded on demand and
-  checked when resolved.
+  checked when resolved. Module-level `approval: :granted` / `:denied` remains a
+  valid mode.
+- `Runner.execute/2` uses the call's stored audit policy when a dispatch
+  exception is audited, not only the module or per-call audit option.
 - `:crypto` is declared in `extra_applications`; audit and approval ids work in
   a release that contains only this library.
 - An Anthropic stream whose initial `input` is not a map, and has no

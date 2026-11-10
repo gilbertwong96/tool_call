@@ -378,4 +378,36 @@ defmodule ToolCall.AuditTest do
     assert {:ok, 1} = ToolCall.Runner.execute(call)
     assert_receive {:audit, %Entry{outcome: :ok, context: %{user_id: 7}}}
   end
+
+  test "a call-specific audit policy records an approval exception" do
+    module =
+      compile!("""
+      defmodule CallRaisingApproval do
+        @behaviour ToolCall.Approval
+
+        @impl true
+        def check(_tool, _args, _context), do: raise("approval boom")
+      end
+
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    tool = Enum.find(ToolCall.tools(module), &(&1.name == "ok"))
+
+    assert {:ok, call} =
+             ToolCall.Runner.resolve(module, tool, %{"x" => 1},
+               audit: ToolCall.AuditTest.Recorder,
+               approval: CallRaisingApproval
+             )
+
+    assert_raise RuntimeError, "approval boom", fn -> ToolCall.Runner.execute(call) end
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:exception, "approval boom"}}}
+  end
 end

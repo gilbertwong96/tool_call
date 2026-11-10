@@ -199,8 +199,9 @@ defmodule ToolCall.Runner do
   def execute(%ToolCall.Call{} = call, opts \\ []) do
     validate_options!(opts)
     context = Keyword.get(opts, :context, call.context)
+    audit = Keyword.get(opts, :audit, call.audit)
 
-    with_audit(call.module, call.tool.name, call.args, opts, context, fn ->
+    with_audit(call.module, call.tool.name, call.args, opts, context, audit, fn ->
       execute_unguarded(call, opts)
     end)
   end
@@ -381,6 +382,10 @@ defmodule ToolCall.Runner do
   end
 
   defp with_audit(module, tool, args, opts, context, fun) do
+    with_audit(module, tool, args, opts, context, audit_for(module, opts), fun)
+  end
+
+  defp with_audit(module, tool, args, _opts, context, audit, fun) do
     {duration, result} =
       :timer.tc(fn ->
         try do
@@ -397,28 +402,24 @@ defmodule ToolCall.Runner do
         value
 
       {:error, :error, exception, stacktrace} ->
-        audit_exception(module, tool, args, opts, context, exception, duration)
+        audit_exception(module, tool, args, context, audit, exception, duration)
         reraise exception, stacktrace
 
       {:error, kind, value, stacktrace} ->
-        audit_exception(module, tool, args, opts, context, {kind, value}, duration)
+        audit_exception(module, tool, args, context, audit, {kind, value}, duration)
         :erlang.raise(kind, value, stacktrace)
     end
   end
 
-  defp audit_exception(module, tool, args, opts, context, exception, duration) do
-    case audit_for(module, opts) do
-      nil ->
-        :ok
+  defp audit_exception(_module, _tool, _args, _context, nil, _exception, _duration), do: :ok
 
-      audit ->
-        with {:ok, entry} <-
-               audit_entry(module, tool, args, context, :error,
-                 duration_us: duration,
-                 error: {:exception, exception_message(exception)}
-               ) do
-          record_entry(audit, entry)
-        end
+  defp audit_exception(module, tool, args, context, audit, exception, duration) do
+    with {:ok, entry} <-
+           audit_entry(module, tool, args, context, :error,
+             duration_us: duration,
+             error: {:exception, exception_message(exception)}
+           ) do
+      record_entry(audit, entry)
     end
   end
 
@@ -483,6 +484,9 @@ defmodule ToolCall.Runner do
     case module_policy(module, :__approval_policy__) do
       nil ->
         nil
+
+      policy when policy in [:granted, :denied] ->
+        policy
 
       policy ->
         ToolCall.Options.validate_policy!(policy, :check, 3, "approval")

@@ -485,7 +485,8 @@ name is refused. Chunks for other event types are ignored.
 
 `ToolCall.Approval` is a policy hook at the execution boundary.
 `use ToolCall, approval: Policy` embeds the policy and disables the fast path
-for the module; `run/4 approval:` overrides it. `resolve/4` stores the policy
+for the module; `run/4 approval:` overrides it. The module option also accepts
+`:granted` or `:denied` as a module-wide decision. `resolve/4` stores the policy
 and the caller's context; `execute/2` calls `check/3` with the tool IR, the raw
 args and the context (from the call unless `execute` overrides it) before the
 timeout policy and invocation. `{:required, reason}` returns a serializable `Request`;
