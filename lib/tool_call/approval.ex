@@ -31,7 +31,8 @@ defmodule ToolCall.Approval do
 
     `args` is the raw argument map the model requested; `context` is whatever
     the caller passed to `run/4`. `inserted_at` lets the application expire
-    stale requests. The struct contains no pids or closures.
+    stale requests. The struct itself contains no pids or closures; `args` and
+    `context` are caller-provided and serializable only when those values are.
     """
 
     @enforce_keys [:id, :module, :tool, :args]
@@ -48,7 +49,12 @@ defmodule ToolCall.Approval do
           }
   end
 
-  @doc false
+  @doc """
+  Builds a pending approval request.
+
+  The runner calls this when a policy answers `{:required, reason}`. A custom
+  dispatcher can use it to build the same serializable shape.
+  """
   @spec request(module(), Tool.t(), map(), term(), term()) :: Request.t()
   def request(module, %Tool{} = tool, args, reason, context) do
     %Request{

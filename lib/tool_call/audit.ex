@@ -6,7 +6,7 @@ defmodule ToolCall.Audit do
   `use ToolCall, audit: Policy` or `run/4 audit: Policy`; `audit: nil` disables
   a module policy for one call. `record/1` receives a
   `%ToolCall.Audit.Entry{}` once per dispatch attempt, including resolve
-  failures, approvals, timeouts and raises.
+  failures, approvals, timeouts, raises and resolve/execute policy exceptions.
 
   This is a hook, not a log store: the application persists the entry, applies
   redaction and retention, and decides whether a failed audit is fatal. The
@@ -31,9 +31,10 @@ defmodule ToolCall.Audit do
 
     `outcome` is `:ok`, `:error`, `:raised`, `:pending`, `:denied`,
     `:timeout`, `:invalid_arguments` or `:unknown_tool`. `duration_us` covers
-    the execution path that produced the outcome; `error` carries the reason
-    for failure outcomes and `approval_request_id` correlates a pending
-    request. The result value is never recorded.
+    the phase that produced the outcome: resolve for an argument error, execute
+    for an invoked call, and zero for an unknown tool or non-map arguments.
+    `error` carries the reason for failure outcomes and `approval_request_id`
+    correlates a pending request. The result value is never recorded.
     """
 
     @enforce_keys [:id, :at, :module, :tool, :args, :outcome]

@@ -229,6 +229,95 @@ defmodule ToolCall.AuditTest do
     refute_receive {:audit, _entry}, 50
   end
 
+  test "records an exception from an approval policy and re-raises" do
+    module =
+      compile!("""
+      defmodule RaisingApproval do
+        @behaviour ToolCall.Approval
+
+        @impl true
+        def check(_tool, _args, _context), do: raise("approval boom")
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, audit: ToolCall.AuditTest.Recorder, approval: RaisingApproval
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert_raise RuntimeError, "approval boom", fn ->
+      ToolCall.run(module, :ok, %{"x" => 1})
+    end
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:exception, "approval boom"}}}
+  end
+
+  test "records a timeout policy failure as an error" do
+    module =
+      compile!("""
+      defmodule RaisingTimeout do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, _args, _context), do: raise("timeout boom")
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, audit: ToolCall.AuditTest.Recorder, timeout: RaisingTimeout
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert {:error, {:invalid_timeout, "timeout boom"}} =
+             ToolCall.run(module, :ok, %{"x" => 1})
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:invalid_timeout, "timeout boom"}}}
+  end
+
+  test "records an invalid timeout override before re-raising" do
+    module = basic_module()
+
+    assert_raise ArgumentError, ~r/timeout/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1}, timeout: -1)
+    end
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:exception, message}}}
+    assert message =~ "timeout"
+  end
+
+  test "records invalid runtime IR and re-raises" do
+    module = basic_module()
+
+    bad = %ToolCall.IR.Tool{
+      name: "go",
+      description: "Go.",
+      params: [
+        %ToolCall.IR.Param{name: "x", type: %ToolCall.IR.Type{kind: :bogus}}
+      ]
+    }
+
+    assert_raise ArgumentError, ~r/unknown kind/, fn ->
+      ToolCall.Runner.run(module, [bad], :go, %{"x" => 1})
+    end
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:exception, message}}}
+    assert message =~ "unknown kind"
+  end
+
+  test "a boolean audit policy is rejected" do
+    module = plain_module()
+
+    assert_raise ArgumentError, ~r/audit/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1}, audit: true)
+    end
+  end
+
   test "a raising audit hook does not change the result" do
     module =
       compile!("""

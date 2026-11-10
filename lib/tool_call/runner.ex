@@ -11,6 +11,16 @@ defmodule ToolCall.Runner do
   alias ToolCall.{Coerce, Typespec, Validate}
   alias ToolCall.IR.{Param, Tool, Type}
 
+  @option_keys [
+    :validate_result,
+    :timeout,
+    :timeout_policy,
+    :task_supervisor,
+    :approval,
+    :audit,
+    :context
+  ]
+
   @doc """
   Runs a tool by name.
 
@@ -27,11 +37,19 @@ defmodule ToolCall.Runner do
   def run(module, tools, name, args, opts \\ [])
 
   def run(module, tools, name, args, opts) when is_map(args) do
-    tools = Enum.map(tools, &Typespec.validate_tool!/1)
+    validate_options!(opts)
+
+    tools =
+      with_audit(module, audit_tool_name(name), args, opts, Keyword.get(opts, :context), fn ->
+        Enum.map(tools, &Typespec.validate_tool!/1)
+      end)
+
     run_prepared(module, tools, name, args, opts)
   end
 
   def run(module, _tools, name, args, opts) do
+    validate_options!(opts)
+
     audit_failure(
       module,
       audit_tool_name(name),
@@ -56,6 +74,7 @@ defmodule ToolCall.Runner do
   def run_prepared(module, tools, name, args, opts \\ [])
 
   def run_prepared(module, tools, name, args, opts) when is_map(args) do
+    validate_options!(opts)
     name = to_string(name)
 
     case fetch(tools, name) do
@@ -69,6 +88,8 @@ defmodule ToolCall.Runner do
   end
 
   def run_prepared(module, _tools, name, args, opts) do
+    validate_options!(opts)
+
     audit_failure(
       module,
       audit_tool_name(name),
@@ -101,20 +122,27 @@ defmodule ToolCall.Runner do
           {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}
   def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
       when is_map(args) do
-    {duration, resolved} =
-      :timer.tc(fn -> resolve_tool(module, tool, args, check_nested?, known, opts) end)
+    validate_options!(opts)
+    context = Keyword.get(opts, :context)
 
-    case resolved do
-      {:ok, call} ->
-        execute(call, opts)
+    with_audit(module, tool.name, args, opts, context, fn ->
+      {duration, resolved} =
+        :timer.tc(fn -> resolve_tool(module, tool, args, check_nested?, known, opts) end)
 
-      {:error, reason} = error ->
-        audit_failure(module, tool.name, args, opts, :invalid_arguments, reason, duration)
-        error
-    end
+      case resolved do
+        {:ok, call} ->
+          execute_unguarded(call, opts)
+
+        {:error, reason} = error ->
+          audit_failure(module, tool.name, args, opts, :invalid_arguments, reason, duration)
+          error
+      end
+    end)
   end
 
   def run_prepared_tool(module, %Tool{} = tool, args, _check_nested?, _known, opts) do
+    validate_options!(opts)
+
     audit_failure(
       module,
       tool.name,
@@ -132,11 +160,11 @@ defmodule ToolCall.Runner do
   Resolves a tool call without invoking it.
 
   Runs the key checks, coercion and positional construction and answers a
-  `ToolCall.Call` that `execute/2` can run later. The tool is not invoked. The
-  module's timeout default or `ToolCall.Timeout` policy is evaluated after
-  argument validation (a policy is user code and may run); its result is stored
-  in the call. `:context` is stored for the approval and audit hooks and passed
-  to the timeout policy. A hand-built tool is validated first; invalid IR raises
+  `ToolCall.Call` that `execute/2` can run later. The tool is not invoked.
+  The module's timeout default, the caller's `:timeout` or an optional
+  `ToolCall.Timeout` policy is stored in the call; a policy is evaluated by
+  `execute/2`, after approval. `:context` is stored for the approval, audit and
+  timeout policies. A hand-built tool is validated first; invalid IR raises
   `ArgumentError`.
   """
   @spec resolve(module(), Tool.t(), map(), keyword()) ::
@@ -144,26 +172,43 @@ defmodule ToolCall.Runner do
   def resolve(module, tool, args, opts \\ [])
 
   def resolve(module, %Tool{} = tool, args, opts) when is_map(args) do
+    validate_options!(opts)
     resolve_tool(module, Typespec.validate_tool!(tool), args, true, nil, opts)
   end
 
-  def resolve(_module, %Tool{}, args, _opts), do: {:error, {:invalid_arguments, args}}
+  def resolve(_module, %Tool{}, args, opts) do
+    validate_options!(opts)
+    {:error, {:invalid_arguments, args}}
+  end
 
   @doc """
   Executes a call produced by `resolve/4`.
 
-  The call's timeout applies unless `:timeout` is given. `:task_supervisor` is
-  passed to `ToolCall.Timeout.run/3`. The stored approval policy is checked
-  unless `:approval` overrides it; a `{:required, reason}` answer returns
+  The call's timeout applies unless `:timeout` is given. A stored timeout
+  policy is evaluated here, after the approval check, with the call's raw `args`
+  and the effective context. `:task_supervisor` is passed to
+  `ToolCall.Timeout.run/3`. The stored approval policy is checked unless
+  `:approval` overrides it; a `{:required, reason}` answer returns
   `{:pending, %ToolCall.Approval.Request{}}` without invoking. The call's
-  `context` (set by `resolve/4`) is passed to the approval and audit hooks
-  unless `:context` overrides it.
+  `context` (set by `resolve/4`) is passed to the policies unless `:context`
+  overrides it.
   """
   @spec execute(ToolCall.Call.t(), keyword()) ::
           {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}
   def execute(%ToolCall.Call{} = call, opts \\ []) do
+    validate_options!(opts)
+    context = Keyword.get(opts, :context, call.context)
+
+    with_audit(call.module, call.tool.name, call.args, opts, context, fn ->
+      execute_unguarded(call, opts)
+    end)
+  end
+
+  defp execute_unguarded(call, opts) do
     audit = Keyword.get(opts, :audit, call.audit)
     context = Keyword.get(opts, :context, call.context)
+    validate_static_timeout!(call, opts)
+
     {duration, {outcome, result}} = :timer.tc(fn -> dispatch(call, opts, context) end)
     record_audit(audit, call, outcome, result, duration, context)
     result
@@ -174,22 +219,9 @@ defmodule ToolCall.Runner do
 
     case approve(call, approval, context) do
       :ok ->
-        timeout = Keyword.get(opts, :timeout, call.timeout)
-        ToolCall.Timeout.validate!(timeout)
-
-        case ToolCall.Timeout.run_tagged(
-               fn -> invoke(call.module, call.tool, call.positional, call.validate_result?) end,
-               timeout,
-               opts
-             ) do
-          {:timeout, ms} ->
-            {:timeout, {:error, {:timeout, ms}}}
-
-          {:ok, {:raised, error}} ->
-            {:raised, error}
-
-          {:ok, result} ->
-            {outcome_for(result), result}
+        case effective_timeout(call, opts, context) do
+          {:ok, timeout} ->
+            dispatch_timeout(call, opts, timeout)
 
           {:error, reason} ->
             {:error, {:error, reason}}
@@ -206,8 +238,59 @@ defmodule ToolCall.Runner do
     end
   end
 
+  defp dispatch_timeout(call, opts, timeout) do
+    case ToolCall.Timeout.run_tagged(
+           fn -> invoke(call.module, call.tool, call.positional, call.validate_result?) end,
+           timeout,
+           opts
+         ) do
+      {:timeout, ms} ->
+        {:timeout, {:error, {:timeout, ms}}}
+
+      {:ok, {:raised, error}} ->
+        {:raised, error}
+
+      {:ok, result} ->
+        {outcome_for(result), result}
+
+      {:error, reason} ->
+        {:error, {:error, reason}}
+    end
+  end
+
   defp outcome_for({:ok, _value}), do: :ok
   defp outcome_for({:error, _reason}), do: :error
+
+  defp validate_static_timeout!(call, opts) do
+    case Keyword.fetch(opts, :timeout) do
+      {:ok, timeout} ->
+        ToolCall.Timeout.validate!(timeout)
+
+      :error ->
+        if call.timeout_policy == nil, do: ToolCall.Timeout.validate!(call.timeout)
+    end
+  end
+
+  defp effective_timeout(call, opts, context) do
+    case Keyword.fetch(opts, :timeout) do
+      {:ok, timeout} ->
+        {:ok, timeout}
+
+      :error ->
+        case call.timeout_policy do
+          nil -> {:ok, call.timeout}
+          policy -> timeout_policy_result(policy, call, context)
+        end
+    end
+  end
+
+  defp timeout_policy_result(policy, call, context) do
+    {:ok, ToolCall.Timeout.validate!(policy.timeout(call.tool, call.args, context))}
+  rescue
+    exception -> {:error, {:invalid_timeout, exception_message(exception)}}
+  catch
+    kind, value -> {:error, {:invalid_timeout, {kind, value}}}
+  end
 
   defp resolve_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
        when is_map(args) do
@@ -216,14 +299,13 @@ defmodule ToolCall.Runner do
     approval = approval_for(module, opts)
     audit = audit_for(module, opts)
     context = Keyword.get(opts, :context)
+    {timeout, timeout_policy} = timeout_config(module, opts)
 
     with :ok <- reject_non_string_keys(args),
          :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
          :ok <- reject_unknown_arguments(args, known),
          {:ok, values} <- coerce(tool, args),
          {:ok, positional} <- positional(tool, values) do
-      timeout = timeout_for(module, tool, values, opts)
-
       {:ok,
        %ToolCall.Call{
          module: module,
@@ -233,6 +315,7 @@ defmodule ToolCall.Runner do
          positional: positional,
          context: context,
          timeout: timeout,
+         timeout_policy: timeout_policy,
          approval: approval,
          audit: audit,
          validate_result?: validate_result?
@@ -267,30 +350,83 @@ defmodule ToolCall.Runner do
       audit ->
         context = Keyword.get(opts, :context)
 
-        entry =
-          ToolCall.Audit.entry(module, tool, args, context, outcome,
-            duration_us: duration,
-            error: error
-          )
-
-        record_entry(audit, entry)
+        with {:ok, entry} <-
+               audit_entry(module, tool, args, context, outcome,
+                 duration_us: duration,
+                 error: error
+               ) do
+          record_entry(audit, entry)
+        end
     end
   end
+
+  defp audit_entry(module, tool, args, context, outcome, opts) do
+    {:ok, ToolCall.Audit.entry(module, tool, args, context, outcome, opts)}
+  rescue
+    _exception -> :error
+  catch
+    _kind, _value -> :error
+  end
+
+  defp with_audit(module, tool, args, opts, context, fun) do
+    {duration, result} =
+      :timer.tc(fn ->
+        try do
+          {:ok, fun.()}
+        rescue
+          exception -> {:error, :error, exception, __STACKTRACE__}
+        catch
+          kind, value -> {:error, kind, value, __STACKTRACE__}
+        end
+      end)
+
+    case result do
+      {:ok, value} ->
+        value
+
+      {:error, :error, exception, stacktrace} ->
+        audit_exception(module, tool, args, opts, context, exception, duration)
+        reraise exception, stacktrace
+
+      {:error, kind, value, stacktrace} ->
+        audit_exception(module, tool, args, opts, context, {kind, value}, duration)
+        :erlang.raise(kind, value, stacktrace)
+    end
+  end
+
+  defp audit_exception(module, tool, args, opts, context, exception, duration) do
+    case audit_for(module, opts) do
+      nil ->
+        :ok
+
+      audit ->
+        with {:ok, entry} <-
+               audit_entry(module, tool, args, context, :error,
+                 duration_us: duration,
+                 error: {:exception, exception_message(exception)}
+               ) do
+          record_entry(audit, entry)
+        end
+    end
+  end
+
+  defp exception_message(%{__exception__: true} = exception), do: Exception.message(exception)
+  defp exception_message(other), do: inspect(other)
 
   defp record_audit(nil, _call, _outcome, _result, _duration, _context), do: :ok
 
   defp record_audit(policy, call, outcome, result, duration, context) do
     {error, request_id, timeout} = audit_fields(outcome, result)
 
-    entry =
-      ToolCall.Audit.entry(call.module, call.tool.name, call.args, context, outcome,
-        duration_us: duration,
-        error: error,
-        approval_request_id: request_id,
-        timeout: timeout
-      )
-
-    record_entry(policy, entry)
+    with {:ok, entry} <-
+           audit_entry(call.module, call.tool.name, call.args, context, outcome,
+             duration_us: duration,
+             error: error,
+             approval_request_id: request_id,
+             timeout: timeout
+           ) do
+      record_entry(policy, entry)
+    end
   end
 
   defp audit_fields(:ok, _result), do: {nil, nil, nil}
@@ -371,44 +507,63 @@ defmodule ToolCall.Runner do
           "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
   end
 
-  defp timeout_for(module, tool, args, opts) do
-    timeout =
-      case Keyword.fetch(opts, :timeout) do
-        {:ok, timeout} ->
-          timeout
+  defp timeout_config(module, opts) do
+    case Keyword.fetch(opts, :timeout) do
+      {:ok, timeout} ->
+        {ToolCall.Timeout.validate!(timeout), nil}
 
-        :error ->
-          case Keyword.fetch(opts, :timeout_policy) do
-            {:ok, timeout} when is_integer(timeout) or timeout == :infinity ->
-              timeout
-
-            {:ok, policy} when is_atom(policy) ->
-              timeout_policy(policy, tool, args, opts)
-
-            :error ->
-              module_timeout(module, tool, args, opts)
-          end
-      end
-
-    ToolCall.Timeout.validate!(timeout)
-  end
-
-  defp module_timeout(module, tool, args, opts) do
-    if function_exported?(module, :__timeout_policy__, 0) do
-      case module.__timeout_policy__() do
-        nil -> :infinity
-        :infinity -> :infinity
-        timeout when is_integer(timeout) -> timeout
-        policy when is_atom(policy) -> timeout_policy(policy, tool, args, opts)
-        other -> other
-      end
-    else
-      :infinity
+      :error ->
+        opts
+        |> Keyword.fetch(:timeout_policy)
+        |> timeout_policy_config(module)
     end
   end
 
-  defp timeout_policy(policy, tool, args, opts) do
-    policy.timeout(tool, args, Keyword.get(opts, :context))
+  defp timeout_policy_config(:error, module), do: module_timeout_config(module)
+  defp timeout_policy_config({:ok, nil}, module), do: module_timeout_config(module)
+
+  defp timeout_policy_config({:ok, timeout}, _module)
+       when is_integer(timeout) or timeout == :infinity do
+    {ToolCall.Timeout.validate!(timeout), nil}
+  end
+
+  defp timeout_policy_config({:ok, policy}, _module)
+       when is_atom(policy) and policy not in [true, false] do
+    {:infinity, policy}
+  end
+
+  defp timeout_policy_config({:ok, other}, _module) do
+    raise ArgumentError,
+          "timeout_policy must be :infinity, a non-negative integer or a module, " <>
+            "got: #{inspect(other)}"
+  end
+
+  defp module_timeout_config(module) do
+    if function_exported?(module, :__timeout_policy__, 0) do
+      case module.__timeout_policy__() do
+        nil ->
+          {:infinity, nil}
+
+        :infinity ->
+          {:infinity, nil}
+
+        timeout when is_integer(timeout) ->
+          {ToolCall.Timeout.validate!(timeout), nil}
+
+        policy when is_atom(policy) and policy not in [true, false] ->
+          {:infinity, policy}
+
+        other ->
+          raise ArgumentError,
+                "timeout must be :infinity or a non-negative integer, got: #{inspect(other)}"
+      end
+    else
+      {:infinity, nil}
+    end
+  end
+
+  defp validate_options!(opts) do
+    ToolCall.Options.validate!(opts, @option_keys)
   end
 
   @doc false

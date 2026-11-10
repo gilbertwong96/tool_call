@@ -160,4 +160,12 @@ defmodule ToolCall.ApprovalTest do
       ToolCall.run(module, :ok, %{"x" => 1}, approval: :grant)
     end
   end
+
+  test "a boolean approval policy is rejected" do
+    module = module_with_policy()
+
+    assert_raise ArgumentError, ~r/approval/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1}, approval: true)
+    end
+  end
 end

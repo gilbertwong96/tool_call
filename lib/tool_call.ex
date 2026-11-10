@@ -44,6 +44,8 @@ defmodule ToolCall do
   alias ToolCall.{Emit, Generated, Typedoc}
   alias ToolCall.IR.{Tool, Type}
 
+  @run_option_keys [:validate_result, :timeout, :task_supervisor, :approval, :audit, :context]
+
   @doc false
   defmacro __using__(opts) do
     {types, opts} = Keyword.pop(opts, :types, [])
@@ -478,8 +480,10 @@ defmodule ToolCall do
       defaults to the module's `use ToolCall, timeout: ...` policy. A timeout
       answers `{:error, {:timeout, ms}}` and runs the function in a task.
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
-      invocation, including one supplied by the module timeout. Without it the
-      task is linked to the caller. An unreachable supervisor answers
+      invocation, including one supplied by the module timeout. With
+      `:infinity` a supervisor still starts a task; without a supervisor a
+      finite timeout uses a task linked to the caller and `:infinity` runs in
+      the caller. An unreachable supervisor answers
       `{:error, {:task_supervisor, reason}}`.
     * `:context` - passed to the timeout, approval and audit policies. It is
       also stored on the call by `Runner.resolve/4` for `execute/2`.
@@ -489,7 +493,8 @@ defmodule ToolCall do
       `{:pending, %ToolCall.Approval.Request{}}`; the call is not invoked.
     * `:audit` - a `ToolCall.Audit` policy module; `nil` disables the module
       policy for one call. The hook receives one `%ToolCall.Audit.Entry{}` per
-      dispatch attempt.
+      dispatch attempt, including a resolve/execute exception; an exception is
+      recorded as `:error` with `error: {:exception, message}`.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}
@@ -500,7 +505,7 @@ defmodule ToolCall do
     ensure_tool_module!(module, :__run__)
 
     if runner_path?(opts) do
-      ToolCall.Runner.run(module, module.__tools__(), name, args, opts)
+      ToolCall.Runner.run_prepared(module, module.__tools__(), name, args, opts)
     else
       module.__run__(name, args)
     end
@@ -513,89 +518,7 @@ defmodule ToolCall do
   end
 
   defp validate_run_options!(opts) do
-    validate_option_keys!(opts)
-    validate_validate_result!(opts)
-    validate_timeout_option!(opts)
-    validate_approval_option!(opts)
-    validate_audit_option!(opts)
-    validate_task_supervisor!(opts)
-    :ok
-  end
-
-  defp validate_option_keys!(opts) do
-    case Keyword.keys(opts) --
-           [
-             :validate_result,
-             :timeout,
-             :task_supervisor,
-             :approval,
-             :audit,
-             :context
-           ] do
-      [] -> :ok
-      unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
-    end
-  end
-
-  defp validate_validate_result!(opts) do
-    case Keyword.get(opts, :validate_result, false) do
-      value when is_boolean(value) -> :ok
-      other -> raise ArgumentError, "validate_result must be a boolean, got: #{inspect(other)}"
-    end
-  end
-
-  defp validate_timeout_option!(opts) do
-    case Keyword.fetch(opts, :timeout) do
-      {:ok, timeout} -> ToolCall.Timeout.validate!(timeout)
-      :error -> :ok
-    end
-  end
-
-  defp validate_approval_option!(opts) do
-    case Keyword.get(opts, :approval) do
-      nil ->
-        :ok
-
-      :granted ->
-        :ok
-
-      :denied ->
-        :ok
-
-      policy when is_atom(policy) ->
-        :ok
-
-      other ->
-        raise ArgumentError,
-              "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
-    end
-  end
-
-  defp validate_audit_option!(opts) do
-    case Keyword.get(opts, :audit) do
-      nil ->
-        :ok
-
-      policy when is_atom(policy) ->
-        :ok
-
-      other ->
-        raise ArgumentError, "audit must be a module or nil, got: #{inspect(other)}"
-    end
-  end
-
-  defp validate_task_supervisor!(opts) do
-    case Keyword.get(opts, :task_supervisor) do
-      nil ->
-        :ok
-
-      supervisor when is_atom(supervisor) or is_pid(supervisor) ->
-        :ok
-
-      other ->
-        raise ArgumentError,
-              "task_supervisor must be a supervisor name or pid, got: #{inspect(other)}"
-    end
+    ToolCall.Options.validate!(opts, @run_option_keys)
   end
 
   # `Type.source` is runtime data for the string sub-kinds (`:charlist`,

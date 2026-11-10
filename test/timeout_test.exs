@@ -107,7 +107,7 @@ defmodule ToolCall.TimeoutTest do
 
     [tool] = ToolCall.tools(module)
 
-    assert {:ok, %Call{timeout: 10} = call} =
+    assert {:ok, %Call{timeout: :infinity, timeout_policy: ResolveTimeoutPolicy} = call} =
              ToolCall.Runner.resolve(module, tool, %{"ms" => 100})
 
     assert {:error, {:timeout, 10}} = ToolCall.Runner.execute(call)
@@ -214,6 +214,16 @@ defmodule ToolCall.TimeoutTest do
     end
   end
 
+  test "Runner.execute rejects unknown options" do
+    module = sleep_module()
+    [tool] = ToolCall.tools(module)
+    {:ok, call} = ToolCall.Runner.resolve(module, tool, %{"ms" => 1})
+
+    assert_raise ArgumentError, ~r/unknown options/, fn ->
+      ToolCall.Runner.execute(call, audti: [])
+    end
+  end
+
   test "the timeout policy receives the run context" do
     module =
       compile!("""
@@ -244,7 +254,7 @@ defmodule ToolCall.TimeoutTest do
              ToolCall.run(module, :sleep, %{"ms" => 100}, context: %{fast: true})
   end
 
-  test "the timeout policy runs after validation and sees coerced values" do
+  test "the timeout policy runs after validation and sees raw arguments" do
     Process.register(self(), :timeout_policy_probe)
 
     module =
@@ -278,6 +288,172 @@ defmodule ToolCall.TimeoutTest do
 
     assert {:ok, :ok} = ToolCall.run(module, :sleep, %{"ms" => 1})
     assert_receive {:policy_args, %{"ms" => 1}}
+  end
+
+  test "the timeout policy sees the raw wire argument" do
+    Process.register(self(), :timeout_policy_raw_probe)
+
+    module =
+      compile!("""
+      defmodule RawProbePolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, args, _context) do
+          if pid = Process.whereis(:timeout_policy_raw_probe), do: send(pid, {:policy_args, args})
+          1_000
+        end
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: RawProbePolicy
+
+        @tool_param %{fun: :find, name: "id", wire: :string_integer}
+        @doc "Find."
+        @spec find(id :: integer()) :: integer()
+        def find(id), do: id
+      end
+      """)
+
+    assert {:ok, 123} = ToolCall.run(module, :find, %{"id" => "123"})
+    assert_receive {:policy_args, %{"id" => "123"}}
+  end
+
+  test "a pending or denied call does not evaluate the timeout policy" do
+    Process.register(self(), :timeout_pending_probe)
+
+    module =
+      compile!("""
+      defmodule PendingApproval do
+        @behaviour ToolCall.Approval
+
+        @impl true
+        def check(_tool, _args, context) do
+          if context[:ask], do: {:required, "ask"}, else: {:deny, "no"}
+        end
+      end
+
+      defmodule PendingTimeout do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, _args, _context) do
+          if pid = Process.whereis(:timeout_pending_probe), do: send(pid, :policy_called)
+          10
+        end
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: PendingTimeout, approval: PendingApproval
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert {:pending, _request} = ToolCall.run(module, :ok, %{"x" => 1}, context: %{ask: true})
+    refute_receive :policy_called, 50
+
+    assert {:error, {:approval_denied, "no"}} =
+             ToolCall.run(module, :ok, %{"x" => 1}, context: %{})
+
+    refute_receive :policy_called, 50
+  end
+
+  test "an invalid execute timeout is rejected before approval" do
+    Process.register(self(), :timeout_order_probe)
+
+    module =
+      compile!("""
+      defmodule OrderApproval do
+        @behaviour ToolCall.Approval
+
+        @impl true
+        def check(_tool, _args, _context) do
+          if pid = Process.whereis(:timeout_order_probe), do: send(pid, :approval_called)
+          :approve
+        end
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, approval: OrderApproval
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+    {:ok, call} = ToolCall.Runner.resolve(module, tool, %{"x" => 1})
+
+    assert_raise ArgumentError, ~r/timeout/, fn ->
+      ToolCall.Runner.execute(call, timeout: -1)
+    end
+
+    refute_receive :approval_called, 50
+  end
+
+  test "an infinite timeout still uses a task supervisor" do
+    module = sleep_module()
+    {:ok, supervisor} = Task.Supervisor.start_link()
+
+    assert {:ok, :ok} =
+             ToolCall.run(module, :sleep, %{"ms" => 1}, task_supervisor: supervisor)
+
+    assert {:error, {:task_supervisor, _reason}} =
+             ToolCall.run(module, :sleep, %{"ms" => 1},
+               task_supervisor: :missing_infinite_supervisor
+             )
+  end
+
+  test "a raising timeout policy returns an error" do
+    module =
+      compile!("""
+      defmodule RaisingTimeoutPolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, _args, _context), do: raise("timeout boom")
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: RaisingTimeoutPolicy
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert {:error, {:invalid_timeout, "timeout boom"}} =
+             ToolCall.run(module, :ok, %{"x" => 1})
+  end
+
+  test "a timeout policy returning an invalid value returns an error" do
+    module =
+      compile!("""
+      defmodule InvalidTimeoutPolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, _args, _context), do: :bad
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: InvalidTimeoutPolicy
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert {:error, {:invalid_timeout, message}} =
+             ToolCall.run(module, :ok, %{"x" => 1})
+
+    assert message =~ "timeout must be"
   end
 
   test "resolve/4 validates a hand-built tool" do
