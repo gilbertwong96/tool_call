@@ -582,6 +582,10 @@ end
   are dropped in strict mode, because `default` is rejected. For a
   non-nullable optional value, `null` means "use the default"; for a nullable
   value it is passed through as `nil`.
+- **Fine-tuned models accept less in strict mode.** Standard models accept
+  `pattern`, the `format` values and the numeric bounds the schema emits;
+  fine-tuned models reject those keywords and refuse the schema. Enumerate the
+  values, or leave the constraint out, when the tool targets a fine-tuned model.
 - **Tool names are function names; there is no namespace.** When you concatenate
   tools from several modules, keep the names unique and route back to the right
   module. Both providers require `^[a-zA-Z0-9_-]{1,64}$`, so a function named

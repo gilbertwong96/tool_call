@@ -80,6 +80,14 @@ attribute read by `@on_definition`. They also live in the `Docs` chunk, which a
 stripped release removes. A tool declared that way falls back to its function
 name; write text as well if the model should see a description.
 
+## A `@doc` bullet that names no parameter is ignored
+
+A bullet under `## Parameters` is matched to a parameter by name, or by position
+when the spec does not name it. A name that matches nothing — a typo, or a
+bullet for an option the function does not take — is dropped without a warning,
+so the parameter keeps its fallback description. Compare the bullet names with
+the spec when a description does not appear.
+
 ## `@typedoc` is consumed before `@before_compile`
 
 `@typedoc` is consumed by the following `@type` before `@before_compile` runs,
@@ -181,13 +189,14 @@ struct extraction — is compile-time and works without Mix.
 ## A runtime-compiled struct has no readable `@type t`
 
 `Structs` reads `t/0` from the module's typespec chunk, which exists only in a
-beam file. A struct module compiled by `Code.compile_string/1` — a Livebook
-cell, an eval — has no object code, so `Code.Typespec.fetch_types/1` answers
-`:error`: every field silently becomes `{}`, and the only signal is the generic
-"no JSON type" warning on the parameter. A struct defined in the same module as
-its tools is exempt (the field map and `t/0` are read
-from module attributes). Compile the struct through Mix or
-`Kernel.ParallelCompiler.compile_to_path/2` when field types matter.
+beam compiled with debug info. A struct module compiled by
+`Code.compile_string/1` — a Livebook cell, an eval — has no object code, and a
+module compiled with `@compile {:debug_info, false}` has no typespec chunk; in
+both cases `Code.Typespec.fetch_types/1` answers `:error`: every field silently
+becomes `{}`, and the only signal is the generic "no JSON type" warning on the
+parameter. A struct defined in the same module as its tools is exempt (the field
+map and `t/0` are read from module attributes). Compile the struct through Mix
+or `Kernel.ParallelCompiler.compile_to_path/2` when field types matter.
 
 ## Struct defaults are not sent to the model
 
