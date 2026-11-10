@@ -474,7 +474,10 @@ state machine. On resume, use the stored `request.args` and `request.context` â€
 never fresh model output for the same approval â€” and mark the request executed
 so a retry cannot run side effects twice. `{:pending, _}` is a third `run/4`
 outcome next to `{:ok, _}` and `{:error, _}`; an agent loop must pause instead of
-sending it to the model as a tool result.
+sending it to the model as a tool result. A policy that returns an unknown term
+is `{:error, {:invalid_approval, term}}`; a policy that raises, or a policy
+module without `check/3`, raises `ArgumentError`. Validate configuration at
+startup when the policy comes from outside the project.
 
 ## A timeout is a hard kill, not a cancellation
 

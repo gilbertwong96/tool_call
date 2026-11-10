@@ -102,7 +102,9 @@ defmodule ToolCall.Runner do
   Executes a call produced by `resolve/4`.
 
   The call's timeout applies unless `:timeout` is given. `:task_supervisor` is
-  passed to `ToolCall.Timeout.run/3`.
+  passed to `ToolCall.Timeout.run/3`. The stored approval policy is checked
+  unless `:approval` overrides it; a `{:required, reason}` answer returns
+  `{:pending, %ToolCall.Approval.Request{}}` without invoking.
   """
   @spec execute(ToolCall.Call.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def execute(%ToolCall.Call{} = call, opts \\ []) do
@@ -166,20 +168,25 @@ defmodule ToolCall.Runner do
   defp approve(_call, :denied, _opts), do: {:error, {:approval_denied, :denied}}
 
   defp approve(call, policy, opts) when is_atom(policy) do
-    context = Keyword.get(opts, :context)
+    if Code.ensure_loaded?(policy) and function_exported?(policy, :check, 3) do
+      context = Keyword.get(opts, :context)
 
-    case policy.check(call.tool, call.args, context) do
-      :approve ->
-        :ok
+      case policy.check(call.tool, call.args, context) do
+        :approve ->
+          :ok
 
-      {:deny, reason} ->
-        {:error, {:approval_denied, reason}}
+        {:deny, reason} ->
+          {:error, {:approval_denied, reason}}
 
-      {:required, reason} ->
-        {:pending, ToolCall.Approval.request(call.module, call.tool, call.args, reason, context)}
+        {:required, reason} ->
+          {:pending,
+           ToolCall.Approval.request(call.module, call.tool, call.args, reason, context)}
 
-      other ->
-        {:error, {:invalid_approval, other}}
+        other ->
+          {:error, {:invalid_approval, other}}
+      end
+    else
+      raise ArgumentError, "approval policy #{inspect(policy)} does not export check/3"
     end
   end
 

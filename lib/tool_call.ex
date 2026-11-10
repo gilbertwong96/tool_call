@@ -461,8 +461,9 @@ defmodule ToolCall do
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
       invocation. Without it the task is linked to the caller.
     * `:context` - passed to a `ToolCall.Timeout` policy's `timeout/3` callback.
-    * `:approval` - `:granted`, `:denied`, or a `ToolCall.Approval` policy module.
-      A policy may answer `{:required, reason}`, which returns
+    * `:approval` - `:granted`, `:denied`, or a `ToolCall.Approval` policy module;
+      `nil` disables the module policy for one call. A policy may answer
+      `{:required, reason}`, which returns
       `{:pending, %ToolCall.Approval.Request{}}`; the call is not invoked.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::

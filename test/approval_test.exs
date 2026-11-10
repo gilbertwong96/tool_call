@@ -132,4 +132,12 @@ defmodule ToolCall.ApprovalTest do
     assert {:error, {:approval_denied, "denied"}} =
              ToolCall.Runner.execute(call, context: %{deny: true})
   end
+
+  test "an invalid approval policy raises" do
+    module = module_with_policy()
+
+    assert_raise ArgumentError, ~r/does not export check\/3/, fn ->
+      ToolCall.run(module, :ok, %{"x" => 1}, approval: :grant)
+    end
+  end
 end
