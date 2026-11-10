@@ -48,21 +48,25 @@ defmodule ToolCall do
   defmacro __using__(opts) do
     {types, opts} = Keyword.pop(opts, :types, [])
     {timeout, opts} = Keyword.pop(opts, :timeout)
-    {approval, rest} = Keyword.pop(opts, :approval)
+    {approval, opts} = Keyword.pop(opts, :approval)
+    {audit, rest} = Keyword.pop(opts, :audit)
 
     if rest != [] do
       raise ArgumentError,
-            "use ToolCall accepts only :types, :timeout and :approval, got: #{inspect(rest)}"
+            "use ToolCall accepts only :types, :timeout, :approval and :audit, " <>
+              "got: #{inspect(rest)}"
     end
 
     timeout = expand_timeout(timeout, __CALLER__)
     approval = expand_approval(approval, __CALLER__)
+    audit = expand_audit(audit, __CALLER__)
     providers = ToolCall.Typespec.builtin_providers() ++ expand_providers(types, __CALLER__)
 
     quote do
       @tool_call_type_providers unquote(providers)
       @tool_call_timeout unquote(timeout)
       @tool_call_approval unquote(approval)
+      @tool_call_audit unquote(audit)
       Module.register_attribute(__MODULE__, :tool_call_defs, accumulate: true)
       Module.register_attribute(__MODULE__, :tool_call_struct_fields, [])
       Module.register_attribute(__MODULE__, :tool_param, accumulate: true)
@@ -87,6 +91,18 @@ defmodule ToolCall do
 
   defp expand_providers(other, _env) do
     raise ArgumentError, ":types must be a list of modules, got: #{inspect(other)}"
+  end
+
+  defp expand_audit(nil, _env), do: nil
+
+  defp expand_audit(audit, env) do
+    case Macro.expand(audit, env) do
+      module when is_atom(module) and module not in [nil, true, false] ->
+        module
+
+      other ->
+        raise ArgumentError, "audit must be a module, got: #{inspect(other)}"
+    end
   end
 
   defp expand_approval(nil, _env), do: nil
@@ -153,15 +169,11 @@ defmodule ToolCall do
     # Phase two only fills parameters that have no description yet. A compile
     # with `docs: false` writes no Docs chunk, so there is nothing to recover
     # and the effective key map is empty.
-    typedoc_keys =
-      if Code.compiler_options()[:docs] == false do
-        %{}
-      else
-        typedoc_keys
-      end
+    typedoc_keys = effective_typedoc_keys(typedoc_keys)
 
     timeout = Module.get_attribute(module, :tool_call_timeout)
     approval = Module.get_attribute(module, :tool_call_approval)
+    audit = Module.get_attribute(module, :tool_call_audit)
     generation = Generated.generation()
     companion = Generated.companion(module)
     schemas = Emit.precompile(tools)
@@ -180,7 +192,7 @@ defmodule ToolCall do
     tools_body = tools_body(embedded, companion, generation, typedoc_keys)
     schemas_body = schemas_body(schemas, companion, generation, typedoc_keys)
 
-    runner_clauses = runner_clauses(tools, embedded, timeout, approval)
+    runner_clauses = runner_clauses(tools, embedded, timeout, approval, audit)
 
     quote do
       @doc false
@@ -198,12 +210,19 @@ defmodule ToolCall do
       @doc false
       def __approval_policy__, do: unquote(approval)
 
+      @doc false
+      def __audit_policy__, do: unquote(audit)
+
       unquote_splicing(runner_clauses)
 
       @doc false
       def __run__(name, args),
         do: ToolCall.Runner.run_prepared(__MODULE__, __tools__(), name, args)
     end
+  end
+
+  defp effective_typedoc_keys(keys) do
+    if Code.compiler_options()[:docs] == false, do: %{}, else: keys
   end
 
   defp tools_body(embedded, companion, generation, typedoc_keys) do
@@ -234,9 +253,9 @@ defmodule ToolCall do
     end
   end
 
-  defp runner_clauses(tools, embedded, timeout, approval) do
+  defp runner_clauses(tools, embedded, timeout, approval, audit) do
     indirect = for tool <- tools, no_return_spec?(tool.source), do: tool.name
-    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout, approval)
+    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout, approval, audit)
   end
 
   defp no_return_spec?({:"::", _, [_args, {:no_return, _, []}]}), do: true
@@ -465,6 +484,9 @@ defmodule ToolCall do
       `nil` disables the module policy for one call. A policy may answer
       `{:required, reason}`, which returns
       `{:pending, %ToolCall.Approval.Request{}}`; the call is not invoked.
+    * `:audit` - a `ToolCall.Audit` policy module; `nil` disables the module
+      policy for one call. The hook receives one `%ToolCall.Audit.Entry{}` per
+      dispatch attempt.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
@@ -484,7 +506,8 @@ defmodule ToolCall do
 
   defp runner_path?(opts) do
     Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout) or
-      Keyword.has_key?(opts, :approval) or Keyword.has_key?(opts, :context)
+      Keyword.has_key?(opts, :approval) or Keyword.has_key?(opts, :audit) or
+      Keyword.has_key?(opts, :context)
   end
 
   defp inject_timeout_policy(module, opts) do
@@ -505,12 +528,21 @@ defmodule ToolCall do
     validate_validate_result!(opts)
     validate_timeout_option!(opts)
     validate_approval_option!(opts)
+    validate_audit_option!(opts)
     validate_task_supervisor!(opts)
     :ok
   end
 
   defp validate_option_keys!(opts) do
-    case Keyword.keys(opts) -- [:validate_result, :timeout, :task_supervisor, :approval, :context] do
+    case Keyword.keys(opts) --
+           [
+             :validate_result,
+             :timeout,
+             :task_supervisor,
+             :approval,
+             :audit,
+             :context
+           ] do
       [] -> :ok
       unknown -> raise ArgumentError, "unknown options: #{inspect(unknown)}"
     end
@@ -547,6 +579,19 @@ defmodule ToolCall do
       other ->
         raise ArgumentError,
               "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
+    end
+  end
+
+  defp validate_audit_option!(opts) do
+    case Keyword.get(opts, :audit) do
+      nil ->
+        :ok
+
+      policy when is_atom(policy) ->
+        :ok
+
+      other ->
+        raise ArgumentError, "audit must be a module or nil, got: #{inspect(other)}"
     end
   end
 

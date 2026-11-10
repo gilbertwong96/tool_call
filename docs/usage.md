@@ -529,6 +529,46 @@ ToolCall.run(request.module, request.tool, request.args,
 pure and stores the policy, `execute` checks it, so a future runtime can
 resolve, gate and then execute.
 
+### Audit
+
+An audit policy is a module implementing `ToolCall.Audit`:
+
+```elixir
+defmodule MyAudit do
+  @behaviour ToolCall.Audit
+
+  @impl true
+  def record(%ToolCall.Audit.Entry{} = entry) do
+    MyApp.AuditLog.insert(entry)
+  end
+end
+
+use ToolCall, audit: MyAudit
+```
+
+`run/4 audit:` overrides the module policy; `audit: nil` disables it. The hook
+receives one entry per dispatch attempt:
+
+```elixir
+%ToolCall.Audit.Entry{
+  id: "...", at: ~U[...], module: MyApp.Tools, tool: "transfer_money",
+  args: %{"amount" => 100}, context: %{user_id: 42},
+  outcome: :ok, duration_us: 1234, error: nil,
+  approval_request_id: nil, timeout: nil
+}
+```
+
+- `outcome` is `:ok`, `:error`, `:raised`, `:pending`, `:denied`, `:timeout`,
+  `:invalid_arguments` or `:unknown_tool`; resolve failures and unknown tools
+  are recorded too.
+- `duration_us` covers the execution path; the result value is never recorded.
+- The hook is synchronous. This is a hook, not a store: persistence, redaction,
+  retention and a fail-closed policy are the application's. The library ignores
+  an exception from `record/1`, so a broken audit does not change the tool
+  result.
+- `args` and `context` are raw; redact them in `record/1` when they contain
+  secrets.
+
 ### Timeouts
 
 `run/4` accepts a per-call timeout; without one the call runs in the caller

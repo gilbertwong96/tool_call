@@ -47,8 +47,12 @@ defmodule ToolCall.Runner do
     name = to_string(name)
 
     case fetch(tools, name) do
-      {:ok, tool} -> run_prepared_tool(module, tool, args, true, nil, opts)
-      error -> error
+      {:ok, tool} ->
+        run_prepared_tool(module, tool, args, true, nil, opts)
+
+      error ->
+        audit_failure(module, name, args, opts, :unknown_tool, nil, 0)
+        error
     end
   end
 
@@ -73,8 +77,16 @@ defmodule ToolCall.Runner do
           {:ok, term()} | {:error, term()}
   def run_prepared_tool(module, %Tool{} = tool, args, check_nested?, known, opts)
       when is_map(args) do
-    with {:ok, call} <- resolve_tool(module, tool, args, check_nested?, known, opts) do
-      execute(call, opts)
+    {duration, resolved} =
+      :timer.tc(fn -> resolve_tool(module, tool, args, check_nested?, known, opts) end)
+
+    case resolved do
+      {:ok, call} ->
+        execute(call, opts)
+
+      {:error, reason} = error ->
+        audit_failure(module, tool.name, args, opts, :invalid_arguments, reason, duration)
+        error
     end
   end
 
@@ -108,6 +120,13 @@ defmodule ToolCall.Runner do
   """
   @spec execute(ToolCall.Call.t(), keyword()) :: {:ok, term()} | {:error, term()}
   def execute(%ToolCall.Call{} = call, opts \\ []) do
+    audit = Keyword.get(opts, :audit, call.audit)
+    {duration, result} = :timer.tc(fn -> do_execute(call, opts) end)
+    record_audit(audit, call, result, duration, opts)
+    result
+  end
+
+  defp do_execute(call, opts) do
     approval = Keyword.get(opts, :approval, call.approval)
 
     with :ok <- approve(call, approval, opts) do
@@ -128,6 +147,7 @@ defmodule ToolCall.Runner do
     validate_result? = validate_result_opt!(opts)
     timeout = timeout_for(tool, args, opts)
     approval = approval_for(module, opts)
+    audit = audit_for(module, opts)
 
     with :ok <- reject_non_string_keys(args),
          :ok <- if(check_nested?, do: reject_nested_non_string_keys(tool, args), else: :ok),
@@ -143,9 +163,88 @@ defmodule ToolCall.Runner do
          positional: positional,
          timeout: timeout,
          approval: approval,
+         audit: audit,
          validate_result?: validate_result?
        }}
     end
+  end
+
+  defp audit_for(module, opts) do
+    case Keyword.fetch(opts, :audit) do
+      {:ok, audit} -> audit
+      :error -> module_audit(module)
+    end
+  end
+
+  defp module_audit(module) do
+    if function_exported?(module, :__audit_policy__, 0) do
+      module.__audit_policy__()
+    else
+      nil
+    end
+  end
+
+  defp audit_failure(module, tool, args, opts, outcome, error, duration) do
+    audit = audit_for(module, opts)
+    context = Keyword.get(opts, :context)
+
+    entry =
+      ToolCall.Audit.entry(module, tool, args, context, outcome,
+        duration_us: duration,
+        error: error
+      )
+
+    record_entry(audit, entry)
+  end
+
+  defp record_audit(nil, _call, _result, _duration, _opts), do: :ok
+
+  defp record_audit(policy, call, result, duration, opts) do
+    {outcome, error, request_id, timeout} = audit_result(result)
+    context = Keyword.get(opts, :context)
+
+    entry =
+      ToolCall.Audit.entry(call.module, call.tool.name, call.args, context, outcome,
+        duration_us: duration,
+        error: error,
+        approval_request_id: request_id,
+        timeout: timeout
+      )
+
+    record_entry(policy, entry)
+  end
+
+  defp audit_result({:ok, _value}), do: {:ok, nil, nil, nil}
+
+  defp audit_result({:pending, %ToolCall.Approval.Request{id: id}}),
+    do: {:pending, nil, id, nil}
+
+  defp audit_result({:error, {:approval_denied, reason}}), do: {:denied, reason, nil, nil}
+
+  defp audit_result({:error, {:timeout, ms}}), do: {:timeout, {:timeout, ms}, nil, ms}
+
+  defp audit_result({:error, {:raised, message}}), do: {:raised, message, nil, nil}
+
+  defp audit_result({:error, reason}), do: {:error, reason, nil, nil}
+
+  defp record_entry(nil, _entry), do: :ok
+
+  defp record_entry(policy, entry) when is_atom(policy) do
+    unless Code.ensure_loaded?(policy) and function_exported?(policy, :record, 1) do
+      raise ArgumentError, "audit policy #{inspect(policy)} does not export record/1"
+    end
+
+    try do
+      policy.record(entry)
+    rescue
+      _exception -> :ok
+    catch
+      _kind, _value -> :ok
+    end
+  end
+
+  defp record_entry(other, _entry) do
+    raise ArgumentError, "audit must be a module or nil, got: #{inspect(other)}"
   end
 
   defp approval_for(module, opts) do

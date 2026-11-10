@@ -46,6 +46,10 @@
 - `ToolCall.Approval` adds a policy hook: `use ToolCall, approval: Policy` or
   `run/4 approval:`; `check/3` can approve, deny, or return a serializable
   pending request. No persistence or resume state machine is built in.
+- `ToolCall.Audit` adds a dispatch audit hook: `use ToolCall, audit: Policy` or
+  `run/4 audit:` receives one `Entry` per attempt (ok/error/raised/pending/
+  denied/timeout/invalid arguments/unknown tool). It is fail-open and does not
+  persist; redact the raw args in the hook.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one

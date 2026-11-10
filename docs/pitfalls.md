@@ -479,6 +479,15 @@ is `{:error, {:invalid_approval, term}}`; a policy that raises, or a policy
 module without `check/3`, raises `ArgumentError`. Validate configuration at
 startup when the policy comes from outside the project.
 
+## An audit hook is not an audit log
+
+`ToolCall.Audit` receives one `%Entry{}` per dispatch, but it does not persist,
+redact, rotate or retain anything, and an exception from `record/1` is ignored
+(fail-open). The raw `args` and `context` are passed through; redact them before
+storage. The hook runs after the dispatch, so it cannot fail-closed; use an
+approval policy if a call must be blocked before execution. The result value is
+not recorded; store a business id or a digest if needed.
+
 ## A timeout is a hard kill, not a cancellation
 
 `run/4 timeout:` and `execute/2 timeout:` run the invocation in a task and kill

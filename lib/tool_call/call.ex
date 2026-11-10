@@ -9,7 +9,8 @@ defmodule ToolCall.Call do
 
   `execute/2` accepts a `:timeout` override and a `:task_supervisor`; the
   default timeout is the one stored in the call. It also checks the stored
-  approval policy unless `:approval` overrides it.
+  approval policy unless `:approval` overrides it, and records the dispatch to
+  the stored audit policy unless `:audit` overrides it.
   """
 
   alias ToolCall.IR.Tool
@@ -23,6 +24,7 @@ defmodule ToolCall.Call do
     :positional,
     timeout: :infinity,
     approval: nil,
+    audit: nil,
     validate_result?: false
   ]
 
@@ -34,6 +36,7 @@ defmodule ToolCall.Call do
           positional: [term()],
           timeout: :infinity | non_neg_integer(),
           approval: nil | :granted | :denied | module(),
+          audit: nil | module(),
           validate_result?: boolean()
         }
 end

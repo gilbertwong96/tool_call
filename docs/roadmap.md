@@ -40,6 +40,8 @@ All planned items are implemented and awaiting a release.
 
 ## 0.4 — runtime governance
 
+All planned items are implemented and awaiting a release.
+
 - Approval / human-in-the-loop hooks: done as a policy hook
   (`use ToolCall, approval: ...`, `run/4 approval:`). A required decision returns
   a serializable `ToolCall.Approval.Request`; persistence, notification and
@@ -49,7 +51,9 @@ All planned items are implemented and awaiting a release.
   override, and `use ToolCall, timeout: ...` sets a default or a
   `ToolCall.Timeout` policy. The overall run deadline stays with the caller or
   agent framework.
-- Audit log for dispatches.
+- Audit log for dispatches: done as a hook. `use ToolCall, audit: ...` or
+  `run/4 audit:` receives one `%ToolCall.Audit.Entry{}` per attempt; persistence,
+  redaction and retention stay with the application.
 
 ## Later / not scheduled
 
