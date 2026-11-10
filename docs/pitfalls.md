@@ -190,17 +190,21 @@ an `elixir` script) succeeds, but the companion is skipped with a warning and
 the phase-one descriptions are used. Everything else — including `$defs` and
 struct extraction — is compile-time and works without Mix.
 
-## A runtime-compiled struct has no readable `@type t`
+## A struct without a typespec chunk falls back to its source
 
 `Structs` reads `t/0` from the module's typespec chunk, which exists only in a
-beam compiled with debug info. A struct module compiled by
-`Code.compile_string/1` — a Livebook cell, an eval — has no object code, and a
-module compiled with `@compile {:debug_info, false}` has no typespec chunk; in
-both cases `Code.Typespec.fetch_types/1` answers `:error`: every field silently
-becomes `{}`, and the only signal is the generic "no JSON type" warning on the
-parameter. A struct defined in the same module as its tools is exempt (the field
-map and `t/0` are read from module attributes). Compile the struct through Mix
-or `Kernel.ParallelCompiler.compile_to_path/2` when field types matter.
+beam compiled with debug info. An in-memory module (`Code.compile_string/1`, a
+Livebook cell) has no object code, and `@compile {:debug_info, false}` removes
+the chunk; `Code.Typespec.fetch_types/1` then answers `:error`.
+
+When the module's `compile_info.source` points at a readable file, `Structs`
+parses that file and reads the module's `@type t` as a best-effort fallback:
+`__MODULE__`, fully-qualified aliases and local types resolve; an `alias`
+shorthand (`Address.t()` for `MyApp.Address`) is not expanded and degrades to
+`{}`. A `Code.compile_string/1` module has no source file (`nofile`), so its
+fields stay `{}` and the compile warns "has no readable typespec". A struct
+defined in the same module as its tools is exempt (module attributes).
+`@typep`-typed fields still stay `{}` because private types are not collected.
 
 ## Struct defaults are not sent to the model
 

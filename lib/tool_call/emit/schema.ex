@@ -43,11 +43,23 @@ defmodule ToolCall.Emit.Schema do
   @spec strict?(keyword()) :: boolean()
   def strict?(opts) do
     case Keyword.get(opts, :strict, false) do
-      value when is_boolean(value) -> value
-      nil -> false
-      other -> raise ArgumentError, "strict must be a boolean, got: #{inspect(other)}"
+      value when is_boolean(value) ->
+        value
+
+      :fine_tuned ->
+        true
+
+      nil ->
+        false
+
+      other ->
+        raise ArgumentError, "strict must be false, true or :fine_tuned, got: #{inspect(other)}"
     end
   end
+
+  @doc false
+  @spec fine_tuned?(keyword()) :: boolean()
+  def fine_tuned?(opts), do: Keyword.get(opts, :strict) == :fine_tuned
 
   @doc "Renders a single type node."
   @spec type(Type.t(), keyword()) :: map()
@@ -63,14 +75,14 @@ defmodule ToolCall.Emit.Schema do
     |> nullable(type)
   end
 
-  defp base(%Type{kind: :integer} = type, _opts), do: bounds(%{"type" => "integer"}, type)
-  defp base(%Type{kind: :float} = type, _opts), do: bounds(%{"type" => "number"}, type)
-  defp base(%Type{kind: :number} = type, _opts), do: bounds(%{"type" => "number"}, type)
+  defp base(%Type{kind: :integer} = type, opts), do: bounds(%{"type" => "integer"}, type, opts)
+  defp base(%Type{kind: :float} = type, opts), do: bounds(%{"type" => "number"}, type, opts)
+  defp base(%Type{kind: :number} = type, opts), do: bounds(%{"type" => "number"}, type, opts)
 
-  defp base(%Type{kind: :string} = type, _opts) do
+  defp base(%Type{kind: :string} = type, opts) do
     %{"type" => "string"}
-    |> maybe_put("format", type.format)
-    |> pattern(type)
+    |> maybe_put("format", if(fine_tuned?(opts), do: nil, else: type.format))
+    |> pattern(type, opts)
   end
 
   defp base(%Type{kind: :boolean}, _opts), do: %{"type" => "boolean"}
@@ -263,14 +275,21 @@ defmodule ToolCall.Emit.Schema do
     %{param | required: true, type: %{param.type | nullable: true}}
   end
 
-  defp bounds(schema, %Type{} = type) do
-    schema
-    |> maybe_put("minimum", type.minimum)
-    |> maybe_put("maximum", type.maximum)
+  defp bounds(schema, %Type{} = type, opts) do
+    if fine_tuned?(opts) do
+      schema
+    else
+      schema
+      |> maybe_put("minimum", type.minimum)
+      |> maybe_put("maximum", type.maximum)
+    end
   end
 
-  defp pattern(schema, %Type{pattern: nil}), do: schema
-  defp pattern(schema, %Type{pattern: pattern}), do: Map.put(schema, "pattern", pattern)
+  defp pattern(schema, %Type{pattern: nil}, _opts), do: schema
+
+  defp pattern(schema, %Type{pattern: pattern}, opts) do
+    if fine_tuned?(opts), do: schema, else: Map.put(schema, "pattern", pattern)
+  end
 
   defp enum(%Type{values: values}) do
     cond do
@@ -300,12 +319,18 @@ defmodule ToolCall.Emit.Schema do
   defp enum_value(value), do: value
 
   defp array(%Type{} = type, opts) do
-    %{
+    schema = %{
       "type" => "array",
       "items" => do_type(type.items || %Type{kind: :any}, opts)
     }
-    |> maybe_put("minItems", type.minimum)
-    |> maybe_put("maxItems", type.maximum)
+
+    if fine_tuned?(opts) do
+      schema
+    else
+      schema
+      |> maybe_put("minItems", type.minimum)
+      |> maybe_put("maxItems", type.maximum)
+    end
   end
 
   defp tuple(%Type{items: nil}, _opts),
@@ -315,11 +340,16 @@ defmodule ToolCall.Emit.Schema do
     items = Enum.map(type.items || [], &do_type(&1, opts))
     size = length(items)
 
-    schema = %{"type" => "array", "minItems" => size, "maxItems" => size}
+    cond do
+      fine_tuned?(opts) ->
+        %{"type" => "array", "items" => %{}}
 
-    if strict?(opts),
-      do: Map.put(schema, "items", %{}),
-      else: Map.put(schema, "prefixItems", items)
+      strict?(opts) ->
+        %{"type" => "array", "minItems" => size, "maxItems" => size, "items" => %{}}
+
+      true ->
+        %{"type" => "array", "minItems" => size, "maxItems" => size, "prefixItems" => items}
+    end
   end
 
   defp object(%Type{} = type, opts) do

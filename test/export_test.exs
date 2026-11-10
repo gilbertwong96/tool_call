@@ -55,6 +55,25 @@ defmodule ToolCall.ExportTest do
              JSON.decode!(export([inspect(module), "--format", "anthropic"]))
   end
 
+  test "exports the fine-tuned strict subset" do
+    module = weather()
+
+    assert [declaration] =
+             JSON.decode!(export([inspect(module), "--fine-tuned"]))
+
+    parameters = declaration["function"]["parameters"]
+    assert declaration["strict"] == true
+    assert parameters["additionalProperties"] == false
+    refute Map.has_key?(parameters["properties"]["days"], "minimum")
+  end
+
+  test "normal strict keeps the numeric bound" do
+    module = weather()
+
+    assert [declaration] = JSON.decode!(export([inspect(module), "--strict"]))
+    assert declaration["function"]["parameters"]["properties"]["days"]["minimum"] == 1
+  end
+
   test "exports Gemini function declarations" do
     module = weather()
 

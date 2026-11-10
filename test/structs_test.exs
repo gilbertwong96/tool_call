@@ -49,6 +49,59 @@ defmodule ToolCall.StructsTest do
     assert {:ok, _fields, [], :truncated, false} = Structs.fields(Deep)
   end
 
+  test "fields/1 falls back to the source file when the typespec chunk is missing" do
+    dir = Path.join(System.tmp_dir!(), "tool_call_src_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "source_struct.ex")
+
+    module =
+      Module.concat([ToolCall.TestFixtures, :"SourceStruct#{System.unique_integer([:positive])}"])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      defstruct [:city, :at]
+      @type city :: String.t()
+      @type t :: %__MODULE__{city: city(), at: Date.t()}
+    end
+    """)
+
+    Code.compile_file(file)
+    on_exit(fn -> File.rm_rf(dir) end)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {String, :t, []} = unwrap_remote(fields.city)
+    assert {Date, :t, []} = unwrap_remote(fields.at)
+  end
+
+  test "fields/1 falls back to source for a beam compiled without debug info" do
+    dir = Path.join(System.tmp_dir!(), "tool_call_dbg_#{System.unique_integer([:positive])}")
+    File.mkdir_p!(dir)
+    file = Path.join(dir, "no_info_struct.ex")
+
+    module =
+      Module.concat([ToolCall.TestFixtures, :"NoInfo#{System.unique_integer([:positive])}"])
+
+    File.write!(file, """
+    defmodule #{inspect(module)} do
+      @compile {:debug_info, false}
+      defstruct [:city]
+      @type t :: %__MODULE__{city: String.t()}
+    end
+    """)
+
+    assert {:ok, _modules, _diagnostics} =
+             Kernel.ParallelCompiler.compile_to_path([file], dir, return_diagnostics: true)
+
+    Code.prepend_path(dir)
+    assert {:module, ^module} = Code.ensure_loaded(module)
+    assert :error = Code.Typespec.fetch_types(module)
+
+    assert {:ok, fields, [], :ok, false} = Structs.fields(module)
+    assert {String, :t, []} = unwrap_remote(fields.city)
+
+    on_exit(fn -> File.rm_rf(dir) end)
+  end
+
   test "fields/1 reports a parameterized-only t, a non-literal t/0, and no t at all" do
     assert {:ok, %{a: {:any, _, []}}, [], :parameterized_t, false} = Structs.fields(ParamOnly)
     assert {:ok, %{x: {:any, _, []}}, [], :non_literal_t, false} = Structs.fields(WeirdType)

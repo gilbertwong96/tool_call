@@ -356,12 +356,12 @@ defmodule ToolCall do
 
   ## Options
 
-    * `:strict` - OpenAI strict mode. The tool object carries
-      `"strict": true`, every property becomes required, optional values
-      become nullable and every object is closed, which is the only shape the
-      API accepts when `strict: true` is set. For `:mcp` it renders the same
-      closed subset without a flag (MCP has none). Ignored for `:anthropic` and
-      `:gemini`.
+    * `:strict` - OpenAI strict mode: `true`, or `:fine_tuned` for the subset
+      fine-tuned models accept. Both make every property required, optional
+      values nullable and every object closed. `:fine_tuned` also drops
+      `pattern`, `format`, numeric bounds and array bounds, which fine-tuned
+      models reject. For `:mcp` it renders the same closed subset without a flag
+      (MCP has none). Ignored for `:anthropic` and `:gemini`.
   """
   @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic | :mcp | :gemini, keyword()) ::
           map() | [map()]
@@ -377,6 +377,16 @@ defmodule ToolCall do
   def emit(module, :gemini, opts) when is_atom(module) do
     ensure_tool_module!(module)
     Enum.map(module.__tools__(), &ToolCall.Emit.Gemini.emit(&1, opts))
+  end
+
+  def emit(module, :openai, opts) when is_atom(module) do
+    ensure_tool_module!(module, :__schemas__)
+
+    if ToolCall.Emit.Schema.fine_tuned?(opts) do
+      Enum.map(module.__tools__(), &ToolCall.Emit.OpenAI.emit(&1, opts))
+    else
+      ToolCall.Emit.lookup(module.__schemas__(), :openai, opts)
+    end
   end
 
   def emit(module, target, opts) when is_atom(module) do

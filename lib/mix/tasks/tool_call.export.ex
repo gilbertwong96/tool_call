@@ -37,6 +37,8 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `--app`, `-a` - application to discover tool modules in
     * `--strict` - emit the strict JSON Schema subset for OpenAI and MCP;
       ignored by `anthropic` and `gemini`
+    * `--fine-tuned` - emit the fine-tuned strict subset (implies `--strict`);
+      drops `pattern`, `format` and numeric/array bounds
 
   Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
   27.1+. The formatter belongs to OTP, so a file is reproducible per OTP version
@@ -45,7 +47,7 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   @requirements ["compile"]
 
-  @switches [app: :string, format: :string, out: :string, strict: :boolean]
+  @switches [app: :string, format: :string, out: :string, strict: :boolean, fine_tuned: :boolean]
   @aliases [a: :app, f: :format, o: :out]
   @formats ~w(openai anthropic mcp gemini)
 
@@ -54,13 +56,20 @@ defmodule Mix.Tasks.ToolCall.Export do
     {opts, names} = OptionParser.parse!(argv, strict: @switches, aliases: @aliases)
 
     format = format!(opts[:format])
-    strict? = Keyword.get(opts, :strict, false)
+
+    strict =
+      cond do
+        Keyword.get(opts, :fine_tuned, false) -> :fine_tuned
+        Keyword.get(opts, :strict, false) -> true
+        true -> false
+      end
+
     modules = modules(names, opts[:app])
 
-    specs = Enum.flat_map(modules, &ToolCall.describe(&1, strict: strict?))
+    specs = Enum.flat_map(modules, &ToolCall.describe(&1, strict: strict))
     validate!(specs)
 
-    data = render(modules, format, strict?, specs)
+    data = render(modules, format, strict, specs)
     write(encode(data), opts[:out])
   end
 
@@ -169,14 +178,14 @@ defmodule Mix.Tasks.ToolCall.Export do
     end
   end
 
-  defp render(modules, "openai", strict?, _specs),
-    do: Enum.flat_map(modules, &ToolCall.emit(&1, :openai, strict: strict?))
+  defp render(modules, "openai", strict, _specs),
+    do: Enum.flat_map(modules, &ToolCall.emit(&1, :openai, strict: strict))
 
   defp render(modules, "anthropic", _strict?, _specs),
     do: Enum.flat_map(modules, &ToolCall.emit(&1, :anthropic))
 
-  defp render(modules, "mcp", strict?, _specs) do
-    %{"tools" => Enum.flat_map(modules, &ToolCall.emit(&1, :mcp, strict: strict?))}
+  defp render(modules, "mcp", strict, _specs) do
+    %{"tools" => Enum.flat_map(modules, &ToolCall.emit(&1, :mcp, strict: strict))}
   end
 
   defp render(modules, "gemini", _strict?, _specs) do

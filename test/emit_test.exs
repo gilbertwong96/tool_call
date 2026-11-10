@@ -25,11 +25,11 @@ defmodule ToolCall.EmitTest do
       end
       """)
 
-    assert_raise ArgumentError, ~r/strict must be a boolean/, fn ->
+    assert_raise ArgumentError, ~r/strict must be/, fn ->
       ToolCall.emit(module, :openai, strict: "true")
     end
 
-    assert_raise ArgumentError, ~r/strict must be a boolean/, fn ->
+    assert_raise ArgumentError, ~r/strict must be/, fn ->
       ToolCall.emit(module, :anthropic, strict: :yes)
     end
   end

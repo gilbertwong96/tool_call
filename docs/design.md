@@ -366,7 +366,10 @@ and warns. The result is a closed object:
 - field types come from the module's public `@type t`, with the module's own
   local types expanded and a self-reference to `t/0` replaced by
   `%__MODULE__{}`; a nil branch of `t/0` is unwrapped, so the struct is nullable
-  wherever it is used, and a field missing from `t` keeps `{}`;
+  wherever it is used, and a field missing from `t` keeps `{}`. When the
+  typespec chunk is missing, a readable `compile_info.source` file is parsed as
+  a best-effort fallback; without a source the fields stay `{}` and the compile
+  warns;
 - `required` comes from `@enforce_keys`.
 
 `@enforce_keys` is not readable for a compiled module: `Module.get_attribute/2`
@@ -489,7 +492,7 @@ parameters object the other targets embed. Gemini also renders on demand: its
 |---|---|---|---|---|
 | Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` | `{name, description, parameters}` in `functionDeclarations` |
 | Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) | an object schema (`type: "OBJECT"`) |
-| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed | n/a | renders the closed subset; MCP has no flag | ignored |
+| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed; `:fine_tuned` drops pattern/format/bounds | n/a | renders the closed subset; MCP has no flag | ignored |
 | `$ref` / `$defs` | supported, strict mode included | supported | supported | not supported; a recursive parameter raises |
 | Type casing | lowercase JSON Schema | lowercase JSON Schema | lowercase JSON Schema | uppercase OpenAPI `Type` enum |
 | Nullability | `["T", "null"]` | `["T", "null"]` / `anyOf` | same as OpenAI | `nullable: true` |
@@ -500,9 +503,10 @@ its numeric precision. It is the reason `wire: :string_integer` exists.
 
 OpenAI accepts `pattern`, the nine `format` values (`date-time`, `time`,
 `date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uuid`) and the numeric
-bounds in strict mode **for standard models**. Fine-tuned models reject those
-keywords and refuse the schema, so a strict schema for a fine-tuned model must
-enumerate values and drop the constraints.
+and array bounds in strict mode **for standard models**. Fine-tuned models reject
+those keywords and refuse the schema. `strict: :fine_tuned` renders the same
+strict shape without them, on demand (it is not one of the precompiled
+literals).
 
 Gemini's `parameters` is a 22-field OpenAPI 3.0 subset, not JSON Schema: it has
 no `additionalProperties`, `$ref`/`$defs`, `oneOf`, `prefixItems` or `const`,

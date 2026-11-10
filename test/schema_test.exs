@@ -688,7 +688,7 @@ defmodule ToolCall.SchemaTest do
     assert Schema.strict?(strict: true) == true
     assert Schema.strict?([]) == false
 
-    assert_raise ArgumentError, ~r/strict must be a boolean/, fn ->
+    assert_raise ArgumentError, ~r/strict must be/, fn ->
       Schema.strict?(strict: :yes)
     end
   end

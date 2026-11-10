@@ -257,11 +257,14 @@ end
 - `Mod.t(integer())` is resolved as the struct too, but type arguments are not
   substituted: fields come from `t/0`, and a parameterized-only `@type t/N`
   gives every field `{}` with a warning.
-- A struct compiled at runtime (`Code.compile_string/1`, a Livebook cell) or
-  with `@compile {:debug_info, false}` has no typespec chunk, so every field is
-  `{}`. A struct defined in the same module as its tools is exempt. Compile
-  through Mix when field types matter; see
-  [`pitfalls.md`](pitfalls.md#a-runtime-compiled-struct-has-no-readable-type-t).
+- A struct whose typespec chunk is missing (an in-memory `Code.compile_string/1`
+  module, or `@compile {:debug_info, false}`) falls back to parsing the module's
+  source file for `@type t` when that file is readable; `__MODULE__`,
+  fully-qualified aliases and local types resolve, while an `alias` shorthand
+  degrades to `{}`. A module with no source (Livebook) warns "has no readable
+  typespec" and keeps `{}` fields. A struct defined in the same module as its
+  tools is exempt. See
+  [`pitfalls.md`](pitfalls.md#a-struct-without-a-typespec-chunk-falls-back-to-its-source).
 - Field properties carry no description: a typespec has no per-field doc. Put the
   field meaning in the tool description, or flatten the shape into parameters
   with `@doc` bullets.
@@ -274,6 +277,7 @@ plain map.
 ```elixir
 ToolCall.emit(MyApp.Tools.Weather, :openai)
 ToolCall.emit(MyApp.Tools.Weather, :openai, strict: true)
+ToolCall.emit(MyApp.Tools.Weather, :openai, strict: :fine_tuned)
 ToolCall.emit(MyApp.Tools.Weather, :anthropic)
 ToolCall.emit(MyApp.Tools.Weather, :mcp)
 ToolCall.emit(MyApp.Tools.Weather, :gemini)
@@ -287,6 +291,11 @@ objects included), widens optional values to `["T", "null"]` and closes every
 object. For an optional argument or field whose type does not accept `nil`, an
 explicit `null` is treated as absent; if the type accepts `nil`, the value is
 passed through and can override a default.
+
+`strict: :fine_tuned` keeps that strict shape but also drops the keywords
+fine-tuned models reject: `pattern`, `format`, numeric `minimum`/`maximum` and
+array `minItems`/`maxItems`. It renders on demand instead of using the
+precompiled strict literal. Use it when the tool targets a fine-tuned model.
 
 `ToolCall.emit(module, :gemini)` returns one `{name, description, parameters}`
 declaration per tool (the `functionDeclarations` entry), rendered on demand.
@@ -510,12 +519,14 @@ mix tool_call.export --format anthropic           # Anthropic tool definitions
 mix tool_call.export --format mcp --out priv/tools.json
 mix tool_call.export --format gemini --out priv/gemini_tools.json
 mix tool_call.export --strict
+mix tool_call.export --fine-tuned
 mix tool_call.clean                               # remove orphaned typedoc companions
 ```
 
 `--format` is `openai` (default), `anthropic`, `mcp` or `gemini`; `--strict`
-renders the strict subset for OpenAI and MCP (ignored by the other two); `--app`
-discovers another application. Gemini output is a `tools` request value:
+renders the strict subset for OpenAI and MCP (ignored by the other two);
+`--fine-tuned` implies `--strict` and drops `pattern`, `format` and numeric/array
+bounds; `--app` discovers another application. Gemini output is a `tools` request value:
 `{"tools": [{"functionDeclarations": [...]}]}`. Without
 module arguments every module in the app that exports `__tools__/0` is included.
 The output indents two spaces, sorts object keys and modules, and keeps
@@ -647,10 +658,10 @@ end
   are dropped in strict mode, because `default` is rejected. For a
   non-nullable optional value, `null` means "use the default"; for a nullable
   value it is passed through as `nil`.
-- **Fine-tuned models accept less in strict mode.** Standard models accept
-  `pattern`, the `format` values and the numeric bounds the schema emits;
-  fine-tuned models reject those keywords and refuse the schema. Enumerate the
-  values, or leave the constraint out, when the tool targets a fine-tuned model.
+- **Fine-tuned models accept less in strict mode.** Plain `strict: true` keeps
+  `pattern`, the `format` values and numeric/array bounds; fine-tuned models
+  reject those keywords and refuse the schema. Use `strict: :fine_tuned`
+  (`--fine-tuned`) to drop them while keeping the strict shape.
 - **Tool names are function names; there is no namespace.** When you concatenate
   tools from several modules, keep the names unique and route back to the right
   module. OpenAI and Anthropic require `^[a-zA-Z0-9_-]{1,64}$`; Gemini accepts

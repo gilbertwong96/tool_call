@@ -715,6 +715,26 @@ defmodule ToolCall.StructTypesTest do
              hd(tool.params).type
   end
 
+  test "a runtime-compiled struct without a source warns and keeps {} fields" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule RuntimeStruct do
+        defstruct [:city]
+        @type t :: %__MODULE__{city: String.t()}
+      end
+
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(to :: RuntimeStruct.t()) :: map()
+        def go(to), do: to
+      end
+      """)
+
+    assert warnings =~ "no readable typespec"
+  end
+
   test "a nullable struct parameter keeps the null branch" do
     module =
       compile!("""

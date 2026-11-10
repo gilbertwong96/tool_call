@@ -5,7 +5,9 @@ defmodule ToolCall.Emit.OpenAI do
   Pass `strict: true` to get the shape required by `"strict": true`: the tool
   object carries `"strict": true`, every property is required, previously
   optional values are typed `["T", "null"]`, and every object is closed with
-  `additionalProperties: false`.
+  `additionalProperties: false`. `strict: :fine_tuned` keeps that shape and
+  drops `pattern`, `format`, numeric bounds and array bounds, which fine-tuned
+  models reject.
   """
 
   alias ToolCall.Emit.Schema

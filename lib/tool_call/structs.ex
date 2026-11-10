@@ -180,15 +180,15 @@ defmodule ToolCall.Structs do
     module |> Module.split() |> Enum.join("_") |> String.slice(0, 64)
   end
 
-  @type field_status :: :ok | :truncated | :parameterized_t | :non_literal_t
+  @type field_status :: :ok | :truncated | :parameterized_t | :non_literal_t | :no_typespec
 
   defp do_fields(module) do
     case fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
-      :error -> {:ok, any_fields(module), [], :ok, false}
+      :error -> from_source(module)
     end
   rescue
-    _exception -> {:ok, any_fields(module), [], :ok, false}
+    _exception -> {:ok, any_fields(module), [], :no_typespec, false}
   end
 
   defp from_entries(module, entries) do
@@ -201,11 +201,11 @@ defmodule ToolCall.Structs do
 
   defp type_fields(module, body) do
     {:"::", _, [{:t, _, []}, type_ast]} = Code.Typespec.type_to_quoted({:t, body, []})
+    from_type_ast(module, type_ast, definitions(module))
+  end
 
-    definitions =
-      module
-      |> definitions()
-      |> Map.put({:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
+  defp from_type_ast(module, type_ast, definitions) do
+    definitions = Map.put(definitions, {:t, 0}, {[], {:%, [], [module, {:%{}, [], []}]}})
 
     {expanded, truncated?, insts} = LocalTypes.expand(type_ast, definitions)
     {shape, nullable?} = split_nullable_struct(expanded)
@@ -247,6 +247,128 @@ defmodule ToolCall.Structs do
     if Enum.any?(entries, &match?({_kind, {:t, _body, [_ | _]}}, &1)),
       do: :parameterized_t,
       else: :ok
+  end
+
+  # A module compiled in memory (`Code.compile_string/1`, a Livebook cell) or
+  # without debug info has no typespec chunk. When its source file is still
+  # there, parse the module's `@type` declarations as a best-effort fallback:
+  # fully-qualified aliases, `__MODULE__` and local types resolve; shorthand
+  # aliases from `alias` directives degrade to `{}`.
+  defp from_source(module) do
+    with {:ok, path} <- source_path(module),
+         {:ok, source} <- File.read(path),
+         {:ok, ast} <- Code.string_to_quoted(source),
+         {:ok, body} <- find_module(ast, module) do
+      from_source_body(module, body)
+    else
+      _other -> {:ok, any_fields(module), [], :no_typespec, false}
+    end
+  rescue
+    _exception -> {:ok, any_fields(module), [], :no_typespec, false}
+  end
+
+  defp source_path(module) do
+    case module.module_info(:compile)[:source] do
+      source when is_list(source) ->
+        path = List.to_string(source)
+        if path != "nofile" and File.regular?(path), do: {:ok, path}, else: :error
+
+      _other ->
+        :error
+    end
+  rescue
+    _exception -> :error
+  end
+
+  defp find_module(ast, target, prefix \\ nil)
+
+  defp find_module({:defmodule, _meta, [name_ast, [do: body]]}, target, prefix) do
+    case module_name(name_ast, prefix) do
+      ^target -> {:ok, body}
+      nil -> :error
+      module -> find_in(body, target, module)
+    end
+  end
+
+  defp find_module({:__block__, _meta, statements}, target, prefix),
+    do: find_in(statements, target, prefix)
+
+  defp find_module(_ast, _target, _prefix), do: :error
+
+  defp find_in(statements, target, prefix) when is_list(statements) do
+    Enum.find_value(statements, :error, &find_module(&1, target, prefix))
+  end
+
+  defp find_in(_other, _target, _prefix), do: :error
+
+  defp module_name({:__aliases__, _meta, parts}, nil), do: Module.concat(parts)
+  defp module_name({:__aliases__, _meta, parts}, prefix), do: Module.concat([prefix | parts])
+  defp module_name(atom, _prefix) when is_atom(atom), do: atom
+  defp module_name(_other, _prefix), do: nil
+
+  defp from_source_body(module, body) do
+    entries = source_entries(body, module)
+    definitions = Map.new(entries, fn {key, {params, _kind, type}} -> {key, {params, type}} end)
+
+    case Enum.find(entries, &match?({{:t, 0}, _value}, &1)) do
+      {{:t, 0}, {_params, :opaque, _type}} -> :opaque
+      {{:t, 0}, {_params, _kind, type}} -> from_type_ast(module, type, definitions)
+      nil -> from_source_missing_t(module, entries)
+    end
+  end
+
+  defp from_source_missing_t(module, entries) do
+    if parameterized_t?(entries) do
+      {:ok, any_fields(module), [], :parameterized_t, false}
+    else
+      {:ok, any_fields(module), [], :ok, false}
+    end
+  end
+
+  defp parameterized_t?(entries) do
+    Enum.any?(entries, fn
+      {{:t, arity}, _value} -> arity > 0
+      _entry -> false
+    end)
+  end
+
+  defp source_entries(body, module) do
+    body
+    |> source_statements()
+    |> Enum.flat_map(&source_type_entry(&1, module))
+  end
+
+  defp source_statements({:__block__, _meta, statements}), do: statements
+  defp source_statements(other), do: [other]
+
+  defp source_type_entry(
+         {:@, _meta,
+          [{kind, _kind_meta, [{:"::", _op_meta, [{name, _name_meta, params}, type]}]}]},
+         module
+       )
+       when kind in [:type, :opaque] and is_atom(name) do
+    params = params || []
+    type = rewrite_source_type(type, module)
+    [{{name, length(params)}, {params, kind, type}}]
+  end
+
+  defp source_type_entry(_other, _module), do: []
+
+  defp rewrite_source_type(ast, module) do
+    ast
+    |> Macro.prewalk(fn
+      {:__MODULE__, _meta, _context} -> module
+      other -> other
+    end)
+    |> Macro.prewalk(fn
+      {:__aliases__, meta, parts} ->
+        if Enum.all?(parts, &is_atom/1),
+          do: Module.concat(parts),
+          else: {:__aliases__, meta, parts}
+
+      other ->
+        other
+    end)
   end
 
   defp definitions(module) do

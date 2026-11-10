@@ -199,7 +199,7 @@ defmodule ToolCall.GeminiEmitTest do
 
     assert ToolCall.emit(module, :gemini, strict: true) == ToolCall.emit(module, :gemini)
 
-    assert_raise ArgumentError, ~r/strict must be a boolean/, fn ->
+    assert_raise ArgumentError, ~r/strict must be/, fn ->
       ToolCall.emit(module, :gemini, strict: :yes)
     end
   end

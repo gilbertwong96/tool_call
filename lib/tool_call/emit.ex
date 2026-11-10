@@ -46,6 +46,10 @@ defmodule ToolCall.Emit do
   @doc false
   @spec lookup(map(), target(), keyword()) :: [map()] | map()
   def lookup(schemas, target, opts) do
+    if ToolCall.Emit.Schema.fine_tuned?(opts) and target == :openai do
+      raise ArgumentError, "fine-tuned strict schemas are rendered on demand"
+    end
+
     strict? = ToolCall.Emit.Schema.strict?(opts) and target == :openai
 
     case Map.fetch(schemas, {target, strict?}) do

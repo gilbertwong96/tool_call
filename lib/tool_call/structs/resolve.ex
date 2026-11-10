@@ -223,6 +223,14 @@ defmodule ToolCall.Structs.Resolve do
     )
   end
 
+  defp maybe_warn_struct_type(module, :no_typespec, state) do
+    add_warning(
+      state,
+      "#{inspect(module)} has no readable typespec (compiled without debug info or in " <>
+        "memory, and no source file is available); every field is treated as {}"
+    )
+  end
+
   defp maybe_warn_struct_type(module, :parameterized_t, state) do
     add_warning(
       state,

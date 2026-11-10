@@ -30,6 +30,13 @@
   Messages and Gemini function calls. `arguments` is decoded; invalid JSON is
   `{:invalid_stream_arguments, {id, name, json}}` and a call without a name is
   `{:missing_name, id}`. This completes the planned `0.3` items.
+- `strict: :fine_tuned` (and `mix tool_call.export --fine-tuned`) emits the OpenAI
+  strict shape without `pattern`, `format`, numeric bounds or array bounds,
+  which fine-tuned models reject. It renders on demand.
+- A struct compiled without a typespec chunk (in memory or with
+  `debug_info: false`) now falls back to parsing its source file for `@type t`;
+  a module with no source warns "has no readable typespec" instead of degrading
+  silently.
 
 - Recursive local types emit `$defs`/`$ref` instead of `{}`. Cyclicity is
   decided statically, so the parameter itself is a `$ref` and each type has one
