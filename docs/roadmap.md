@@ -23,6 +23,8 @@ and the runtime dispatcher.
 
 ## 0.3 — output and integrations
 
+All planned items are implemented and awaiting a release.
+
 - Result validation: done, as validation only. The `@spec` return type is in
   the IR and `run/4` validates the raw return value when opted in. Value → JSON
   encoding stays with the caller.
@@ -32,8 +34,9 @@ and the runtime dispatcher.
   `{name, description, parameters}` declarations, and
   `mix tool_call.export --format gemini` wraps them in a `tools` value. The
   schema is Gemini's OpenAPI subset, not JSON Schema.
-- Streaming helpers for aggregating `tool_calls` deltas. The current runtime
-  operates on complete tool calls.
+- Streaming helpers: done. `ToolCall.Stream.aggregate/2` (or `new/1` +
+  `feed/2` + `finish/1`) folds OpenAI Chat Completions, Anthropic Messages and
+  Gemini `functionCall` chunks into complete calls for `run/3`.
 
 ## 0.4 — runtime governance
 

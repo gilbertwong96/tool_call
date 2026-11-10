@@ -463,6 +463,43 @@ rejects a struct value. The result also shares the tool's 32-definition budget
 with the parameters: if they exhaust it, the result degrades to `:any` and
 validation accepts anything.
 
+### Streaming
+
+A streamed response delivers a tool call in pieces. `ToolCall.Stream` folds the
+chunks into complete calls, ready for `run/3`:
+
+```elixir
+{:ok, calls} = ToolCall.Stream.aggregate(chunks, :openai)
+#=> [%{id: "call_1", name: "get_weather", arguments: %{"city" => "Oslo"}}]
+
+for call <- calls do
+  ToolCall.run(MyApp.Tools.Weather, call.name, call.arguments)
+end
+```
+
+The accumulator form fits a chunk-by-chunk consumer:
+
+```elixir
+acc = ToolCall.Stream.new(:anthropic)
+acc = Enum.reduce(chunks, acc, &ToolCall.Stream.feed(&2, &1))
+{:ok, calls} = ToolCall.Stream.finish(acc)
+```
+
+- `:openai` — Chat Completions `delta.tool_calls` fragments, keyed by `index`.
+  Only the **first choice** is aggregated; stream with `n = 1` or split choices
+  yourself. The Responses API uses a different event shape and is not handled.
+- `:anthropic` — Messages `content_block_start` for a `tool_use` block plus
+  `input_json_delta` fragments; a block with no fragments uses its initial
+  `input` (`{}` for no arguments).
+- `:gemini` — `streamGenerateContent` parts with a complete `functionCall`.
+  Gemini has no call id, so `id` is `nil`.
+
+The concatenated JSON is decoded with the standard `JSON` module, so
+`arguments` is a map. Invalid JSON is
+`{:error, {:invalid_arguments, {id, name, json}}}`; a call that never receives a
+name is `{:error, {:missing_name, id}}`. Chunks that carry no tool-call data
+(text deltas, metadata) are ignored, and an empty stream is `{:ok, []}`.
+
 ## 5. Export the schemas
 
 ```sh

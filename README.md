@@ -56,6 +56,8 @@ compile time; there are no runtime dependencies.
   wrapping, and dispatch to the real function.
 - `ToolCall.tools/1` and `ToolCall.describe/2` — the IR and provider-neutral
   schema descriptions.
+- `ToolCall.Stream` — folds streaming tool-call deltas (OpenAI, Anthropic,
+  Gemini) into complete calls for `run/3`.
 - `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
 - `mix tool_call.export` — JSON for OpenAI, Anthropic, MCP or Gemini.
 - `mix tool_call.clean` — removes orphaned typedoc companion beams.
