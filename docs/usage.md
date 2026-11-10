@@ -257,6 +257,11 @@ end
 - `Mod.t(integer())` is resolved as the struct too, but type arguments are not
   substituted: fields come from `t/0`, and a parameterized-only `@type t/N`
   gives every field `{}` with a warning.
+- A struct compiled at runtime (`Code.compile_string/1`, a Livebook cell) or
+  with `@compile {:debug_info, false}` has no typespec chunk, so every field is
+  `{}`. A struct defined in the same module as its tools is exempt. Compile
+  through Mix when field types matter; see
+  [`pitfalls.md`](pitfalls.md#a-runtime-compiled-struct-has-no-readable-type-t).
 - Field properties carry no description: a typespec has no per-field doc. Put the
   field meaning in the tool description, or flatten the shape into parameters
   with `@doc` bullets.
@@ -437,7 +442,9 @@ A `no_return()` result is never validated. A result type that renders `{}` —
 `term()`, an unknown remote type, `fun()`/`pid()`, an `@opaque` struct, or a
 budget-truncated type — accepts any value; the compile warns, because
 `validate_result: true` cannot check it. A provider `validator` on the node
-suppresses the warning and is used instead. An improper list or an exotic map key
+suppresses the warning and is used instead. The warning covers a top-level `{}`
+only; a `{}` nested inside an object, array or union is accepted silently and
+only that part goes unchecked. An improper list or an exotic map key
 (a tuple, a map) is `{:invalid_result, ...}`, not a raise. A struct result is
 checked field by field against its `@type t`, so a field whose `defstruct`
 default is nil must be declared `T | nil`. A fixed-shape map type is closed and

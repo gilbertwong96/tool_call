@@ -431,7 +431,10 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
   its wire form. It receives the resolved node and the tool's `$defs`, so it can
   validate element types (`MapSet`, `Keyword`) through `Validate.valid?/3`.
 - A node with a `transform` and no `validator` describes a domain the library
-  cannot see, so it is accepted.
+  cannot see, so it is accepted. The compile warns about a top-level
+  `:any`/`:unsupported` result without a validator, an `@opaque` or unresolved
+  struct, and a budget-truncated type; a `{}` nested inside an object, array or
+  union is not reported and only that part goes unchecked.
 - A non-productive `$ref` chain raises after 64 same-level hops, mirroring
   `Coerce`; a productive cycle (a ref under an object/array/tuple) resets and
   terminates on the value.
@@ -480,6 +483,12 @@ parameters object the other targets embed. A Gemini emitter is planned.
 
 The last row matters for large integers: when the provider parses, you inherit
 its numeric precision. It is the reason `wire: :string_integer` exists.
+
+OpenAI accepts `pattern`, the nine `format` values (`date-time`, `time`,
+`date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uuid`) and the numeric
+bounds in strict mode **for standard models**. Fine-tuned models reject those
+keywords and refuse the schema, so a strict schema for a fine-tuned model must
+enumerate values and drop the constraints.
 
 ## Decisions
 
