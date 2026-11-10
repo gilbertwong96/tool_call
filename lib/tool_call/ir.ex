@@ -35,8 +35,10 @@ defmodule ToolCall.IR do
     set them explicitly. `pattern` is the JSON Schema regex string and
     `pattern_regex` is its compiled form, required by coercion. Use
     `ToolCall.Typespec.validate_type!/1` to build a validated copy of a
-    hand-written type. `source` is provenance except for `:charlist`, which
-    still drives charlist conversion and its schema default.
+    hand-written type. `source` is an atom for the string sub-kinds
+    (`:charlist`, `:char`, `:binary`, `:bitstring`, `:nonempty_binary`,
+    `:nonempty_string`), which dispatch and result validation read; any other
+    source is compile-time provenance and is dropped from the embedded IR.
 
     `kind: :ref` names an entry in the tool's `defs` map; emitters render it as
     `{"$ref": "#/$defs/<name>"}` and never resolve it.

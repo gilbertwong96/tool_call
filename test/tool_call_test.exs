@@ -47,12 +47,13 @@ defmodule ToolCallTest do
                ["get_weather", "add", "big_id", "set_temp", "paint", "boom"]
     end
 
-    test "embeds type provenance but drops spec provenance" do
+    test "drops spec and type AST provenance but keeps atom sources" do
       tool = Weather.__tool__("get_weather")
 
       assert tool.source == nil
       assert Enum.all?(tool.params, &(&1.source == nil))
-      assert Enum.any?(tool.params, &(&1.type.source != nil))
+      assert Enum.all?(tool.params, &(&1.type.source == nil))
+      assert Weather.__tool__("paint").result.source == :ok
     end
 
     test "treats strict: nil as non-strict" do

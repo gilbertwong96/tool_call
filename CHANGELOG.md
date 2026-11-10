@@ -50,6 +50,12 @@
   `fun()`/`pid()`, an `@opaque` struct, or a budget-truncated type — now warns
   that `run/4` with `validate_result: true` accepts any value; the budget
   warning names the same consequence.
+- The embedded IR drops AST `Type.source` values from parameters, the result and
+  `$defs`, while keeping the string sub-kind atoms that dispatch and result
+  validation read; this shrinks the beam.
+- A provider `validator` that is not exported with arity 3 now raises with the
+  provider and the remote type in the message, like the other provider IR
+  errors.
 - `Mod.t(integer())` now resolves as a struct (the type arguments are not
   substituted), so a parameter keeps a callable tool and a result is validated
   as a struct; previously it degraded to `{}` and hid the tool.

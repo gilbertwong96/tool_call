@@ -33,8 +33,9 @@ defmodule ToolCall.TypeProvider do
   map, and returns a boolean. Result validation (`ToolCall.run/4` with
   `validate_result: true`) uses it instead of the wire kind. Resolve element
   types through `ToolCall.Validate.valid?/3`; the built-ins do this for
-  `MapSet` and `Keyword`. A provider type with no `validate/3` and no explicit
-  `%ToolCall.IR.Type{validator: ...}` is accepted unchecked.
+  `MapSet` and `Keyword`. A provider node with a `transform` and no `validate/3`
+  (and no explicit `%ToolCall.IR.Type{validator: ...}`) is accepted unchecked; a
+  node with neither is still checked by its kind.
   """
 
   @callback resolve(module(), atom(), [ToolCall.IR.Type.t()]) ::

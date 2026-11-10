@@ -236,8 +236,8 @@ defmodule ToolCall.Typespec do
       else: type
   end
 
-  # An explicit validator always wins over the shorthand, mirroring how a
-  # provider can set a per-type transform.
+  # An explicit validator wins over the `validate/3` shorthand; unlike the
+  # `coerce/1` shorthand, which replaces a transform returned by the provider.
   defp maybe_provider_validate(%Type{validator: nil} = type, provider) do
     if function_exported?(provider, :validate, 3),
       do: %{type | validator: {provider, :validate}},
@@ -360,17 +360,22 @@ defmodule ToolCall.Typespec do
 
   defp validate_validator!(
          %Type{validator: {module, function}},
-         _provider,
-         _remote,
-         _fun,
-         _args
+         provider,
+         remote,
+         fun,
+         args
        )
        when is_atom(module) and is_atom(function) do
     if Code.ensure_loaded?(module) and function_exported?(module, function, 3) do
       :ok
     else
-      raise ArgumentError,
-            "invalid ToolCall IR: validator #{inspect(module)}.#{function}/3 is not defined"
+      provider_type_error!(
+        provider,
+        remote,
+        fun,
+        args,
+        "validator #{inspect(module)}.#{function}/3 is not defined"
+      )
     end
   end
 
@@ -809,7 +814,8 @@ defmodule ToolCall.Typespec do
 
   Parameter types are validated through `validate_type!/1`, so hand-built
   patterns receive a compiled `pattern_regex`; tool and parameter metadata are
-  checked as well.
+  checked as well. Provider `validator` references must be exported with arity 3,
+  so a missing `validate/3` fails here rather than during result validation.
   """
   @spec validate_tool!(Tool.t()) :: Tool.t()
   def validate_tool!(%Tool{name: name, description: description, params: params} = tool)

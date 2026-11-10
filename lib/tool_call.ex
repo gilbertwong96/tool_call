@@ -42,7 +42,7 @@ defmodule ToolCall do
   end
 
   alias ToolCall.{Emit, Generated, Typedoc}
-  alias ToolCall.IR.Tool
+  alias ToolCall.IR.{Tool, Type}
 
   @doc false
   defmacro __using__(opts) do
@@ -297,9 +297,9 @@ defmodule ToolCall do
   @doc """
   Returns the tools derived from a module.
 
-  The embedded IR keeps `Type.source`, which charlist handling needs at
-  runtime, and drops the spec and parameter ASTs, which are compile-time
-  provenance only.
+  The embedded IR keeps the atom `Type.source` values (string sub-kinds drive
+  dispatch and result validation) and drops AST sources, the spec and the
+  parameter ASTs, which are compile-time provenance only.
   """
   @spec tools(module()) :: [Tool.t()]
   def tools(module) do
@@ -420,11 +420,42 @@ defmodule ToolCall do
     end
   end
 
-  # `Type.source` is runtime data for charlist handling; the spec and parameter
-  # ASTs are compile-time provenance only.
+  # `Type.source` is runtime data for the string sub-kinds (`:charlist`,
+  # `:char`, `:binary`, `:bitstring` and the nonempty variants); every AST or
+  # tuple source is compile-time provenance. Drop those from the parameters, the
+  # return type and `$defs`, which nothing reads at runtime.
   defp drop_provenance(%Tool{} = tool) do
-    %{tool | source: nil, params: Enum.map(tool.params, &%{&1 | source: nil})}
+    %{
+      tool
+      | source: nil,
+        params:
+          Enum.map(tool.params, fn param ->
+            %{param | source: nil, type: drop_type_source(param.type)}
+          end),
+        defs: Map.new(tool.defs || %{}, fn {name, type} -> {name, drop_type_source(type)} end),
+        result: drop_type_source(tool.result)
+    }
   end
+
+  defp drop_type_source(nil), do: nil
+  defp drop_type_source(types) when is_list(types), do: Enum.map(types, &drop_type_source/1)
+
+  defp drop_type_source(%Type{} = type) do
+    %{
+      type
+      | source: if(is_atom(type.source), do: type.source, else: nil),
+        items: drop_type_source(type.items),
+        fields: drop_fields(type.fields),
+        additional: drop_type_source(type.additional),
+        variants: drop_variants(type.variants)
+    }
+  end
+
+  defp drop_fields(nil), do: nil
+  defp drop_fields(fields), do: Enum.map(fields, &%{&1 | type: drop_type_source(&1.type)})
+
+  defp drop_variants(nil), do: nil
+  defp drop_variants(variants), do: Enum.map(variants, &drop_type_source/1)
 
   defp ensure_tool_module!(module, function \\ :__tools__) do
     loaded? = is_atom(module) and loaded_module?(module)
