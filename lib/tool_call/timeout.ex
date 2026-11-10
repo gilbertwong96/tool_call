@@ -11,7 +11,9 @@ defmodule ToolCall.Timeout do
 
   A module implementing `timeout/3` can be passed to
   `use ToolCall, timeout: MyPolicy`; `ToolCall.run/4` with `timeout: ms` wins
-  over the policy.
+  over the policy. `timeout/3` receives the tool IR, the validated and coerced
+  argument map and the caller's context; it runs after argument validation, so
+  a policy may rely on the declared argument types.
   """
 
   alias ToolCall.IR.Tool
@@ -25,35 +27,59 @@ defmodule ToolCall.Timeout do
 
     * `:task_supervisor` - a `Task.Supervisor` name. Without it the task is
       linked to the caller; with it the task is started under the supervisor.
+      An unreachable supervisor answers `{:error, {:task_supervisor, reason}}`
+      instead of exiting the caller.
   """
   @spec run((-> term()), timeout(), keyword()) :: term()
-  def run(fun, :infinity, _opts), do: fun.()
-
-  def run(fun, timeout, opts) when is_integer(timeout) and timeout >= 0 do
-    task = start_task(fun, opts)
-
-    case Task.yield(task, timeout) do
+  def run(fun, timeout, opts) do
+    case run_tagged(fun, timeout, opts) do
       {:ok, result} -> result
-      {:exit, reason} -> {:error, {:exited, reason}}
-      nil -> shutdown_task(Task.shutdown(task, :brutal_kill), timeout)
+      {:timeout, timeout} -> {:error, {:timeout, timeout}}
+      {:error, _reason} = error -> error
     end
   end
 
-  def run(_fun, timeout, _opts) do
+  @doc false
+  @spec run_tagged((-> term()), timeout(), keyword()) ::
+          {:ok, term()} | {:timeout, non_neg_integer()} | {:error, term()}
+  def run_tagged(fun, :infinity, _opts), do: {:ok, fun.()}
+
+  def run_tagged(fun, timeout, opts) when is_integer(timeout) and timeout >= 0 do
+    case start_task(fun, opts) do
+      {:ok, task} ->
+        case Task.yield(task, timeout) do
+          {:ok, result} -> {:ok, result}
+          {:exit, reason} -> {:error, {:exited, reason}}
+          nil -> shutdown_task(Task.shutdown(task, :brutal_kill), timeout)
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  def run_tagged(_fun, timeout, _opts) do
     raise ArgumentError,
           "timeout must be :infinity or a non-negative integer, got: #{inspect(timeout)}"
   end
 
   defp start_task(fun, opts) do
     case Keyword.get(opts, :task_supervisor) do
-      nil -> Task.async(fun)
-      supervisor -> Task.Supervisor.async_nolink(supervisor, fun)
+      nil ->
+        {:ok, Task.async(fun)}
+
+      supervisor ->
+        try do
+          {:ok, Task.Supervisor.async_nolink(supervisor, fun)}
+        catch
+          :exit, reason -> {:error, {:task_supervisor, reason}}
+        end
     end
   end
 
-  defp shutdown_task({:ok, result}, _timeout), do: result
+  defp shutdown_task({:ok, result}, _timeout), do: {:ok, result}
   defp shutdown_task({:exit, reason}, _timeout), do: {:error, {:exited, reason}}
-  defp shutdown_task(nil, timeout), do: {:error, {:timeout, timeout}}
+  defp shutdown_task(nil, timeout), do: {:timeout, timeout}
 
   @doc false
   @spec validate!(term()) :: timeout()

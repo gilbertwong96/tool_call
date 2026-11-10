@@ -59,6 +59,60 @@ defmodule ToolCall.TimeoutTest do
     assert {:ok, :ok} = ToolCall.run(module, :sleep, %{"ms" => 20}, timeout: :infinity)
   end
 
+  test "resolve/4 applies the module timeout constant" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, timeout: 10
+
+        @doc "Sleep."
+        @spec sleep(ms :: integer()) :: :ok
+        def sleep(ms) do
+          Process.sleep(ms)
+          :ok
+        end
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert {:ok, %Call{timeout: 10} = call} =
+             ToolCall.Runner.resolve(module, tool, %{"ms" => 100})
+
+    assert {:error, {:timeout, 10}} = ToolCall.Runner.execute(call)
+  end
+
+  test "resolve/4 applies the module timeout policy" do
+    module =
+      compile!("""
+      defmodule ResolveTimeoutPolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(%ToolCall.IR.Tool{name: "slow"}, _args, _context), do: 10
+        def timeout(_tool, _args, _context), do: 1_000
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: ResolveTimeoutPolicy
+
+        @doc "Slow."
+        @spec slow(ms :: integer()) :: :ok
+        def slow(ms) do
+          Process.sleep(ms)
+          :ok
+        end
+      end
+      """)
+
+    [tool] = ToolCall.tools(module)
+
+    assert {:ok, %Call{timeout: 10} = call} =
+             ToolCall.Runner.resolve(module, tool, %{"ms" => 100})
+
+    assert {:error, {:timeout, 10}} = ToolCall.Runner.execute(call)
+  end
+
   test "a timeout policy applies per tool" do
     module =
       compile!("""
@@ -131,6 +185,27 @@ defmodule ToolCall.TimeoutTest do
              )
   end
 
+  test "the module timeout uses the given task supervisor" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, timeout: 10
+
+        @doc "Sleep."
+        @spec sleep(ms :: integer()) :: :ok
+        def sleep(ms) do
+          Process.sleep(ms)
+          :ok
+        end
+      end
+      """)
+
+    assert {:error, {:task_supervisor, _reason}} =
+             ToolCall.run(module, :sleep, %{"ms" => 1},
+               task_supervisor: :missing_timeout_supervisor
+             )
+  end
+
   test "an invalid timeout raises" do
     module = sleep_module()
 
@@ -167,6 +242,42 @@ defmodule ToolCall.TimeoutTest do
 
     assert {:error, {:timeout, 10}} =
              ToolCall.run(module, :sleep, %{"ms" => 100}, context: %{fast: true})
+  end
+
+  test "the timeout policy runs after validation and sees coerced values" do
+    Process.register(self(), :timeout_policy_probe)
+
+    module =
+      compile!("""
+      defmodule ProbePolicy do
+        @behaviour ToolCall.Timeout
+
+        @impl true
+        def timeout(_tool, args, _context) do
+          if pid = Process.whereis(:timeout_policy_probe), do: send(pid, {:policy_args, args})
+          args["ms"] + 1_000
+        end
+      end
+
+      defmodule FIXTURE do
+        use ToolCall, timeout: ProbePolicy
+
+        @doc "Sleep."
+        @spec sleep(ms :: integer()) :: :ok
+        def sleep(ms) do
+          Process.sleep(ms)
+          :ok
+        end
+      end
+      """)
+
+    assert {:error, {:invalid_argument, {"ms", {:expected_integer, "oops"}}}} =
+             ToolCall.run(module, :sleep, %{"ms" => "oops"})
+
+    refute_receive {:policy_args, _args}, 50
+
+    assert {:ok, :ok} = ToolCall.run(module, :sleep, %{"ms" => 1})
+    assert_receive {:policy_args, %{"ms" => 1}}
   end
 
   test "resolve/4 validates a hand-built tool" do

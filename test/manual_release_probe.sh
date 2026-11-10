@@ -62,6 +62,7 @@ output="$(
     description = get_in(schema, [Access.at(0), "function", "parameters", "properties", "to", "description"])
     IO.inspect(description, label: "description")
     IO.inspect(ToolCall.run(TypedocProbe, :send, %{"to" => "Oslo"}), label: "run")
+    IO.inspect(ToolCall.Audit.entry(TypedocProbe, "send", %{"to" => "Oslo"}, nil, :ok).outcome, label: "audit")
     IO.inspect(Code.fetch_docs(TypedocProbe), label: "docs")
     IO.inspect(Code.Typespec.fetch_specs(TypedocProbe), label: "specs")
   '
@@ -71,5 +72,6 @@ printf '%s\n' "$output"
 
 grep -qx 'description: "Postal address"' <<<"$output"
 grep -qx 'run: {:ok, :ok}' <<<"$output"
+grep -qx 'audit: :ok' <<<"$output"
 grep -qx 'docs: {:error, :chunk_not_found}' <<<"$output"
 grep -qx 'specs: :error' <<<"$output"

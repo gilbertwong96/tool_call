@@ -25,6 +25,10 @@ defmodule ToolCall.ReleaseSmokeTest do
   end
   """
 
+  test "the application declares :crypto for audit and approval ids" do
+    assert :crypto in Application.spec(:tool_call, :applications)
+  end
+
   test "stripped release-style beams keep typedoc descriptions and dispatch" do
     module = unique_module("Release")
     path = write_source(module, @source)

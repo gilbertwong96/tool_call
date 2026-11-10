@@ -525,9 +525,10 @@ ToolCall.run(request.module, request.tool, request.args,
   call; use the stored ones. The agent runtime or application owns the pending
   state.
 
-`ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve` is
-pure and stores the policy, `execute` checks it, so a future runtime can
-resolve, gate and then execute.
+`ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve`
+stores the policy and the context, `execute` checks it, so a future runtime can
+resolve, gate and then execute. Pass `context:` to `resolve` (it is stored on
+the call) or override it on `execute`.
 
 ### Audit
 
@@ -559,8 +560,11 @@ receives one entry per dispatch attempt:
 ```
 
 - `outcome` is `:ok`, `:error`, `:raised`, `:pending`, `:denied`, `:timeout`,
-  `:invalid_arguments` or `:unknown_tool`; resolve failures and unknown tools
-  are recorded too.
+  `:invalid_arguments` or `:unknown_tool`; resolve failures, non-map arguments
+  and unknown tools are recorded too.
+- The outcome comes from the dispatch path, not from the error tuple: a tool
+  returning `{:error, {:timeout, ...}}` or `{:error, {:approval_denied, ...}}`
+  is recorded as `:error`, not as a dispatch timeout or denial.
 - `duration_us` covers the execution path; the result value is never recorded.
 - The hook is synchronous. This is a hook, not a store: persistence, redaction,
   retention and a fail-closed policy are the application's. The library ignores
@@ -571,8 +575,9 @@ receives one entry per dispatch attempt:
 
 ### Timeouts
 
-`run/4` accepts a per-call timeout; without one the call runs in the caller
-with no task boundary:
+`run/4` accepts a per-call timeout; without an effective timeout (from the
+call, the module default or a policy) the function runs in the caller with no
+task boundary:
 
 ```elixir
 ToolCall.run(MyApp.Tools, :slow_query, args, timeout: 5_000)
@@ -580,8 +585,9 @@ ToolCall.run(MyApp.Tools, :slow_query, args, timeout: 5_000)
 ```
 
 `ToolCall.Runner.resolve/4` and `execute/2` expose the same boundary: `resolve`
-is pure (checks, coercion, positional arguments), and `execute` invokes the
-function, with an optional timeout:
+performs checks, coercion and positional construction, evaluates a configured
+timeout default or policy, and stores the result on the call; `execute` invokes
+the function, with an optional timeout:
 
 ```elixir
 {:ok, call} = ToolCall.Runner.resolve(MyApp.Tools, tool, args)
@@ -605,10 +611,16 @@ use ToolCall, timeout: MyTimeouts
 ```
 
 - `timeout: :infinity` disables the module policy for one call.
-- `context: term` is passed to the timeout policy's `timeout/3` callback; use it
-  for per-request budgets or user/tenant data.
+- `context: term` is passed to the timeout, approval and audit policies; use it
+  for per-request budgets or user/tenant data. `resolve` stores it for
+  `execute` unless `execute` overrides it.
+- The timeout policy runs after argument validation and receives the coerced
+  argument map, not the raw wire values; an invalid call returns before the
+  policy runs.
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
-  `Task.Supervisor` instead of a task linked to the caller.
+  `Task.Supervisor` instead of a task linked to the caller, including a timeout
+  supplied by the module. An unreachable supervisor answers
+  `{:error, {:task_supervisor, reason}}`.
 - The timeout wraps the function invocation and its result validation; argument
   validation and coercion happen before the task starts. A resolve error is
   returned without starting a task.
@@ -649,10 +661,12 @@ acc = Enum.reduce(chunks, acc, &ToolCall.Stream.feed(&2, &1))
   complete `functionCall`. Gemini has no call id, so `id` is `nil`.
 
 The concatenated JSON is decoded with the standard `JSON` module, so
-`arguments` is a map. Invalid JSON is
-`{:error, {:invalid_stream_arguments, {id, name, json}}}`; a call that never receives a
-name is `{:error, {:missing_name, id}}`. Chunks that carry no tool-call data
-(text deltas, metadata) are ignored, and an empty stream is `{:ok, []}`.
+`arguments` is a map. Invalid JSON, or an Anthropic `input` that is not a map
+when there are no fragments, is
+`{:error, {:invalid_stream_arguments, {id, name, payload}}}`; a call that never
+receives a name is `{:error, {:missing_name, id}}`. Chunks that carry no
+tool-call data (text deltas, metadata) are ignored, and an empty stream is
+`{:ok, []}`.
 
 ## 5. Export the schemas
 

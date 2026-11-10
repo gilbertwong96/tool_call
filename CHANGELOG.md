@@ -123,6 +123,28 @@
   value as a scalar. `MapSet` and `Regex` have built-in providers, and
   `@opaque` types are unchanged.
 
+### Fixed
+
+- `ToolCall.Runner.resolve/4` now applies the module's `use ToolCall, timeout:`
+  constant or policy. The timeout policy runs after argument validation and
+  receives the coerced argument map instead of the raw wire values.
+- `run/4` honors `:task_supervisor` when the timeout comes from the module
+  default; an unreachable supervisor answers `{:error, {:task_supervisor,
+  reason}}` instead of exiting the caller.
+- `ToolCall.Call` stores the `:context` given to `resolve/4`, so `execute/2`
+  passes it to the approval and audit hooks (an `execute/2` context still
+  overrides it).
+- Audit outcomes now come from the dispatch path, not from the final error
+  tuple: a tool returning `{:error, {:timeout, ...}}` or
+  `{:error, {:approval_denied, ...}}` is recorded as `:error`. Non-map
+  arguments are audited as `:invalid_arguments`, and `audit: nil` no longer
+  constructs an entry.
+- `:crypto` is declared in `extra_applications`; audit and approval ids work in
+  a release that contains only this library.
+- An Anthropic stream whose initial `input` is not a map, and has no
+  `input_json_delta` fragments, is now `:invalid_stream_arguments` instead of
+  silently becoming `{}`.
+
 ## 0.1.0 - 2026-11-09
 
 ### Added

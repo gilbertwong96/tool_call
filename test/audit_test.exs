@@ -59,6 +59,14 @@ defmodule ToolCall.AuditTest do
       @doc "Boom."
       @spec boom(x :: integer()) :: integer()
       def boom(_x), do: raise("boom")
+
+      @doc "Own timeout."
+      @spec own_timeout(ms :: integer()) :: {:error, {:timeout, integer()}}
+      def own_timeout(ms), do: {:error, {:timeout, ms}}
+
+      @doc "Own denial."
+      @spec own_denial(x :: integer()) :: {:error, {:approval_denied, String.t()}}
+      def own_denial(_x), do: {:error, {:approval_denied, "tool says no"}}
     end
     """)
   end
@@ -127,6 +135,30 @@ defmodule ToolCall.AuditTest do
     assert_receive {:audit, %Entry{outcome: :invalid_arguments, error: {:missing_argument, "x"}}}
   end
 
+  test "records non-map arguments" do
+    module = basic_module()
+
+    assert {:error, {:invalid_arguments, "nope"}} = ToolCall.run(module, :ok, "nope")
+
+    assert_receive {:audit,
+                    %Entry{
+                      outcome: :invalid_arguments,
+                      error: {:invalid_arguments, "nope"},
+                      tool: "ok",
+                      duration_us: 0
+                    }}
+  end
+
+  test "records non-map arguments with an explicit audit policy" do
+    module = plain_module()
+
+    assert {:error, {:invalid_arguments, "nope"}} =
+             ToolCall.run(module, :ok, "nope", audit: ToolCall.AuditTest.Recorder)
+
+    assert_receive {:audit,
+                    %Entry{outcome: :invalid_arguments, error: {:invalid_arguments, "nope"}}}
+  end
+
   test "records an unknown tool" do
     module = basic_module()
 
@@ -149,6 +181,23 @@ defmodule ToolCall.AuditTest do
     assert {:error, {:timeout, 10}} = ToolCall.run(module, :sleep, %{"ms" => 100})
 
     assert_receive {:audit, %Entry{outcome: :timeout, timeout: 10}}
+  end
+
+  test "a tool's own timeout-shaped error is an error, not a dispatch timeout" do
+    module = basic_module()
+
+    assert {:error, {:timeout, 10}} = ToolCall.run(module, :own_timeout, %{"ms" => 10})
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:timeout, 10}, timeout: nil}}
+  end
+
+  test "a tool's own denial-shaped error is an error, not an approval denial" do
+    module = basic_module()
+
+    assert {:error, {:approval_denied, "tool says no"}} =
+             ToolCall.run(module, :own_denial, %{"x" => 1})
+
+    assert_receive {:audit, %Entry{outcome: :error, error: {:approval_denied, "tool says no"}}}
   end
 
   test "records pending and denied approvals" do
@@ -211,5 +260,16 @@ defmodule ToolCall.AuditTest do
     assert {:ok, 1} = ToolCall.Runner.execute(call)
 
     assert_receive {:audit, %Entry{outcome: :ok, tool: "ok"}}
+  end
+
+  test "execute uses the context stored by resolve" do
+    module = basic_module()
+    tool = Enum.find(ToolCall.tools(module), &(&1.name == "ok"))
+
+    assert {:ok, call} =
+             ToolCall.Runner.resolve(module, tool, %{"x" => 1}, context: %{user_id: 7})
+
+    assert {:ok, 1} = ToolCall.Runner.execute(call)
+    assert_receive {:audit, %Entry{outcome: :ok, context: %{user_id: 7}}}
   end
 end

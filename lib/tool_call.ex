@@ -478,8 +478,11 @@ defmodule ToolCall do
       defaults to the module's `use ToolCall, timeout: ...` policy. A timeout
       answers `{:error, {:timeout, ms}}` and runs the function in a task.
     * `:task_supervisor` - a `Task.Supervisor` name or pid for a timed
-      invocation. Without it the task is linked to the caller.
-    * `:context` - passed to a `ToolCall.Timeout` policy's `timeout/3` callback.
+      invocation, including one supplied by the module timeout. Without it the
+      task is linked to the caller. An unreachable supervisor answers
+      `{:error, {:task_supervisor, reason}}`.
+    * `:context` - passed to the timeout, approval and audit policies. It is
+      also stored on the call by `Runner.resolve/4` for `execute/2`.
     * `:approval` - `:granted`, `:denied`, or a `ToolCall.Approval` policy module;
       `nil` disables the module policy for one call. A policy may answer
       `{:required, reason}`, which returns
@@ -489,7 +492,7 @@ defmodule ToolCall do
       dispatch attempt.
   """
   @spec run(module(), atom() | String.t(), term(), keyword()) ::
-          {:ok, term()} | {:error, term()}
+          {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}
   def run(module, name, args, opts \\ [])
 
   def run(module, name, args, opts) do
@@ -497,7 +500,6 @@ defmodule ToolCall do
     ensure_tool_module!(module, :__run__)
 
     if runner_path?(opts) do
-      opts = inject_timeout_policy(module, opts)
       ToolCall.Runner.run(module, module.__tools__(), name, args, opts)
     else
       module.__run__(name, args)
@@ -506,21 +508,8 @@ defmodule ToolCall do
 
   defp runner_path?(opts) do
     Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout) or
-      Keyword.has_key?(opts, :approval) or Keyword.has_key?(opts, :audit) or
-      Keyword.has_key?(opts, :context)
-  end
-
-  defp inject_timeout_policy(module, opts) do
-    if Keyword.has_key?(opts, :timeout) do
-      opts
-    else
-      case module.__timeout_policy__() do
-        nil -> opts
-        :infinity -> opts
-        timeout when is_integer(timeout) -> Keyword.put(opts, :timeout, timeout)
-        policy -> Keyword.put(opts, :timeout_policy, policy)
-      end
-    end
+      Keyword.has_key?(opts, :task_supervisor) or Keyword.has_key?(opts, :approval) or
+      Keyword.has_key?(opts, :audit) or Keyword.has_key?(opts, :context)
   end
 
   defp validate_run_options!(opts) do

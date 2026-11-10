@@ -133,6 +133,26 @@ defmodule ToolCall.ApprovalTest do
              ToolCall.Runner.execute(call, context: %{deny: true})
   end
 
+  test "resolve stores the context for the approval check in execute" do
+    module = module_with_policy()
+    [tool] = ToolCall.tools(module) |> Enum.filter(&(&1.name == "danger"))
+
+    assert {:ok, call} =
+             ToolCall.Runner.resolve(module, tool, %{"x" => 1}, context: %{deny: true})
+
+    assert {:error, {:approval_denied, "denied"}} = ToolCall.Runner.execute(call)
+  end
+
+  test "execute/2 still overrides the stored context" do
+    module = module_with_policy()
+    [tool] = ToolCall.tools(module) |> Enum.filter(&(&1.name == "danger"))
+
+    assert {:ok, call} =
+             ToolCall.Runner.resolve(module, tool, %{"x" => 1}, context: %{ask: true})
+
+    assert {:ok, 1} = ToolCall.Runner.execute(call, context: %{})
+  end
+
   test "an invalid approval policy raises" do
     module = module_with_policy()
 

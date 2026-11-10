@@ -485,10 +485,11 @@ name is refused. Chunks for other event types are ignored.
 
 `ToolCall.Approval` is a policy hook at the execution boundary.
 `use ToolCall, approval: Policy` embeds the policy and disables the fast path
-for the module; `run/4 approval:` overrides it. `resolve/4` stores the policy;
-`execute/2` calls `check/3` with the tool IR, the raw args and the context
-before the timeout and invocation. `{:required, reason}` returns a serializable
-`Request`; the application persists it and resumes with the stored args and
+for the module; `run/4 approval:` overrides it. `resolve/4` stores the policy
+and the caller's context; `execute/2` calls `check/3` with the tool IR, the raw
+args and the context (from the call unless `execute` overrides it) before the
+timeout and invocation. `{:required, reason}` returns a serializable `Request`;
+the application persists it and resumes with the stored args and
 `approval: :granted`. No persistence, expiry, retry or double-execution
 protection lives here; the agent runtime owns that workflow.
 
@@ -496,27 +497,30 @@ protection lives here; the agent runtime owns that workflow.
 
 `ToolCall.Audit` is a hook at the dispatch boundary. `use ToolCall, audit: Policy`
 embeds the policy and disables the fast path; `run/4 audit:` overrides it.
-`execute/2` records one entry per dispatch (ok/error/raised/pending/denied/
-timeout) and `run_prepared` records invalid arguments and unknown tools.
-`Runner.resolve/4` stays pure and stores the policy on the call. The hook is
-synchronous and fail-open: an exception from `record/1` is ignored. Persistence,
-redaction, retention and fail-closed behavior belong to the application; the
-result value is never recorded.
+`execute/2` records one entry per dispatch from the execution path
+(ok/error/raised/pending/denied/timeout), and `run_prepared` records invalid
+arguments and unknown tools, including a non-map `args`. A tool's own
+`{:error, {:timeout, ...}}` or `{:error, {:approval_denied, ...}}` is an
+`:error`, not a dispatch outcome.
+`Runner.resolve/4` stores the policy and context without calling the hook. The
+hook is synchronous and fail-open: an exception from `record/1` is ignored.
+Persistence, redaction, retention and fail-closed behavior belong to the
+application; the result value is never recorded.
 
 ## Timeouts
 
 `Runner.resolve/4` performs the key checks, coercion and positional
-construction without side effects; `execute/2` invokes the function (and
-validates the result). A timeout wraps the invocation and its result validation
-in a task after argument validation, so an invalid call fails before a timer is
-involved.
-`run/4 timeout:` overrides the module default; `use ToolCall, timeout: ...`
-embeds a constant or a `ToolCall.Timeout` policy in the generated runner and
-disables the fast path for that module. The task is killed with `:brutal_kill`;
-process-local state, ETS ownership, Ecto sandbox ownership and NIFs are not
-carried over, so cooperative timeouts inside the tool remain the better choice
-for DB/HTTP work. The timeout is per invocation; the overall run deadline
-belongs to the caller or agent framework.
+construction and does not invoke the function; `execute/2` invokes the function
+(and validates the result). `resolve/4` applies the module timeout default or
+policy after argument validation (the policy receives the coerced argument map)
+and stores the result on the call. A timeout wraps the invocation and its result
+validation in a task. `run/4 timeout:` overrides the module default;
+`use ToolCall, timeout: ...` embeds a constant or a `ToolCall.Timeout` policy in
+the generated runner and disables the fast path for that module. The task is
+killed with `:brutal_kill`; process-local state, ETS ownership, Ecto sandbox
+ownership and NIFs are not carried over, so cooperative timeouts inside the
+tool remain the better choice for DB/HTTP work. The timeout is per invocation;
+the overall run deadline belongs to the caller or agent framework.
 
 ## Provider subsets
 

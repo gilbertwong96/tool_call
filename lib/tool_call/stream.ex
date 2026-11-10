@@ -30,9 +30,10 @@ defmodule ToolCall.Stream do
       complete `functionCall`. Gemini has no call id, so `id` is `nil`.
 
   The concatenated JSON is decoded with the standard `JSON` module, so
-  `arguments` is a map. Invalid JSON is `{:error, {:invalid_stream_arguments, {id,
-  name, json}}}`; a call that never receives a name is
-  `{:error, {:missing_name, id}}`.
+  `arguments` is a map. Invalid JSON, or an Anthropic `input` that is not a map
+  when there are no fragments, is
+  `{:error, {:invalid_stream_arguments, {id, name, payload}}}`; a call that
+  never receives a name is `{:error, {:missing_name, id}}`.
   """
 
   @type provider :: :openai | :anthropic | :gemini
@@ -252,8 +253,11 @@ defmodule ToolCall.Stream do
       json == "" and is_map(call.input) ->
         {:ok, %{id: call.id, name: call.name, arguments: call.input}}
 
-      json == "" ->
+      json == "" and is_nil(call.input) ->
         {:ok, %{id: call.id, name: call.name, arguments: %{}}}
+
+      json == "" ->
+        {:error, {:invalid_stream_arguments, {call.id, call.name, call.input}}}
 
       true ->
         decode(call, json)

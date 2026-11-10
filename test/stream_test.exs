@@ -177,6 +177,24 @@ defmodule ToolCall.StreamTest do
       assert {:ok, [%{arguments: %{}}]} = Stream.aggregate(chunks, :anthropic)
     end
 
+    test "reports a non-map start input when there are no fragments" do
+      chunks = [
+        %{
+          "type" => "content_block_start",
+          "index" => 0,
+          "content_block" => %{
+            "type" => "tool_use",
+            "id" => "toolu_1",
+            "name" => "ping",
+            "input" => []
+          }
+        }
+      ]
+
+      assert {:error, {:invalid_stream_arguments, {"toolu_1", "ping", []}}} =
+               Stream.aggregate(chunks, :anthropic)
+    end
+
     test "ignores text and message deltas" do
       chunks = [
         %{

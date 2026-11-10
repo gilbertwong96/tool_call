@@ -475,9 +475,9 @@ never fresh model output for the same approval — and mark the request executed
 so a retry cannot run side effects twice. `{:pending, _}` is a third `run/4`
 outcome next to `{:ok, _}` and `{:error, _}`; an agent loop must pause instead of
 sending it to the model as a tool result. A policy that returns an unknown term
-is `{:error, {:invalid_approval, term}}`; a policy that raises, or a policy
-module without `check/3`, raises `ArgumentError`. Validate configuration at
-startup when the policy comes from outside the project.
+is `{:error, {:invalid_approval, term}}`; a policy that raises propagates its
+exception, and a module without `check/3` raises `ArgumentError`. Validate
+configuration at startup when the policy comes from outside the project.
 
 ## An audit hook is not an audit log
 
