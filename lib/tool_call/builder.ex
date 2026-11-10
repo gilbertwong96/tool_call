@@ -290,6 +290,8 @@ defmodule ToolCall.Builder do
         |> drop_incompatible_default(context.module, location, name, arity)
       end)
 
+    warn_unknown_doc_bullets(context.module, location, name, arity, doc_info, params)
+
     {result, defs} =
       result_type(return_ast, bindings, context, {defs, registry}, name, arity, location)
 
@@ -303,6 +305,20 @@ defmodule ToolCall.Builder do
        defs: defs,
        result: result
      }, truncated}
+  end
+
+  defp warn_unknown_doc_bullets(module, location, name, arity, doc_info, params) do
+    names = MapSet.new(params, & &1.name)
+
+    for {doc_name, _description} <- doc_info.params,
+        not MapSet.member?(names, doc_name) do
+      warn(
+        module,
+        location,
+        "@doc for #{name}/#{arity} documents #{inspect(doc_name)}, which is not a parameter; " <>
+          "the bullet is ignored."
+      )
+    end
   end
 
   defp result_type({:no_return, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),

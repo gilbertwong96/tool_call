@@ -111,6 +111,28 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "city_2")["description"] == "second city only"
   end
 
+  test "warns about a @doc bullet that names no parameter" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc \"\"\"
+        Go.
+
+        ## Parameters
+          * city - the city
+          * citeis - a typo
+        \"\"\"
+        @spec go(city :: String.t()) :: map()
+        def go(city), do: %{city: city}
+      end
+      """)
+
+    assert warnings =~ "documents \"citeis\""
+    assert warnings =~ "not a parameter"
+  end
+
   test "uses doc bullets to name unannotated spec parameters" do
     {module, warnings} =
       compile_with_warnings!("""
