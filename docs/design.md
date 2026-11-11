@@ -385,7 +385,9 @@ field at a time and treats a field whose removal raises as enforced. That is
 most standard-library structs are public, not opaque; `MapSet` and `Regex` are
 claimed by built-in providers before extraction, because their fields are
 internal representation. `URI`, `Range` and `Version` are extracted, because
-their fields are the documented representation.
+their fields are the documented representation. `ToolCall.Providers.URI` and
+`ToolCall.Providers.Version` are optional opt-in providers that replace those
+objects with strings; `Range` remains a struct object.
 Such a parameter stays `{}` with the untyped warning. A provider always wins,
 which is the escape hatch for a scalar wrapper (`Decimal.t()`, `Range.t()`) if
 its field shape is not what you want the model to see.

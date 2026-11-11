@@ -9,9 +9,6 @@ work that is not implemented yet.
 
 These are useful additions without a target release yet:
 
-- Optional standard-library type providers for `URI` and `Version` (string
-  wire forms). `Range` stays a struct object; `Decimal` is intentionally not
-  built in because it requires the external `decimal` package.
 - Nested or remote typedoc inheritance if a description-composition model is
   chosen.
 

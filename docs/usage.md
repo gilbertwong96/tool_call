@@ -83,8 +83,21 @@ compile dependency.
 
 `t:MapSet.t/0`, `t:MapSet.t/1` and `t:Regex.t/0` are built in: a set travels as an
 array of its elements and a regex as its source string (compiled with `u` at
-dispatch). `Decimal.t()` is not built in; implement a provider for it, or use
-`String.t()` and convert in the function.
+dispatch).
+
+`t:URI.t/0` and `t:Version.t/0` have optional, opt-in providers that use a string
+wire form:
+
+```elixir
+use ToolCall, types: [ToolCall.Providers.URI, ToolCall.Providers.Version]
+```
+
+URI strings are parsed with `URI.new/1` and passed as `%URI{}`; version strings
+are parsed with `Version.parse/1` and passed as `%Version{}`. Invalid values
+become `{:invalid_uri, reason}` and `{:invalid_version, value}` argument errors.
+The providers add no dependency. `t:Range.t/0` stays a struct object, and
+`Decimal.t()` is not built in; implement a provider for it, or use `String.t()`
+and convert in the function.
 
 ### Compile-time conventions
 

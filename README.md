@@ -67,7 +67,9 @@ compile time; there are no runtime dependencies.
   schema descriptions.
 - `ToolCall.Stream` — folds streaming tool-call deltas (OpenAI, Anthropic,
   Gemini) into complete calls for `run/3`.
-- `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
+- `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations;
+  `ToolCall.Providers.URI` and `ToolCall.Providers.Version` are optional string
+  providers for those standard-library structs.
 - `use ToolCall, timeout: ...`, `approval: ...`, `audit: ...` — module-level
   policies; `ToolCall.validate_policies!/1` checks them at startup.
 - `ToolCall.PolicyValidation` — one-shot supervision child (one per supervisor,

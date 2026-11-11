@@ -76,6 +76,9 @@
 - `ToolCall.PolicyValidation` is a one-shot supervision child that runs
   `validate_policies!/1` for configured tool modules and returns `:ignore`, so
   it does not stay in the tree.
+- `ToolCall.Providers.URI` and `ToolCall.Providers.Version` are optional type
+  providers for the standard-library structs, using string wire forms and
+  parsing with `URI.new/1` and `Version.parse/1`.
 
 ### Changed
 

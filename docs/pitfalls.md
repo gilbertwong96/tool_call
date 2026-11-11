@@ -168,7 +168,9 @@ most standard-library structs are **not** opaque. `t:MapSet.t/0` and `t:Regex.t/
 are public types whose fields are internal representation, which is why they
 have built-in providers (a set travels as an array, a regex as its source
 string). `t:URI.t/0`, `t:Range.t/0` and `t:Version.t/0` are extracted, because their
-fields are the documented representation.
+fields are the documented representation. `ToolCall.Providers.URI` and
+`ToolCall.Providers.Version` are optional opt-in providers for a string wire
+form; `Range` stays a struct object.
 
 ## A tool with an untyped argument is not exposed
 
