@@ -15,7 +15,12 @@ defmodule ToolCall.PolicyValidation do
   fails application startup with `ArgumentError`.
   """
 
-  @spec child_spec([module()] | module()) :: Supervisor.child_spec()
+  @spec child_spec([module()] | module()) :: %{
+          id: module(),
+          start: {module(), :start_link, [term()]},
+          restart: :temporary,
+          type: :worker
+        }
   def child_spec(modules) do
     %{
       id: __MODULE__,
