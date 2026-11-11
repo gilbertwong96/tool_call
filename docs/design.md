@@ -776,8 +776,7 @@ written.
 
 ## Roadmap
 
-See [`roadmap.md`](roadmap.md) for the planned `0.2` / `0.3` / `0.4` stages,
-release readiness work and current status.
+See [`roadmap.md`](roadmap.md) for the current status and remaining work.
 
 ## Design boundaries
 
