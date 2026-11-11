@@ -675,13 +675,19 @@ the processes that dispatch tools:
 
 ```elixir
 children = [
-  {ToolCall.PolicyValidation, [MyApp.Tools]},
+  {ToolCall.PolicyValidation, [MyApp.Tools, MyApp.OtherTools]},
   # ...
 ]
 ```
 
-The child returns `:ignore`, so it validates once and does not stay in the
-supervision tree. An invalid policy fails application startup.
+Use one child per supervisor with the complete module list. The child id is
+fixed (`ToolCall.PolicyValidation`), so two children with that id conflict in
+the same supervisor. Validation runs synchronously during child start, before
+later children start, and is not repeated by later supervisor restarts.
+
+The child returns `:ignore`, so it does not stay in the supervision tree. An
+invalid policy raises `ArgumentError` during child start; under a supervisor
+that fails application startup.
 
 ### Streaming
 
@@ -791,8 +797,9 @@ end
 
 ### Error terms
 
-`ToolCall.run/4` returns one of the following for bad input or a policy error.
-Invalid options raise `ArgumentError`. An invalid explicit `:timeout` raises
+`ToolCall.run/3` and `run/4` return one of the following for bad input or a
+policy error. Invalid `run/4` options raise `ArgumentError`. An invalid explicit
+`:timeout` raises
 when a known tool is resolved or `execute/2` runs; an unknown tool or non-map
 `args` returns before timeout validation. A policy exception that is not a
 returned timeout error is re-raised after the audit entry is written:

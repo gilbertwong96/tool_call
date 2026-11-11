@@ -521,6 +521,16 @@ cancellation; policy execution itself is not covered by the timeout. The
 timeout is a per-invocation cap, not a run deadline. The caller or agent
 framework owns the overall budget.
 
+## Startup policy validation is opt-in
+
+`ToolCall.validate_policies!/1` does nothing until the application calls it.
+The `ToolCall.PolicyValidation` supervision child runs it automatically, but the
+application still has to add the child. The child id is fixed; use one child per
+supervisor with the complete module list, because two `PolicyValidation`
+children in one supervisor conflict. The child returns `:ignore`, validates
+synchronously before later children, and is not re-run by later supervisor
+restarts.
+
 ## Remaining design boundaries
 
 Some limits are intentional: nested/remote/provider typedoc inheritance,

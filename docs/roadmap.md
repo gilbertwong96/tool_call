@@ -55,6 +55,9 @@ All planned items are implemented and awaiting a release.
   `run/4 audit:` receives one `%ToolCall.Audit.Entry{}` per attempt, including
   resolve/execute policy exceptions; persistence, redaction and retention stay
   with the application.
+- Startup policy validation: done as `ToolCall.validate_policies!/1` plus the
+  one-shot `ToolCall.PolicyValidation` supervision child. It checks module-level
+  timeout, approval and audit policies before dispatch.
 
 ## Later / not scheduled
 

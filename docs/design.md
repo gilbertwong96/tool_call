@@ -544,6 +544,16 @@ validation only; approval, timeout and audit policies run synchronously in the
 caller and are not covered. The timeout is per invocation; the overall run
 deadline belongs to the caller or agent framework.
 
+## Startup validation
+
+`ToolCall.validate_policies!/1` validates a module's module-level timeout,
+approval and audit policies without dispatching a tool. For application
+startup, `ToolCall.PolicyValidation` is a one-shot supervision child: it runs
+the same validation synchronously during child start and returns `:ignore`, so
+it does not stay in the tree. Its child id is fixed; use one child per
+supervisor with the complete module list. An invalid policy fails application
+startup, and later supervisor restarts do not re-run the validation.
+
 ## Provider subsets
 
 The same IR is normalized for the provider formats below. Runtime emitters exist
@@ -733,8 +743,8 @@ optional one is still fine: `def f(a \\ 1, b)` accepts `%{"b" => 2}`.
 
 ## Dispatch errors
 
-`ToolCall.run/4` returns `{:ok, term}`, `{:pending, %ToolCall.Approval.Request{}}`
-or one of:
+`ToolCall.run/3` and `run/4` return `{:ok, term}`,
+`{:pending, %ToolCall.Approval.Request{}}` or one of:
 
 | Error | Cause |
 |---|---|
