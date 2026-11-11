@@ -667,8 +667,21 @@ Module-level policies can be checked before the first dispatch:
 ```
 
 It validates `use ToolCall, timeout: ...`, `approval: ...` and `audit: ...`
-modules and callbacks, and raises `ArgumentError` for an invalid value.
-One-off `run/4` options are checked when the call is made.
+values and callbacks, and raises `ArgumentError` for an invalid value. One-off
+`run/4` options are checked when the call is made.
+
+To wire it into application startup, add the one-shot supervision child before
+the processes that dispatch tools:
+
+```elixir
+children = [
+  {ToolCall.PolicyValidation, [MyApp.Tools]},
+  # ...
+]
+```
+
+The child returns `:ignore`, so it validates once and does not stay in the
+supervision tree. An invalid policy fails application startup.
 
 ### Streaming
 

@@ -482,8 +482,9 @@ the module is resolved. `use ToolCall, approval: :granted` / `:denied` is a
 valid module-wide mode, not a policy module. Module-level values are not
 compile-time validated: a typo such as `approval: :grant` or
 `audit: :granted` compiles and fails when the module is resolved.
-`ToolCall.validate_policies!/1` checks them at startup; validate configuration
-at startup as well when the policy comes from outside the project. A pending `Request` stores args and
+`ToolCall.validate_policies!/1` or the one-shot `ToolCall.PolicyValidation`
+supervision child checks them at startup; validate configuration at startup as
+well when the policy comes from outside the project. A pending `Request` stores args and
 context, not one-off execution options: on resume, re-supply `validate_result:`,
 `timeout:`, `audit:` and `task_supervisor:` if the original call used them. The
 pending audit entry has the request id; a resumed entry does not, so pass it in

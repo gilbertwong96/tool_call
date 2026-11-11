@@ -110,4 +110,54 @@ defmodule ToolCall.PolicyValidationTest do
       ToolCall.validate_policies!(String)
     end
   end
+
+  test "the startup child validates and is ignored" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, approval: :granted
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert :ignore = ToolCall.PolicyValidation.start_link([module])
+    assert :ignore = ToolCall.PolicyValidation.start_link(module)
+
+    assert {:ok, supervisor} =
+             Supervisor.start_link([{ToolCall.PolicyValidation, [module]}],
+               strategy: :one_for_one
+             )
+
+    assert Supervisor.which_children(supervisor) == []
+    assert :ok = Supervisor.stop(supervisor)
+  end
+
+  test "the startup child fails for an invalid policy" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall, approval: :grant
+
+        @doc "Ok."
+        @spec ok(x :: integer()) :: integer()
+        def ok(x), do: x
+      end
+      """)
+
+    assert_raise ArgumentError, ~r/does not export check\/3/, fn ->
+      ToolCall.PolicyValidation.start_link([module])
+    end
+  end
+
+  test "child_spec is a temporary one-shot worker" do
+    assert %{
+             id: ToolCall.PolicyValidation,
+             start: {ToolCall.PolicyValidation, :start_link, [[]]},
+             restart: :temporary,
+             type: :worker
+           } = ToolCall.PolicyValidation.child_spec([])
+  end
 end

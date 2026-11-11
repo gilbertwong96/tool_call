@@ -524,6 +524,9 @@ defmodule ToolCall do
   for an unknown callback or an invalid mode.
 
       :ok = ToolCall.validate_policies!(MyApp.Tools)
+
+  Or add `{ToolCall.PolicyValidation, [MyApp.Tools]}` to the supervision tree
+  as a one-shot startup child.
   """
   @spec validate_policies!(module()) :: :ok
   def validate_policies!(module) do

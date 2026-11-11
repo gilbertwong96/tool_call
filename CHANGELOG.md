@@ -73,6 +73,9 @@
   and audit policies at startup, including their callback arities and valid
   module-level approval modes. One-off `run/4` options remain validated at the
   call site.
+- `ToolCall.PolicyValidation` is a one-shot supervision child that runs
+  `validate_policies!/1` for configured tool modules and returns `:ignore`, so
+  it does not stay in the tree.
 
 ### Changed
 
