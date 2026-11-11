@@ -410,7 +410,7 @@ shares `Tool.defs` and the tool's 32-definition budget. `no_return()` and
 `none()` leave `result: nil`.
 
 The input schema is unaffected: `Emit.Schema.params/2` renders only the defs
-reachable from the parameters (`ToolCall.Defs.reachable/2`), so a recursive type
+reachable from the parameters (`ToolCall.Defs.reachable`), so a recursive type
 used only by the result stays in the IR and out of `inputSchema`, and it does not
 produce "the model will see `{}`" warnings.
 
@@ -430,7 +430,7 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
 - A mismatch returns `{:error, {:invalid_result, reason}}`; `result: nil` skips.
 - A function that raises/throws/exits keeps its current error, unvalidated.
 
-`ToolCall.Validate.valid?/3` checks the value domain:
+`ToolCall.Validate.valid?` checks the value domain:
 
 - `nil` on a `nullable: true` node is valid before any other rule.
 - A node with `validator: {M, f}` is checked by `f(type, value, defs)`; the

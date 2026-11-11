@@ -81,7 +81,7 @@ convert in the function. `types:` is per module. The provider module
 must be compiled before the tool module; the generated `require` adds that
 compile dependency.
 
-`MapSet.t/0`, `MapSet.t/1` and `Regex.t/0` are built in: a set travels as an
+`t:MapSet.t/0`, `t:MapSet.t/1` and `t:Regex.t/0` are built in: a set travels as an
 array of its elements and a regex as its source string (compiled with `u` at
 dispatch). `Decimal.t()` is not built in; implement a provider for it, or use
 `String.t()` and convert in the function.

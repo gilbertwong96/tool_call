@@ -59,8 +59,8 @@
   `@enforce_keys`. Dispatch reconstructs the struct and keeps `defstruct`
   defaults for omitted fields.
 - Recursive struct types use the same `$defs`/`$ref` path.
-- Built-in providers for `MapSet.t/0`, `MapSet.t/1` (an array of elements,
-  rebuilt with `MapSet.new/1`) and `Regex.t/0` (its source string, compiled with
+- Built-in providers for `t:MapSet.t/0`, `t:MapSet.t/1` (an array of elements,
+  rebuilt with `MapSet.new/1`) and `t:Regex.t/0` (its source string, compiled with
   `u` at dispatch), so a set or a regex no longer exposes its internal fields.
 - A struct whose only type is `@type t/N`, or whose `t/0` is not a
   `%__MODULE__{}` literal, warns at compile time instead of silently untyping
@@ -100,7 +100,7 @@
   provider and the remote type in the message, like the other provider IR
   errors.
 - An explicit provider `validator` may live in a file compiled in parallel with
-  the tool: the build waits for it with `Code.ensure_compiled?/1` instead of
+  the tool: the build waits for it with `Code.ensure_compiled?` instead of
   treating it as missing.
 - `Mod.t(integer())` now resolves as a struct (the type arguments are not
   substituted), so a parameter keeps a callable tool and a result is validated

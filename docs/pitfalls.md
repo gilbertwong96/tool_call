@@ -164,10 +164,10 @@ used. The fields still appear, typed `{}`. Only `@opaque t` leaves the *argument
 untyped, and that hides the tool; see the next entry.
 
 `@opaque t` is deliberately not extracted: the author hid the shape. Note that
-most standard-library structs are **not** opaque. `MapSet.t/0` and `Regex.t/0`
+most standard-library structs are **not** opaque. `t:MapSet.t/0` and `t:Regex.t/0`
 are public types whose fields are internal representation, which is why they
 have built-in providers (a set travels as an array, a regex as its source
-string). `URI.t/0`, `Range.t/0` and `Version.t/0` are extracted, because their
+string). `t:URI.t/0`, `t:Range.t/0` and `t:Version.t/0` are extracted, because their
 fields are the documented representation.
 
 ## A tool with an untyped argument is not exposed
@@ -195,7 +195,7 @@ struct extraction — is compile-time and works without Mix.
 `Structs` reads `t/0` from the module's typespec chunk, which exists only in a
 beam compiled with debug info. An in-memory module (`Code.compile_string/1`, a
 Livebook cell) has no object code, and `@compile {:debug_info, false}` removes
-the chunk; `Code.Typespec.fetch_types/1` then answers `:error`.
+the chunk; `Code.Typespec.fetch_types` then answers `:error`.
 
 When the module's `compile_info.source` points at a readable file, `Structs`
 parses that file and reads the module's `@type t` as a best-effort fallback:
@@ -366,7 +366,7 @@ the generated fast path.
 ## A provider validator must be compiled first
 
 An explicit `%ToolCall.IR.Type{validator: {Module, function}}` is checked with
-`Code.ensure_compiled?/1` when the tool compiles. A module in another file of the
+`Code.ensure_compiled?` when the tool compiles. A module in another file of the
 same parallel build is waited for, and a `require`d provider is always earlier.
 A module defined *later in the same file* is not available yet, so the build
 raises "validator ... is not defined". Put the validator before the tool, move it
