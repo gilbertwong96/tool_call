@@ -575,6 +575,14 @@ parameters object the other targets embed. Gemini also renders on demand: its
 The last row matters for large integers: when the provider parses, you inherit
 its numeric precision. It is the reason `wire: :string_integer` exists.
 
+These four are the complete emitter set. OpenAI-compatible APIs can usually
+consume the OpenAI Chat Completions target. There is no dedicated target for the
+OpenAI Responses API, AWS Bedrock Converse, Vertex AI wrappers, Cohere, or native
+Mistral/Llama function formats; use `ToolCall.describe/2` and wrap the
+provider-neutral parameters yourself. `ToolCall.Stream` follows the same
+streaming subset (OpenAI Chat Completions, Anthropic Messages, Gemini
+`functionCall`).
+
 OpenAI accepts `pattern`, the nine `format` values (`date-time`, `time`,
 `date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uuid`) and the numeric
 and array bounds in strict mode **for standard models**. Fine-tuned models reject

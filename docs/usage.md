@@ -309,6 +309,21 @@ and a non-string enum is dropped. A recursive parameter raises
 `ArgumentError`, because `parameters` has no `$defs`/`$ref`; send
 `parametersJsonSchema` yourself if you need one. `strict` is ignored.
 
+#### Other providers
+
+The built-in targets are OpenAI Chat Completions, Anthropic, MCP and Gemini.
+OpenAI-compatible APIs (Azure OpenAI, Groq, DeepSeek, xAI, OpenRouter,
+Together, Fireworks, vLLM, LM Studio, Ollama, …) can usually consume the
+`:openai` objects.
+
+There is no dedicated target for the OpenAI Responses API, AWS Bedrock Converse,
+Vertex AI wrappers, Cohere, or native Mistral/Llama function formats. For those,
+use `ToolCall.describe/2` to get the provider-neutral `name`, `description` and
+`parameters` map and wrap it in the provider envelope yourself. The same limit
+applies to streaming: `ToolCall.Stream` handles OpenAI Chat Completions,
+Anthropic Messages and Gemini `functionCall`, not the Responses API or other
+providers.
+
 ### When it happens
 
 Everything is compile time. Inside `@before_compile` the library derives the IR

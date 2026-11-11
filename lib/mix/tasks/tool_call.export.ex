@@ -32,7 +32,7 @@ defmodule Mix.Tasks.ToolCall.Export do
 
   ## Options
 
-    * `--format`, `-f` - `openai` (default), `anthropic` or `mcp`
+    * `--format`, `-f` - `openai` (default), `anthropic`, `mcp` or `gemini`
     * `--out`, `-o` - write to a file instead of stdout
     * `--app`, `-a` - application to discover tool modules in
     * `--strict` - emit the strict JSON Schema subset for OpenAI and MCP;
