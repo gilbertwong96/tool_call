@@ -453,6 +453,13 @@ defmodule ToolCall.CoerceTest do
     test "reject a non-list" do
       assert {:error, {:expected_array, "x"}} = Coerce.coerce(%Type{kind: :array}, "x")
     end
+
+    test "reject an improper list without raising" do
+      improper = [1 | 2]
+      type = %Type{kind: :array, items: %Type{kind: :integer}}
+
+      assert {:error, {:expected_array, ^improper}} = Coerce.coerce(type, improper)
+    end
   end
 
   describe "tuples" do
@@ -470,6 +477,16 @@ defmodule ToolCall.CoerceTest do
 
       assert {:ok, {1, "a"}} = Coerce.coerce(type, [1, "a"])
       assert {:ok, {}} = Coerce.coerce(type, [])
+    end
+
+    test "reject an improper list without raising" do
+      improper = [1 | 2]
+
+      assert {:error, {:expected_array, ^improper}} =
+               Coerce.coerce(%Type{kind: :tuple, items: nil}, improper)
+
+      assert {:error, {:expected_array, ^improper}} =
+               Coerce.coerce(%Type{kind: :tuple, items: [integer(), integer()]}, improper)
     end
   end
 

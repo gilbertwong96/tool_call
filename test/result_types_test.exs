@@ -82,6 +82,21 @@ defmodule ToolCall.ResultTypesTest do
              """)
   end
 
+  test "an aliased no_return() also leaves the result empty" do
+    assert %Tool{result: nil} =
+             tool("""
+             defmodule FIXTURE do
+               use ToolCall
+
+               @type nope :: no_return()
+
+               @doc "Go."
+               @spec go(x :: integer()) :: nope()
+               def go(_x), do: :ignored
+             end
+             """)
+  end
+
   test "validate_tool!/1 rejects a dangling result ref" do
     assert_raise ArgumentError, ~r/unknown \$defs entry/, fn ->
       ToolCall.Typespec.validate_tool!(%Tool{

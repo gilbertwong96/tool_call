@@ -24,6 +24,10 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :enum, values: [:red, :green]} = ir({:|, [], [:red, :green]})
   end
 
+  test "a binary literal becomes a singleton enum" do
+    assert %Type{kind: :enum, values: ["hello"]} = ir("hello")
+  end
+
   test "a nil union becomes a nullable type" do
     assert %Type{kind: :integer, nullable: true} = ir({:|, [], [{:integer, [], []}, nil]})
   end
@@ -297,6 +301,13 @@ defmodule ToolCall.TypespecTest do
     refute Typespec.default_compatible?(%Type{kind: :string, pattern: "["}, "x")
     refute Typespec.default_compatible?(%Type{kind: :string, pattern: :bad}, "x")
     refute Typespec.default_compatible?(%Type{kind: :unsupported}, "x")
+  end
+
+  test "default_compatible?/2 requires one codepoint for char binaries" do
+    char = %Type{kind: :string, source: :char}
+
+    assert Typespec.default_compatible?(char, "A")
+    refute Typespec.default_compatible?(char, "e\u0301")
   end
 
   test "default_compatible?/2 validates tuple shape and object fields" do

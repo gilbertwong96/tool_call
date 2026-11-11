@@ -171,6 +171,29 @@
 - An Anthropic stream whose initial `input` is not a map, and has no
   `input_json_delta` fragments, is now `:invalid_stream_arguments` instead of
   silently becoming `{}`.
+- A `## Options` bullet no longer becomes a same-named parameter's description;
+  Options documents keyword keys, not function parameters.
+- A parameter whose root type is unrepresentable (`fun()`, `pid()`, `port()`,
+  `reference()`, `mfa()`) now hides the tool instead of exposing a schema the
+  dispatcher can never satisfy. Nested unrepresentable fields still render `{}`
+  and keep the tool.
+- An aliased `no_return()` result now leaves `tool.result` as `nil`, matching
+  the direct `no_return()` path.
+- `char()` default validation now requires exactly one codepoint, not one
+  grapheme cluster; combining-character defaults can no longer pass compile
+  validation and then fail dispatch.
+- A literal binary typespec such as `@spec f(x :: "hello")` becomes a singleton
+  string enum instead of degrading to `:any` and hiding the tool.
+- Empty enums use the string wire domain during result validation, matching
+  dispatch and the rendered `"type": "string"` schema.
+- Malformed improper lists in array and tuple arguments return coercion errors
+  instead of raising `ArgumentError` or `FunctionClauseError`.
+- A finite timeout without `task_supervisor` no longer links the task to the
+  caller, so a raising task returns `{:error, {:exited, reason}}` instead of
+  exiting the caller.
+- `Runner.execute/2` rejects `:timeout_policy` and `:validate_result`; those
+  options are meaningful only during `resolve/4`, and silently ignoring them
+  was a trap.
 
 ## 0.1.0 - 2026-11-09
 

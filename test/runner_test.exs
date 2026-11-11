@@ -93,6 +93,21 @@ defmodule ToolCall.RunnerTest do
              ToolCall.run(module, :go, %{"text" => "x", "pattern" => "x", "chars" => <<255>>})
   end
 
+  test "returns an improper list as an argument error instead of raising" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @spec go(xs :: list(integer())) :: term()
+        def go(xs), do: xs
+      end
+      """)
+
+    assert {:error, {:invalid_argument, {"xs", {:expected_array, _improper}}}} =
+             ToolCall.run(module, :go, %{"xs" => [1 | 2]})
+  end
+
   test "handles scalar fast-path types" do
     module =
       compile!("""

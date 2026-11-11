@@ -96,6 +96,17 @@ defmodule ToolCall.ValidateTest do
     assert {:error, {:invalid_enum, "a", [true, :a]}} = Validate.valid?(enum, "a", %{})
   end
 
+  test "empty enums follow their string wire domain" do
+    assert :ok = Validate.valid?(%Type{kind: :enum, values: []}, "x", %{})
+    assert :ok = Validate.valid?(%Type{kind: :enum, values: nil}, "x", %{})
+
+    assert {:error, {:invalid_utf8, <<255>>}} =
+             Validate.valid?(%Type{kind: :enum, values: []}, <<255>>, %{})
+
+    assert {:error, {:invalid_enum, 1, []}} =
+             Validate.valid?(%Type{kind: :enum, values: []}, 1, %{})
+  end
+
   test "null, any and unsupported" do
     assert :ok = Validate.valid?(%Type{kind: :null}, nil, %{})
     assert {:error, _} = Validate.valid?(%Type{kind: :null}, 1, %{})

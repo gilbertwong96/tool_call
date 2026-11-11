@@ -174,6 +174,25 @@ defmodule ToolCall.TimeoutTest do
     assert {:error, {:timeout, 10}} = ToolCall.Runner.execute(call, timeout: 10)
   end
 
+  test "a raising timed task returns an exited error" do
+    assert {:error, {:exited, _reason}} =
+             ToolCall.Timeout.run(fn -> raise "boom" end, 1_000, [])
+  end
+
+  test "execute/2 rejects options that only resolve/4 supports" do
+    module = sleep_module()
+    [tool] = ToolCall.tools(module)
+    {:ok, call} = ToolCall.Runner.resolve(module, tool, %{"ms" => 1})
+
+    assert_raise ArgumentError, ~r/unknown options/, fn ->
+      ToolCall.Runner.execute(call, timeout_policy: 10)
+    end
+
+    assert_raise ArgumentError, ~r/unknown options/, fn ->
+      ToolCall.Runner.execute(call, validate_result: true)
+    end
+  end
+
   test "a task supervisor can own the timed invocation" do
     module = sleep_module()
     {:ok, supervisor} = Task.Supervisor.start_link()

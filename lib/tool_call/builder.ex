@@ -377,7 +377,15 @@ defmodule ToolCall.Builder do
       )
     end
 
-    {Typespec.to_type(type_ast, context.providers), defs, truncated?}
+    type = Typespec.to_type(type_ast, context.providers)
+
+    case type do
+      %Type{kind: :unsupported, source: source} when source in [:no_return, :none] ->
+        {nil, defs, truncated?}
+
+      _other ->
+        {type, defs, truncated?}
+    end
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
@@ -562,7 +570,7 @@ defmodule ToolCall.Builder do
   # with one is not a contract the model can honour. Skipping it keeps the
   # compile total and mirrors `@doc false`; the warning names the fix.
   defp expose(module, location, %Tool{} = tool, truncated, result_truncated, raw) do
-    case Enum.find(tool.params, &(&1.type.kind == :any)) do
+    case Enum.find(tool.params, &(&1.type.kind in [:any, :unsupported])) do
       nil ->
         warn_tool(module, location, tool, truncated, result_truncated)
         {{tool, location, truncated, result_truncated}, raw}
@@ -572,8 +580,8 @@ defmodule ToolCall.Builder do
           module,
           location,
           "tool #{inspect(tool.name)} is not exposed: parameter \"#{param}\" has no JSON " <>
-            "type (term/any, or a remote type with no provider). Narrow the type, add a " <>
-            "TypeProvider, or hide the function with @doc false."
+            "type (term/any, an unrepresentable type, or a remote type with no provider). " <>
+            "Narrow the type, add a TypeProvider, or hide the function with @doc false."
         )
 
         {nil, raw}
@@ -882,6 +890,8 @@ defmodule ToolCall.Builder do
         :ok
     end
   end
+
+  defp apply_doc_description(%Param{} = param, %{param_heading: :options}), do: param
 
   defp apply_doc_description(%Param{} = param, doc_info) do
     case Map.fetch(doc_info.params, param.name) do

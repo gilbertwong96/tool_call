@@ -169,7 +169,8 @@ and convert in the function.
   clears it.
 
 - **An argument with no JSON type hides the tool.** `term()`, `any()`, a remote
-  type with no provider, or an `@opaque` struct makes the schema undescribable,
+  type with no provider, an `@opaque` struct, or an unrepresentable
+  `fun()`/`pid()`/`port()`/`reference()`/`mfa()` makes the schema undescribable,
   so the function is skipped like `@doc false` and the compile warns with the
   parameter name. Narrow the argument, add a `TypeProvider`, or opt out with
   `@doc false`. An untyped field *inside* an object or array keeps the tool and
@@ -320,7 +321,8 @@ uppercase (`STRING`, `OBJECT`, `INTEGER`, …), `nullable: true` replaces a
 always open), `prefixItems` is dropped (a tuple keeps only `minItems`/`maxItems`),
 and a non-string enum is dropped. A recursive parameter raises
 `ArgumentError`, because `parameters` has no `$defs`/`$ref`; send
-`parametersJsonSchema` yourself if you need one. `strict` is ignored.
+`parametersJsonSchema` yourself if you need one. Valid `strict` values are
+ignored; an invalid value still raises like the other targets.
 
 #### Other providers
 
@@ -671,9 +673,9 @@ use ToolCall, timeout: MyTimeouts
   the task. It receives the validated raw argument map, not the coerced values;
   an invalid call or a denied/pending approval returns before the policy runs.
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
-  `Task.Supervisor` instead of a task linked to the caller, including a timeout
-  supplied by the module. With `timeout: :infinity` a supervisor still starts a
-  task. An unreachable or invalid supervisor answers
+  `Task.Supervisor` instead of an unlinked task, including a timeout supplied by
+  the module. With `timeout: :infinity` a supervisor still starts a task. An
+  unreachable or invalid supervisor answers
   `{:error, {:task_supervisor, reason}}`.
 - Approval, timeout and audit policies run synchronously in the caller; only
   the invocation and its result validation are covered by the timeout. Keep
@@ -924,9 +926,9 @@ end
   longer names and dots/colons, but the library keeps the stricter pattern so
   one name works everywhere. A function named `find?` warns. Two arities of one function share a name; only the first is
   exposed, with a warning.
-- **`use ToolCall` only accepts `:types`.** `use ToolCall, emit: [...]` raises; the
-  precompiled OpenAI/Anthropic variants are always rendered; MCP and Gemini
-  render on demand.
+- **`use ToolCall` accepts `:types`, `:timeout`, `:approval` and `:audit`.**
+  Unknown options such as `emit:` raise; the precompiled OpenAI/Anthropic
+  variants are always rendered, and MCP and Gemini render on demand.
 - **`@tool_param` needs `fun:`**:
   `@tool_param %{fun: :transfer, name: "user_id", wire: :string_integer}`.
   Large integers travel as decimal strings; see

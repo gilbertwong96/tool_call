@@ -9,7 +9,7 @@
 Derive LLM tool-call schemas from Elixir `@spec` and `@doc`, then dispatch the
 call back to the function.
 
-No DSL, no second schema, no runtime reflection.
+No DSL, no second schema, no runtime reading of `Docs`/`Dbgi` chunks.
 
 ```elixir
 defmodule MyApp.Tools.Weather do

@@ -24,6 +24,8 @@ defmodule ToolCall.Runner do
     :context
   ]
 
+  @execute_option_keys [:timeout, :task_supervisor, :approval, :audit, :context]
+
   @doc """
   Runs a tool by name.
 
@@ -200,7 +202,7 @@ defmodule ToolCall.Runner do
   @spec execute(ToolCall.Call.t(), keyword()) ::
           {:ok, term()} | {:pending, ToolCall.Approval.Request.t()} | {:error, term()}
   def execute(%ToolCall.Call{} = call, opts \\ []) do
-    validate_options!(opts)
+    validate_options!(opts, @execute_option_keys)
     context = Keyword.get(opts, :context, call.context)
     audit = Keyword.get(opts, :audit, call.audit)
 
@@ -576,8 +578,10 @@ defmodule ToolCall.Runner do
     end
   end
 
-  defp validate_options!(opts) do
-    ToolCall.Options.validate!(opts, @option_keys)
+  defp validate_options!(opts), do: validate_options!(opts, @option_keys)
+
+  defp validate_options!(opts, keys) do
+    ToolCall.Options.validate!(opts, keys)
   end
 
   @doc false
@@ -677,7 +681,11 @@ defmodule ToolCall.Runner do
 
   defp nested_non_string_keys(%Type{kind: :array, items: items}, value, defs)
        when is_list(value) do
-    Enum.flat_map(value, &nested_non_string_keys(items || %Type{kind: :any}, &1, defs))
+    if proper_list?(value) do
+      Enum.flat_map(value, &nested_non_string_keys(items || %Type{kind: :any}, &1, defs))
+    else
+      []
+    end
   end
 
   defp nested_non_string_keys(%Type{kind: :tuple, items: items}, value, defs)
@@ -685,9 +693,13 @@ defmodule ToolCall.Runner do
     values = if is_tuple(value), do: Tuple.to_list(value), else: value
     items = items || []
 
-    values
-    |> Enum.zip(items)
-    |> Enum.flat_map(fn {item, type} -> nested_non_string_keys(type, item, defs) end)
+    if proper_list?(values) do
+      values
+      |> Enum.zip(items)
+      |> Enum.flat_map(fn {item, type} -> nested_non_string_keys(type, item, defs) end)
+    else
+      []
+    end
   end
 
   defp nested_non_string_keys(%Type{kind: :ref, ref: ref}, value, defs) do
@@ -710,6 +722,10 @@ defmodule ToolCall.Runner do
   end
 
   defp nested_non_string_keys(%Type{}, _value, _defs), do: []
+
+  defp proper_list?([]), do: true
+  defp proper_list?([_head | tail]), do: proper_list?(tail)
+  defp proper_list?(_other), do: false
 
   defp fetch(tools, name) do
     case Enum.find(tools, &(&1.name == name)) do

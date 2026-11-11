@@ -58,9 +58,17 @@ defmodule ToolCall.Validate do
 
   defp do_valid?(%Type{kind: :enum} = type, value, _defs, _hops) do
     cond do
-      type.values in [nil, []] -> :ok
-      value in type.values -> :ok
-      true -> {:error, {:invalid_enum, value, type.values}}
+      type.values in [nil, []] and is_binary(value) ->
+        if String.valid?(value), do: :ok, else: {:error, {:invalid_utf8, value}}
+
+      type.values in [nil, []] ->
+        {:error, {:invalid_enum, value, type.values}}
+
+      value in type.values ->
+        :ok
+
+      true ->
+        {:error, {:invalid_enum, value, type.values}}
     end
   end
 

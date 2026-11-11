@@ -172,17 +172,18 @@ fields are the documented representation. `ToolCall.Providers.URI` and
 `ToolCall.Providers.Version` are optional opt-in providers for a string wire
 form; `Range` stays a struct object.
 
-## A tool with an untyped argument is not exposed
+## A tool with an untyped or unrepresentable argument is not exposed
 
 A parameter whose type has no JSON type — `term()`, `any()`, a remote type with
-no provider, or an `@opaque` struct — cannot be described, so the function is
-skipped the way `@doc false` skips it, and the compile warns with the parameter
-name. The function is absent from `tools/1`, `emit/3` and `describe/2`, and
-`run/3` answers `{:unknown_tool, name, exposed_names}`. Narrow the argument, add
-a `TypeProvider`, or hide the function with `@doc false`. An untyped *field*
-inside an object, array or tuple is different: it renders as `{}` and keeps the
-tool. Runtime IR (`ToolCall.IR.Tool`) may still carry `:any`; the skip is a
-compile-time decision.
+no provider, an `@opaque` struct, or an unrepresentable
+`fun()`/`pid()`/`port()`/`reference()`/`mfa()` — cannot be described, so the
+function is skipped the way `@doc false` skips it, and the compile warns with the
+parameter name. The function is absent from `tools/1`, `emit/3` and
+`describe/2`, and `run/3` answers `{:unknown_tool, name, exposed_names}`. Narrow
+the argument, add a `TypeProvider`, or hide the function with `@doc false`. An
+untyped *field* inside an object, array or tuple is different: it renders as
+`{}` and keeps the tool. Runtime IR (`ToolCall.IR.Tool`) may still carry `:any`;
+the skip is a compile-time decision.
 
 ## A typedoc companion needs Mix at compile time
 
@@ -293,8 +294,8 @@ its `enum` is a string list. `ToolCall.emit(module, :gemini)` therefore drops
 `additionalProperties` (objects stay open, so dispatch can still reject an extra
 key the schema allowed), drops `prefixItems` (a tuple keeps only
 `minItems`/`maxItems`), drops a non-string enum, and raises for a recursive
-parameter. Send `parametersJsonSchema` yourself when those must be preserved;
-`strict` is ignored for this target.
+parameter. Send `parametersJsonSchema` yourself when those must be preserved. Valid `strict`
+values are ignored for this target; invalid values still raise.
 
 ## Streaming covers one choice and decodes arguments
 
@@ -515,7 +516,7 @@ The task is a different process: `self/0`, the process dictionary,
 `try/after` does not run on the kill, and a long-running NIF is not interrupted.
 Prefer a cooperative timeout inside the tool (Ecto `timeout:`, Req
 `receive_timeout`) for resources and NIFs. Without `task_supervisor:` a finite
-timeout uses a task linked to the caller and `:infinity` runs in the caller;
+timeout uses an unlinked task and `:infinity` runs in the caller;
 with it the supervisor owns the task, including `:infinity`. An unreachable or
 invalid supervisor answers `{:error, {:task_supervisor, reason}}`. The timeout
 policy runs at `execute/2` after approval, receives the raw args, and is not a

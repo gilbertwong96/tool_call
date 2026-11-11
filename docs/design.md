@@ -250,6 +250,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `atom()`, `module()` | `:atom` | `{"type":"string"}` |
 | `:a \| :b` | `:enum` | `{"type":"string","enum":["a","b"]}` |
 | `1 \| 2` | `:enum` | `{"enum":[1,2]}` |
+| `"hello"` | `:enum` | `{"type":"string","enum":["hello"]}` |
 | `nil` in a union | `nullable: true` | `{"type":["T","null"]}`; an enum becomes `anyOf` with a null branch |
 | `map()` | `:object` open | `"additionalProperties": true` |
 | `struct()` | `:object` open | the function receives a map; use a concrete struct type for fields |
@@ -269,8 +270,8 @@ build warns. Depth 18 now compiles in 28 ms.
 | `Path.t()` | `:string` | `{"type":"string"}`; already a binary |
 | `MapSet.t()`, `MapSet.t(t)` | `:array` | elements at the wire; dispatch returns a `MapSet` |
 | `Regex.t()` | `:string` | the source string, compiled with `u` at dispatch |
-| `fun()`, `fun(...)`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning |
-| `term()`, `any()` | `:any` | `{}` |
+| `fun()`, `fun(...)`, `pid()`, `port()`, `reference()`, `mfa()` | `:unsupported` | `{}` + warning; a top-level argument hides the tool |
+| `term()`, `any()` | `:any` | `{}`; a top-level argument hides the tool |
 | unknown remote type without a provider | `:any` | `{}` |
 
 **Remote types are provider-driven.** `String`, `Keyword`, `Path`, the calendar
@@ -295,8 +296,9 @@ validates runtime IR before rendering.
 Not handled: bitstrings with explicit sizes and `@typep` field types inside a
 struct (the types chunk exposes public types only). Another module's non-struct
 type without a provider leaves the *argument* untyped, and a tool with an untyped
-argument is not exposed; the same applies to `term()`, `any()` and `@opaque`
-structs. Recursive types and concrete structs are handled; see below.
+argument is not exposed; the same applies to `term()`, `any()`, `@opaque`
+structs and the unrepresentable `fun()`/`pid()`/`port()`/`reference()`/`mfa()`
+domains. Recursive types and concrete structs are handled; see below.
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained
@@ -568,7 +570,7 @@ parameters object the other targets embed. Gemini also renders on demand: its
 |---|---|---|---|---|
 | Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` | `{name, description, parameters}` in `functionDeclarations` |
 | Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) | an object schema (`type: "OBJECT"`) |
-| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed; `:fine_tuned` drops pattern/format/bounds | n/a | renders the closed subset; MCP has no flag | ignored |
+| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed; `:fine_tuned` drops pattern/format/bounds | n/a | renders the closed subset; MCP has no flag | ignored for valid values; invalid values still raise |
 | `$ref` / `$defs` | supported, strict mode included | supported | supported | not supported; a recursive parameter raises |
 | Type casing | lowercase JSON Schema | lowercase JSON Schema | lowercase JSON Schema | uppercase OpenAPI `Type` enum |
 | Nullability | `["T", "null"]` | `["T", "null"]` / `anyOf` | same as OpenAI | `nullable: true` |

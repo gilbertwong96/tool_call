@@ -1193,6 +1193,21 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "x") == %{"type" => "integer"}
   end
 
+  test "does not apply Options bullets to same-named parameters" do
+    {module, _warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go.\n\n## Options\n  * timeout - request timeout"
+        @spec go(timeout :: integer()) :: :ok
+        def go(_timeout), do: :ok
+      end
+      """)
+
+    assert param_schema(module, "go", "timeout")["description"] == nil
+  end
+
   test "warns about types JSON cannot express" do
     {_module, warnings} =
       compile_with_warnings!("""
@@ -1200,14 +1215,29 @@ defmodule ToolCall.BuilderTest do
         use ToolCall
 
         @doc "Unrepresentable."
-        @spec go(p :: pid(), r :: reference(), t :: {pid(), integer()}) :: :ok
-        def go(_p, _r, _t), do: :ok
+        @spec go(t :: {pid(), integer()}) :: :ok
+        def go(_t), do: :ok
       end
       """)
 
-    assert warnings =~ ~s(parameter "p" of go/3 has no JSON representation)
-    assert warnings =~ ~s(parameter "r" of go/3 has no JSON representation)
-    assert warnings =~ ~s(parameter "t" of go/3 has no JSON representation)
+    assert warnings =~ ~s(parameter "t" of go/1 has no JSON representation)
+  end
+
+  test "does not expose a tool whose argument is unrepresentable" do
+    {module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Unrepresentable."
+        @spec go(p :: pid()) :: :ok
+        def go(_p), do: :ok
+      end
+      """)
+
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "p")
+    assert ToolCall.tool_names(module) == []
+    assert {:error, {:unknown_tool, "go", []}} = ToolCall.run(module, :go, %{"p" => self()})
   end
 
   test "stays quiet about values JSON can express" do

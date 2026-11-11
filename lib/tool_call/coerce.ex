@@ -317,37 +317,31 @@ defmodule ToolCall.Coerce do
   defp coerce_kind(%Type{kind: :enum} = type, value, _defs, _hops), do: coerce_enum(type, value)
 
   defp coerce_kind(%Type{kind: :array} = type, value, defs, _hops) when is_list(value) do
-    with {:ok, items} <- coerce_each(type.items || %Type{kind: :any}, value, defs) do
-      length = length(items)
-      minimum = type.minimum || 0
-      maximum = type.maximum
-
-      cond do
-        length < minimum ->
-          {:error, {:too_few_items, length, minimum}}
-
-        not is_nil(maximum) and length > maximum ->
-          {:error, {:too_many_items, length, maximum}}
-
-        true ->
-          {:ok, items}
-      end
-    end
+    if proper_list?(value),
+      do: coerce_array(type, value, defs),
+      else: {:error, {:expected_array, value}}
   end
 
   defp coerce_kind(%Type{kind: :array}, value, _defs, _hops),
     do: {:error, {:expected_array, value}}
 
-  defp coerce_kind(%Type{kind: :tuple, items: nil}, value, _defs, _hops) when is_list(value),
-    do: {:ok, List.to_tuple(value)}
+  defp coerce_kind(%Type{kind: :tuple, items: nil}, value, _defs, _hops) when is_list(value) do
+    if proper_list?(value),
+      do: {:ok, List.to_tuple(value)},
+      else: {:error, {:expected_array, value}}
+  end
 
   defp coerce_kind(%Type{kind: :tuple} = type, value, defs, _hops) when is_list(value) do
-    items = type.items || []
+    if proper_list?(value) do
+      items = type.items || []
 
-    if length(value) == length(items) do
-      coerce_tuple(items, value, defs)
+      if length(value) == length(items) do
+        coerce_tuple(items, value, defs)
+      else
+        {:error, {:wrong_tuple_size, length(value), length(items)}}
+      end
     else
-      {:error, {:wrong_tuple_size, length(value), length(items)}}
+      {:error, {:expected_array, value}}
     end
   end
 
@@ -380,6 +374,25 @@ defmodule ToolCall.Coerce do
         {:error, _reason} -> {:cont, {:error, {:no_variant_matched, value}}}
       end
     end)
+  end
+
+  defp coerce_array(type, value, defs) do
+    with {:ok, items} <- coerce_each(type.items || %Type{kind: :any}, value, defs) do
+      length = length(items)
+      minimum = type.minimum || 0
+      maximum = type.maximum
+
+      cond do
+        length < minimum ->
+          {:error, {:too_few_items, length, minimum}}
+
+        not is_nil(maximum) and length > maximum ->
+          {:error, {:too_many_items, length, maximum}}
+
+        true ->
+          {:ok, items}
+      end
+    end
   end
 
   defp coerce_enum(%Type{} = type, value) when is_binary(value) do
@@ -568,6 +581,10 @@ defmodule ToolCall.Coerce do
           "invalid ToolCall IR: pattern #{inspect(pattern)} has no compiled pattern_regex; " <>
             "use ToolCall.Typespec.validate_type!/1 or set pattern_regex"
   end
+
+  defp proper_list?([]), do: true
+  defp proper_list?([_head | tail]), do: proper_list?(tail)
+  defp proper_list?(_other), do: false
 
   defp coerce_fields_for_extra(additional, extra, defs) do
     Enum.reduce_while(extra, {:ok, %{}}, fn {key, raw}, {:ok, acc} ->

@@ -58,6 +58,10 @@ defmodule ToolCall.Typespec do
     %Type{kind: :float, source: float}
   end
 
+  def to_type(binary, _providers) when is_binary(binary) do
+    %Type{kind: :enum, values: [binary], source: binary}
+  end
+
   def to_type({:-, _, [number]}, providers) when is_number(number),
     do: to_type(-number, providers)
 
@@ -1125,7 +1129,7 @@ defmodule ToolCall.Typespec do
     do: value >= 0 and value <= 0x10FFFF
 
   def default_compatible?(%Type{kind: :string, source: :char}, value) when is_binary(value) do
-    String.valid?(value) and match?({_grapheme, ""}, String.next_grapheme(value))
+    String.valid?(value) and match?([_], String.codepoints(value))
   end
 
   def default_compatible?(%Type{kind: :string, source: :charlist}, value) when is_list(value) do

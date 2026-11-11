@@ -32,10 +32,10 @@ defmodule ToolCall.Timeout do
 
     * `:task_supervisor` - a `Task.Supervisor` name. With a finite timeout the
       task is started under the supervisor; with `:infinity` a supervisor still
-      starts a task. Without a supervisor, a finite timeout uses a task linked
-      to the caller and `:infinity` runs in the caller. An unreachable or
-      invalid supervisor answers `{:error, {:task_supervisor, reason}}` instead
-      of exiting the caller.
+      starts a task. Without a supervisor, a finite timeout uses an unlinked
+      task and `:infinity` runs in the caller. An unreachable or invalid
+      supervisor answers `{:error, {:task_supervisor, reason}}` instead of
+      exiting the caller.
   """
   @spec run((-> term()), timeout(), keyword()) :: term()
   def run(fun, timeout, opts) do
@@ -85,7 +85,11 @@ defmodule ToolCall.Timeout do
   defp start_task(fun, opts) do
     case Keyword.get(opts, :task_supervisor) do
       nil ->
-        {:ok, Task.async(fun)}
+        # Task.async links; unlink so a task exception is reported by yield
+        # instead of exiting the caller.
+        task = Task.async(fun)
+        Process.unlink(task.pid)
+        {:ok, task}
 
       supervisor when is_atom(supervisor) or is_pid(supervisor) ->
         try do
