@@ -55,14 +55,21 @@ compile time; there are no runtime dependencies.
 - `ToolCall.run/4` — required/unknown argument checks, coercion, exception
   wrapping, optional result validation, per-call timeouts, approval policies and
   dispatch audit hooks.
+- `ToolCall.Runner.resolve/4` + `ToolCall.Runner.execute/2` — split validation
+  and invocation; `resolve` returns a `%ToolCall.Call{}` that can be gated and
+  executed later.
+- `ToolCall.Approval` + `ToolCall.Approval.Request` — approval policy hook and a
+  serializable pending request for human-in-the-loop flows.
+- `ToolCall.Audit` + `ToolCall.Audit.Entry` — one dispatch audit entry per
+  attempt.
+- `ToolCall.Timeout` — timeout policy behaviour and per-invocation task runner.
 - `ToolCall.tools/1` and `ToolCall.describe/2` — the IR and provider-neutral
   schema descriptions.
 - `ToolCall.Stream` — folds streaming tool-call deltas (OpenAI, Anthropic,
   Gemini) into complete calls for `run/3`.
 - `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
 - `use ToolCall, timeout: ...`, `approval: ...`, `audit: ...` — module-level
-  policies; `Runner.resolve/4` + `execute/2` expose the same hooks separately.
-- `ToolCall.validate_policies!/1` — validates module-level policies at startup.
+  policies; `ToolCall.validate_policies!/1` checks them at startup.
 - `mix tool_call.export` — JSON for OpenAI, Anthropic, MCP or Gemini.
 - `mix tool_call.clean` — removes orphaned typedoc companion beams.
 
