@@ -539,7 +539,9 @@ ToolCall.run(request.module, request.tool, request.args,
   module-level policy is checked when the module is resolved. An audit module is
   checked for `record/1` the same way. Module-level option values are not
   compile-time validated: a typo such as `approval: :grant` or
-  `audit: :granted` compiles and fails when the module is resolved.
+  `audit: :granted` compiles and fails when the module is resolved. Call
+  `ToolCall.validate_policies!/1` at startup to reject it before the first
+  dispatch.
 
 `ToolCall.Runner.resolve/4` and `execute/2` expose the same hook: `resolve`
 stores the policy and the context, `execute` checks it, so a future runtime can
@@ -655,6 +657,18 @@ use ToolCall, timeout: MyTimeouts
   owns the overall deadline.
 - A timeout is a hard kill, not a cancellation: see
   [`pitfalls.md`](pitfalls.md#a-timeout-is-a-hard-kill-not-a-cancellation).
+
+### Startup validation
+
+Module-level policies can be checked before the first dispatch:
+
+```elixir
+:ok = ToolCall.validate_policies!(MyApp.Tools)
+```
+
+It validates `use ToolCall, timeout: ...`, `approval: ...` and `audit: ...`
+modules and callbacks, and raises `ArgumentError` for an invalid value.
+One-off `run/4` options are checked when the call is made.
 
 ### Streaming
 

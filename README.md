@@ -62,6 +62,7 @@ compile time; there are no runtime dependencies.
 - `use ToolCall, types: [...]` — custom `ToolCall.TypeProvider` integrations.
 - `use ToolCall, timeout: ...`, `approval: ...`, `audit: ...` — module-level
   policies; `Runner.resolve/4` + `execute/2` expose the same hooks separately.
+- `ToolCall.validate_policies!/1` — validates module-level policies at startup.
 - `mix tool_call.export` — JSON for OpenAI, Anthropic, MCP or Gemini.
 - `mix tool_call.clean` — removes orphaned typedoc companion beams.
 

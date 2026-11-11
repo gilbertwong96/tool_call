@@ -515,6 +515,63 @@ defmodule ToolCall do
     end
   end
 
+  @doc """
+  Validates the module-level timeout, approval and audit policies.
+
+  Call this at application startup to reject a bad `use ToolCall` policy before
+  the first dispatch instead of waiting for `resolve` or `execute`. One-off
+  `run/4` options are validated when the call is made. Raises `ArgumentError`
+  for an unknown callback or an invalid mode.
+
+      :ok = ToolCall.validate_policies!(MyApp.Tools)
+  """
+  @spec validate_policies!(module()) :: :ok
+  def validate_policies!(module) do
+    ensure_tool_module!(module)
+    validate_timeout_policy!(module.__timeout_policy__())
+    validate_approval_policy!(module.__approval_policy__())
+    validate_audit_policy!(module.__audit_policy__())
+    :ok
+  end
+
+  defp validate_timeout_policy!(nil), do: :ok
+  defp validate_timeout_policy!(:infinity), do: :ok
+
+  defp validate_timeout_policy!(timeout) when is_integer(timeout) and timeout >= 0,
+    do: :ok
+
+  defp validate_timeout_policy!(policy) when is_atom(policy) do
+    ToolCall.Options.validate_policy!(policy, :timeout, 3, "timeout")
+  end
+
+  defp validate_timeout_policy!(other) do
+    raise ArgumentError,
+          "timeout must be :infinity, a non-negative integer or a module, " <>
+            "got: #{inspect(other)}"
+  end
+
+  defp validate_approval_policy!(nil), do: :ok
+  defp validate_approval_policy!(mode) when mode in [:granted, :denied], do: :ok
+
+  defp validate_approval_policy!(policy) when is_atom(policy) do
+    ToolCall.Options.validate_policy!(policy, :check, 3, "approval")
+  end
+
+  defp validate_approval_policy!(other) do
+    raise ArgumentError,
+          "approval must be :granted, :denied, a module or nil, got: #{inspect(other)}"
+  end
+
+  defp validate_audit_policy!(nil), do: :ok
+
+  defp validate_audit_policy!(policy) when is_atom(policy) do
+    ToolCall.Options.validate_policy!(policy, :record, 1, "audit")
+  end
+
+  defp validate_audit_policy!(other) do
+    raise ArgumentError, "audit must be a module or nil, got: #{inspect(other)}"
+  end
+
   defp runner_path?(opts) do
     Keyword.get(opts, :validate_result, false) or Keyword.has_key?(opts, :timeout) or
       Keyword.has_key?(opts, :task_supervisor) or Keyword.has_key?(opts, :approval) or

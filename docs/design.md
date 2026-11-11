@@ -497,8 +497,8 @@ the application persists it and resumes with the stored args and
 `approval: :granted`. Option policies are checked for `check/3`; module-level
 policies are loaded on demand and checked when resolved. Module-level option
 values are not compile-time validated: a typo such as `approval: :grant` or
-`audit: :granted` compiles and fails when the module is resolved; validate
-external configuration at startup. The request stores
+`audit: :granted` compiles and fails when the module is resolved; call
+`ToolCall.validate_policies!/1` at startup to reject it earlier. The request stores
 args and context, not one-off execution options: re-supply `validate_result:`,
 `timeout:`, `audit:` and `task_supervisor:` on resume if the original call used
 them (module policies are re-read). The pending audit entry carries the request

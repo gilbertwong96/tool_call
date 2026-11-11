@@ -69,6 +69,10 @@
   (`tree_integer_40ca`), so adding a parameter never renames an existing entry.
 - Compiling outside a Mix project no longer exits; the typedoc companion is
   skipped with a warning and the phase-one descriptions are used.
+- `ToolCall.validate_policies!/1` validates the module-level timeout, approval
+  and audit policies at startup, including their callback arities and valid
+  module-level approval modes. One-off `run/4` options remain validated at the
+  call site.
 
 ### Changed
 
