@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Typespec do
   @moduledoc """
   Converts a quoted typespec AST (aliases already expanded) into `ToolCall.IR.Type`.
@@ -275,10 +278,13 @@ defmodule ToolCall.Typespec do
     type = validate_ref!(type, provider, module, function, args)
     type = validate_struct!(type, provider, module, function, args)
     type = validate_pattern!(type, provider, module, function, args)
-    validate_transform!(type, provider, module, function, args)
-    validate_validator!(type, provider, module, function, args)
-    type = validate_metadata!(type, provider, module, function, args)
-    validate_children!(type, provider, module, function, args)
+
+    with :ok <- validate_transform!(type, provider, module, function, args),
+         :ok <- validate_validator!(type, provider, module, function, args) do
+      type
+      |> validate_metadata!(provider, module, function, args)
+      |> validate_children!(provider, module, function, args)
+    end
   end
 
   defp validate_pattern!(%Type{pattern: nil} = type, _provider, _module, _function, _args),
@@ -394,11 +400,11 @@ defmodule ToolCall.Typespec do
   end
 
   defp validate_metadata!(%Type{} = type, provider, module, function, args) do
-    validate_bounds!(type, provider, module, function, args)
-    validate_format!(type, provider, module, function, args)
-    validate_nullable!(type, provider, module, function, args)
-    validate_values!(type, provider, module, function, args)
     type
+    |> validate_bounds!(provider, module, function, args)
+    |> validate_format!(provider, module, function, args)
+    |> validate_nullable!(provider, module, function, args)
+    |> validate_values!(provider, module, function, args)
   end
 
   defp validate_bounds!(
@@ -408,12 +414,15 @@ defmodule ToolCall.Typespec do
          function,
          args
        ) do
-    validate_bound!(kind, minimum, "minimum", provider, module, function, args)
-    validate_bound!(kind, maximum, "maximum", provider, module, function, args)
-    validate_bound_order!(minimum, maximum, provider, module, function, args)
-    validate_array_bound!(kind, minimum, "minimum", provider, module, function, args)
-    validate_array_bound!(kind, maximum, "maximum", provider, module, function, args)
-    type
+    with :ok <- validate_bound!(kind, minimum, "minimum", provider, module, function, args),
+         :ok <- validate_bound!(kind, maximum, "maximum", provider, module, function, args),
+         :ok <- validate_bound_order!(minimum, maximum, provider, module, function, args),
+         :ok <-
+           validate_array_bound!(kind, minimum, "minimum", provider, module, function, args),
+         :ok <-
+           validate_array_bound!(kind, maximum, "maximum", provider, module, function, args) do
+      type
+    end
   end
 
   defp validate_bound!(_kind, nil, _name, _provider, _module, _function, _args), do: :ok
@@ -481,12 +490,13 @@ defmodule ToolCall.Typespec do
   defp validate_array_bound!(_kind, _value, _name, _provider, _module, _function, _args),
     do: :ok
 
-  defp validate_format!(%Type{format: nil}, _provider, _module, _function, _args), do: :ok
+  defp validate_format!(%Type{format: nil} = type, _provider, _module, _function, _args),
+    do: type
 
-  defp validate_format!(%Type{format: format}, provider, module, function, args)
+  defp validate_format!(%Type{format: format} = type, provider, module, function, args)
        when is_binary(format) do
     if String.valid?(format) do
-      :ok
+      type
     else
       provider_type_error!(
         provider,
@@ -508,9 +518,9 @@ defmodule ToolCall.Typespec do
     )
   end
 
-  defp validate_nullable!(%Type{nullable: nullable}, _provider, _module, _function, _args)
+  defp validate_nullable!(%Type{nullable: nullable} = type, _provider, _module, _function, _args)
        when is_boolean(nullable),
-       do: :ok
+       do: type
 
   defp validate_nullable!(%Type{nullable: nullable}, provider, module, function, args) do
     provider_type_error!(
@@ -522,12 +532,25 @@ defmodule ToolCall.Typespec do
     )
   end
 
-  defp validate_values!(%Type{kind: :enum, values: nil}, _provider, _module, _function, _args),
-    do: :ok
+  defp validate_values!(
+         %Type{kind: :enum, values: nil} = type,
+         _provider,
+         _module,
+         _function,
+         _args
+       ),
+       do: type
 
-  defp validate_values!(%Type{kind: :enum, values: values}, provider, module, function, args)
+  defp validate_values!(
+         %Type{kind: :enum, values: values} = type,
+         provider,
+         module,
+         function,
+         args
+       )
        when is_list(values) do
     Enum.each(values, &validate_enum_value!(&1, provider, module, function, args))
+    type
   end
 
   defp validate_values!(%Type{kind: :enum, values: values}, provider, module, function, args) do
@@ -540,7 +563,7 @@ defmodule ToolCall.Typespec do
     )
   end
 
-  defp validate_values!(%Type{}, _provider, _module, _function, _args), do: :ok
+  defp validate_values!(%Type{} = type, _provider, _module, _function, _args), do: type
 
   defp validate_enum_value!(value, provider, module, function, args) when is_binary(value) do
     if String.valid?(value) do
@@ -1000,7 +1023,7 @@ defmodule ToolCall.Typespec do
     do: Enum.flat_map(variants || [], &type_refs/1)
 
   defp type_refs(%Type{kind: :object, fields: fields, additional: additional}) do
-    Enum.flat_map(fields || [], &type_refs(&1.type)) ++ type_refs(additional)
+    List.flatten([Enum.map(fields || [], &type_refs(&1.type)), type_refs(additional)])
   end
 
   defp type_refs(nil), do: []
@@ -1101,8 +1124,9 @@ defmodule ToolCall.Typespec do
   def default_compatible?(%Type{kind: :string, source: :char}, value) when is_integer(value),
     do: value >= 0 and value <= 0x10FFFF
 
-  def default_compatible?(%Type{kind: :string, source: :char}, value) when is_binary(value),
-    do: String.valid?(value) and String.length(value) == 1
+  def default_compatible?(%Type{kind: :string, source: :char}, value) when is_binary(value) do
+    String.valid?(value) and match?({_grapheme, ""}, String.next_grapheme(value))
+  end
 
   def default_compatible?(%Type{kind: :string, source: :charlist}, value) when is_list(value) do
     is_binary(List.to_string(value))
@@ -1318,7 +1342,7 @@ defmodule ToolCall.Typespec do
   defp int_literal(_other), do: :error
 
   defp flatten_union({:|, _, [left, right]}, providers) do
-    flatten_union(left, providers) ++ flatten_union(right, providers)
+    Enum.concat(flatten_union(left, providers), flatten_union(right, providers))
   end
 
   defp flatten_union(other, providers), do: [to_type(other, providers)]

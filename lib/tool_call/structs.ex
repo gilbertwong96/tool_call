@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Structs do
   @moduledoc false
   # Compile-time introspection of a compiled struct module.
@@ -150,15 +153,17 @@ defmodule ToolCall.Structs do
     types = List.wrap(Module.get_attribute(module, :type))
     opaques = List.wrap(Module.get_attribute(module, :opaque))
 
-    t0 = fn
-      {:type, {:"::", _, [{:t, _, params}, body]}, _} when params in [nil, []] -> {:ok, body}
-      _entry -> nil
-    end
+    {parameterized?, found} =
+      Enum.reduce(types, {false, nil}, fn
+        {:type, {:"::", _, [{:t, _, params}, body]}, _}, {param?, nil}
+        when params in [nil, []] ->
+          {param?, {:ok, body}}
 
-    parameterized? =
-      Enum.any?(types, fn
-        {:type, {:"::", _, [{:t, _, params}, _]}, _} -> is_list(params) and params != []
-        _entry -> false
+        {:type, {:"::", _, [{:t, _, params}, _]}, _}, {param?, found} ->
+          {param? or (is_list(params) and params != []), found}
+
+        _entry, acc ->
+          acc
       end)
 
     opaque? =
@@ -169,7 +174,7 @@ defmodule ToolCall.Structs do
 
     cond do
       opaque? -> :opaque
-      found = Enum.find_value(types, t0) -> found
+      found != nil -> found
       parameterized? -> :parameterized_t
       true -> :absent
     end
@@ -183,7 +188,7 @@ defmodule ToolCall.Structs do
   @type field_status :: :ok | :truncated | :parameterized_t | :non_literal_t | :no_typespec
 
   defp do_fields(module) do
-    case fetch_types(module) do
+    case Code.Typespec.fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
       :error -> from_source(module)
     end
@@ -371,7 +376,7 @@ defmodule ToolCall.Structs do
     |> source_statements()
     |> Enum.reduce({initial_aliases, []}, fn statement, {aliases, entries} ->
       {put_statement_aliases(aliases, statement, module),
-       source_type_entry(statement, module, aliases) ++ entries}
+       Enum.reverse(source_type_entry(statement, module, aliases), entries)}
     end)
     |> elem(1)
     |> Enum.reverse()
@@ -499,7 +504,7 @@ defmodule ToolCall.Structs do
   end
 
   defp definitions(module) do
-    case fetch_types(module) do
+    case Code.Typespec.fetch_types(module) do
       {:ok, entries} -> Enum.reduce(entries, %{}, &definition_entry/2)
       :error -> %{}
     end
@@ -516,8 +521,6 @@ defmodule ToolCall.Structs do
   end
 
   defp definition_entry(_entry, acc), do: acc
-
-  defp fetch_types(module), do: Code.Typespec.fetch_types(module)
 
   # `__exception__` is a sentinel that `defexception` sets to true; it is not a
   # payload field and dispatch must leave it at its default.

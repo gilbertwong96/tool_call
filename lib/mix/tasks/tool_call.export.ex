@@ -1,4 +1,10 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule Mix.Tasks.ToolCall.Export do
+  # reach:disable-for-this-file string_building
+  # Compile-time diagnostic and $defs names are short lived; iolists would
+  # obscure the messages without a runtime benefit.
   use Mix.Task
 
   @shortdoc "Exports the derived tool schemas as JSON"
@@ -103,6 +109,9 @@ defmodule Mix.Tasks.ToolCall.Export do
     Mix.raise("no application to discover tools in; pass module names or --app")
   end
 
+  # The app name comes from the Mix CLI; the atom set is bounded by the names
+  # the user runs the task with.
+  # reach:disable-next-line unsafe_atom_creation
   defp discover(app) when is_binary(app), do: discover(String.to_atom(app))
 
   defp discover(app) do

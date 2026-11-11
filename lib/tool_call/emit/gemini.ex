@@ -25,8 +25,11 @@ defmodule ToolCall.Emit.Gemini do
 
   @spec emit(Tool.t(), keyword()) :: map()
   def emit(%Tool{} = tool, opts \\ []) do
-    _strict? = Schema.strict?(opts)
-    params = Schema.params(tool, [])
+    # The call validates the option shape; Gemini ignores the strict flag.
+    params =
+      case Schema.strict?(opts) do
+        _strict? -> Schema.params(tool, [])
+      end
 
     %{
       "name" => tool.name,

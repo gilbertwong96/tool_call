@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Emit.Schema do
   @moduledoc """
   JSON Schema rendering shared by the provider emitters.
@@ -291,25 +294,32 @@ defmodule ToolCall.Emit.Schema do
     if fine_tuned?(opts), do: schema, else: Map.put(schema, "pattern", pattern)
   end
 
+  defp enum(%Type{values: values}) when values in [nil, []], do: %{"type" => "string"}
+
   defp enum(%Type{values: values}) do
-    cond do
-      values in [nil, []] ->
-        %{"type" => "string"}
+    flags =
+      Enum.reduce(values, {true, true, true, false}, fn value, {bool?, atom?, int?, special?} ->
+        {
+          bool? and is_boolean(value),
+          atom? and is_atom(value),
+          int? and is_integer(value),
+          special? or is_boolean(value) or is_nil(value)
+        }
+      end)
 
-      Enum.all?(values, &is_boolean/1) ->
-        %{"type" => "boolean", "enum" => values}
-
-      Enum.all?(values, &is_atom/1) and
-          not Enum.any?(values, &(is_boolean(&1) or is_nil(&1))) ->
-        %{"type" => "string", "enum" => Enum.map(values, &Atom.to_string/1)}
-
-      Enum.all?(values, &is_integer/1) ->
-        %{"type" => "integer", "enum" => values}
-
-      true ->
-        %{"enum" => Enum.map(values, &enum_value/1)}
-    end
+    enum_schema(values, flags)
   end
+
+  defp enum_schema(values, {true, _atom?, _int?, _special?}),
+    do: %{"type" => "boolean", "enum" => values}
+
+  defp enum_schema(values, {_bool?, true, _int?, false}),
+    do: %{"type" => "string", "enum" => Enum.map(values, &Atom.to_string/1)}
+
+  defp enum_schema(values, {_bool?, _atom?, true, _special?}),
+    do: %{"type" => "integer", "enum" => values}
+
+  defp enum_schema(values, _flags), do: %{"enum" => Enum.map(values, &enum_value/1)}
 
   # A mixed enum can carry atoms next to booleans or integers; the schema term
   # must be JSON-encodable by any encoder, not only Elixir's.

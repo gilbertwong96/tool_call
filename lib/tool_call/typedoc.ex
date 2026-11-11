@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Typedoc do
   @moduledoc false
   # Recovers docs-visible `@typedoc` text from the EEP-48 `Docs` chunk after
@@ -78,6 +81,8 @@ defmodule ToolCall.Typedoc do
   end
 
   defp decode(chunk) do
+    # The chunk is compiler-generated for this module's own beam, not user input.
+    # reach:disable-next-line unsafe_binary_to_term
     case :erlang.binary_to_term(chunk) do
       {:docs_v1, _annotation, _language, _format, _module_doc, _metadata, docs} = term
       when is_list(docs) ->

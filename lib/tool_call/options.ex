@@ -44,7 +44,10 @@ defmodule ToolCall.Options do
       {:ok, nil} ->
         :ok
 
-      {:ok, timeout} when is_integer(timeout) or timeout == :infinity ->
+      {:ok, timeout} when is_integer(timeout) ->
+        :ok
+
+      {:ok, :infinity} ->
         :ok
 
       {:ok, policy} when is_atom(policy) and policy not in [true, false] ->

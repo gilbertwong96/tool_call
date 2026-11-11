@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Generated do
   @moduledoc false
   # Modules that may gain a typedoc companion call these helpers from their

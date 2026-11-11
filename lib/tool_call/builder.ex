@@ -1,3 +1,6 @@
+# reach:disable-for-this-file string_building
+# Compile-time diagnostic and $defs names are short lived; iolists would
+# obscure the messages without a runtime benefit.
 defmodule ToolCall.Builder do
   @moduledoc false
   # Compile-time assembly: pairs each `def` with its `@doc`, `@spec` and
@@ -220,8 +223,9 @@ defmodule ToolCall.Builder do
 
     {params, {{defs, registry}, truncated}} =
       spec_args
+      |> Enum.zip(defaults)
       |> Enum.with_index(1)
-      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {arg_ast, index},
+      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {{arg_ast, default}, index},
                                                         {defs_registry, truncated} ->
         {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
@@ -259,7 +263,6 @@ defmodule ToolCall.Builder do
           )
         end
 
-        default = Enum.at(defaults, index - 1)
         type = Typespec.to_type(type_ast, context.providers)
 
         if truncated? do
@@ -378,21 +381,18 @@ defmodule ToolCall.Builder do
   end
 
   defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
-    {names, registry} =
-      insts
-      |> Enum.with_index()
-      |> Enum.map_reduce(registry, fn {inst, index}, registry ->
+    {refs, registry} =
+      Enum.map_reduce(insts, registry, fn inst, registry ->
         {ref_name, registry} = assign_name(inst, registry)
-        {{index, ref_name}, registry}
+        {ref_name, registry}
       end)
 
-    names = Map.new(names)
+    names = refs |> Enum.with_index() |> Map.new(fn {ref, index} -> {index, ref} end)
 
     defs =
       insts
-      |> Enum.with_index()
-      |> Enum.reduce(defs, fn {inst, index}, defs ->
-        ref_name = Map.fetch!(names, index)
+      |> Enum.zip(refs)
+      |> Enum.reduce(defs, fn {inst, ref_name}, defs ->
         body = LocalTypes.rewrite_refs(inst.body, names)
         Map.put_new(defs, ref_name, Typespec.to_type(body, context.providers))
       end)

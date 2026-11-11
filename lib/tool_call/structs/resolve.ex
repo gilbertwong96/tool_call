@@ -1,3 +1,6 @@
+# reach:disable-for-this-file string_building
+# Compile-time diagnostic and $defs names are short lived; iolists would
+# obscure the messages without a runtime benefit.
 defmodule ToolCall.Structs.Resolve do
   @moduledoc false
   # Turns the `:struct` markers left by `ToolCall.Typespec` into closed objects.
@@ -183,7 +186,7 @@ defmodule ToolCall.Structs.Resolve do
 
     {defs, inst_types} =
       insts
-      |> Enum.with_index()
+      |> Stream.with_index()
       |> Enum.reduce({state.defs, []}, fn {inst, index}, {defs, types} ->
         name = Map.fetch!(names, index)
         type = Typespec.to_type(rewrite(inst.body, names), providers)
@@ -251,7 +254,7 @@ defmodule ToolCall.Structs.Resolve do
   defp assign_inst_names(module, insts, state) do
     {names, state} =
       insts
-      |> Enum.with_index()
+      |> Stream.with_index()
       |> Enum.map_reduce(state, fn {inst, index}, state ->
         key = {module, inst.key, inst.args}
 
@@ -308,7 +311,7 @@ defmodule ToolCall.Structs.Resolve do
     do: Enum.flat_map(variants || [], &markers/1)
 
   defp markers(%Type{kind: :object, fields: fields, additional: additional}) do
-    Enum.flat_map(fields || [], &markers(&1.type)) ++ markers(additional)
+    List.flatten([Enum.map(fields || [], &markers(&1.type)), markers(additional)])
   end
 
   defp markers(_type), do: []

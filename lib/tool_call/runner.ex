@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Runner do
   @moduledoc """
   Validates and dispatches a decoded argument map to the tool function.
@@ -536,10 +539,11 @@ defmodule ToolCall.Runner do
   defp timeout_policy_config(:error, module), do: module_timeout_config(module)
   defp timeout_policy_config({:ok, nil}, module), do: module_timeout_config(module)
 
-  defp timeout_policy_config({:ok, timeout}, _module)
-       when is_integer(timeout) or timeout == :infinity do
+  defp timeout_policy_config({:ok, timeout}, _module) when is_integer(timeout) do
     {ToolCall.Timeout.validate!(timeout), nil}
   end
+
+  defp timeout_policy_config({:ok, :infinity}, _module), do: {:infinity, nil}
 
   defp timeout_policy_config({:ok, policy}, _module)
        when is_atom(policy) and policy not in [true, false] do
@@ -682,13 +686,8 @@ defmodule ToolCall.Runner do
     items = items || []
 
     values
-    |> Enum.with_index()
-    |> Enum.flat_map(fn {item, index} ->
-      case Enum.at(items, index) do
-        nil -> []
-        type -> nested_non_string_keys(type, item, defs)
-      end
-    end)
+    |> Enum.zip(items)
+    |> Enum.flat_map(fn {item, type} -> nested_non_string_keys(type, item, defs) end)
   end
 
   defp nested_non_string_keys(%Type{kind: :ref, ref: ref}, value, defs) do

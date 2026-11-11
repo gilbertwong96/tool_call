@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Codegen do
   @moduledoc false
 
@@ -52,15 +55,11 @@ defmodule ToolCall.Codegen do
       |> Enum.filter(fn {param, _index} -> param.required end)
       |> Enum.map(fn {param, index} -> arg_clause(param, vars[index], index) end)
 
-    present_vars =
+    {present_vars, value_vars} =
       optional
       |> Enum.with_index()
-      |> Enum.map(fn {_param, index} -> present_var(index) end)
-
-    value_vars =
-      optional
-      |> Enum.with_index()
-      |> Enum.map(fn {_param, index} -> optional_value_var(index) end)
+      |> Enum.map(fn {_param, index} -> {present_var(index), optional_value_var(index)} end)
+      |> Enum.unzip()
 
     present_clauses =
       optional
@@ -128,31 +127,39 @@ defmodule ToolCall.Codegen do
     if valid_prefix?(bits) do
       clauses =
         optional
-        |> Enum.with_index()
-        |> Enum.filter(fn {_param, index} -> Enum.at(bits, index) end)
-        |> Enum.map(fn {param, optional_index} ->
+        |> Enum.zip(bits)
+        |> Enum.zip(value_vars)
+        |> Enum.filter(fn {{_param, present?}, _value_var} -> present? end)
+        |> Enum.map(fn {{param, true}, value_var} ->
           param_index = Enum.find_index(params, &(&1 == param))
-          optional_value_clause(param, vars[param_index], Enum.at(value_vars, optional_index))
+          optional_value_clause(param, vars[param_index], value_var)
         end)
+
+      present = optional |> Enum.zip(bits) |> Enum.filter(&elem(&1, 1)) |> Enum.map(&elem(&1, 0))
+      present = MapSet.new(present)
+
+      vars_by_param =
+        params
+        |> Enum.with_index()
+        |> Map.new(fn {param, index} -> {param, Map.fetch!(vars, index)} end)
 
       selected =
         params
-        |> Enum.filter(fn param ->
-          param.required or Enum.at(bits, Enum.find_index(optional, &(&1 == param)))
-        end)
-        |> Enum.map(fn param -> vars[Enum.find_index(params, &(&1 == param))] end)
+        |> Enum.filter(&(&1.required or MapSet.member?(present, &1)))
+        |> Enum.map(&Map.fetch!(vars_by_param, &1))
 
       body = optional_branch_body(tool, selected, clauses, indirect?)
       {:->, [], [[pattern], body]}
     else
-      missing_index = Enum.find_index(bits, &(not &1))
-      missing = Enum.at(optional, missing_index)
+      indexed = Enum.zip(optional, bits) |> Enum.with_index()
+
+      {{missing, _present?}, missing_index} =
+        Enum.find(indexed, fn {{_param, present?}, _index} -> not present? end)
 
       dropped =
-        optional
-        |> Enum.with_index()
-        |> Enum.filter(fn {_p, i} -> i > missing_index and Enum.at(bits, i) end)
-        |> Enum.map(fn {p, _i} -> p.name end)
+        for {{param, true}, index} <- indexed,
+            index > missing_index,
+            do: param.name
 
       error =
         quote do

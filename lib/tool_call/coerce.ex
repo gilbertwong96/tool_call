@@ -1,3 +1,6 @@
+# reach:disable-for-this-file bare_rescue
+# Total boundary: any exception from the wrapped operation is converted to a
+# result; no exception is meant to escape this module.
 defmodule ToolCall.Coerce do
   @moduledoc """
   Runtime normalisation of decoded JSON arguments into the value domains that
@@ -395,8 +398,14 @@ defmodule ToolCall.Coerce do
       value in values ->
         {:ok, value}
 
-      is_float(value) and value == trunc(value) and trunc(value) in values ->
-        {:ok, trunc(value)}
+      is_float(value) ->
+        truncated = trunc(value)
+
+        if truncated == value and truncated in values do
+          {:ok, truncated}
+        else
+          {:error, {:invalid_enum, value, values}}
+        end
 
       is_binary(value) ->
         enum_atom(values, value)

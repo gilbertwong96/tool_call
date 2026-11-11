@@ -1,3 +1,6 @@
+# reach:disable-for-this-file string_building
+# Compile-time diagnostic and $defs names are short lived; iolists would
+# obscure the messages without a runtime benefit.
 defmodule ToolCall.LocalTypes do
   @moduledoc false
   # Inlines `@type`, `@typep` and `@opaque` definitions declared in the module
