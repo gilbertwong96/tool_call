@@ -5,12 +5,13 @@ defmodule ToolCall.Doc do
   `@doc` is free-form markdown. The first paragraph becomes the tool
   description; a leading `#` title is stripped, while a leading level-2+
   section heading is omitted and its body is used. Bullets under a
-  `## Parameters` heading (also `Params`, `Options`, `Arguments` and `Args`)
-  become per-parameter descriptions, with an optional type annotation such as
+  `## Parameters` heading (also `Params`, `Arguments` and `Args`) become
+  per-parameter descriptions, with an optional type annotation such as
   `* city (String.t()) - city name`. `## Options` conventionally documents the
-  keys of a keyword argument, so those bullets are not matched against parameter
-  names, do not name a parameter by position and do not warn; the section is not
-  part of the tool description.
+  keys of a keyword argument, so those bullets are returned under `:options`
+  rather than `:params`; they are not matched against parameter names, do not
+  name a parameter by position and do not warn. The section is not part of the
+  tool description.
 
       @doc \"\"\"
       Get the forecast.
@@ -28,20 +29,33 @@ defmodule ToolCall.Doc do
   @type parsed :: %{
           description: String.t() | nil,
           params: %{String.t() => String.t()},
+          options: %{String.t() => String.t()},
           param_order: [String.t()],
           param_heading: :parameters | :options | nil
         }
 
+  @doc """
+  Parses a `@doc` string.
+
+  `:params` contains `## Parameters` bullets and `:options` contains
+  `## Options` bullets; the two maps are mutually exclusive. `:param_order`
+  preserves declaration order for parameter bullets.
+  """
   @spec parse(nil | false | String.t()) :: parsed()
-  def parse(nil), do: %{description: nil, params: %{}, param_order: [], param_heading: nil}
-  def parse(false), do: %{description: nil, params: %{}, param_order: [], param_heading: nil}
+  def parse(nil),
+    do: %{description: nil, params: %{}, options: %{}, param_order: [], param_heading: nil}
+
+  def parse(false),
+    do: %{description: nil, params: %{}, options: %{}, param_order: [], param_heading: nil}
 
   def parse(text) when is_binary(text) do
     {params, heading} = params(text)
+    params_map = Map.new(params)
 
     %{
       description: description(text),
-      params: Map.new(params),
+      params: if(heading == :options, do: %{}, else: params_map),
+      options: if(heading == :options, do: params_map, else: %{}),
       param_order: if(heading == :options, do: [], else: Enum.map(params, &elem(&1, 0))),
       param_heading: heading
     }

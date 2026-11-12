@@ -236,6 +236,8 @@ defmodule ToolCall.Stream do
     |> Enum.map(&Map.fetch!(acc.calls, &1))
   end
 
+  defp build_call(%{name: nil} = call), do: {:error, {:missing_name, call.id}}
+
   defp build_call(%{args: args} = call) when not is_nil(args) do
     if is_map(args) do
       {:ok, %{id: call.id, name: call.name, arguments: args}}
@@ -243,8 +245,6 @@ defmodule ToolCall.Stream do
       {:error, {:invalid_stream_arguments, {call.id, call.name, args}}}
     end
   end
-
-  defp build_call(%{name: nil} = call), do: {:error, {:missing_name, call.id}}
 
   defp build_call(call) do
     json = call.parts |> Enum.reverse() |> IO.iodata_to_binary()

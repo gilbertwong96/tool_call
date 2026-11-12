@@ -24,6 +24,11 @@ defmodule ToolCall.TypespecTest do
     assert %Type{kind: :enum, values: [:red, :green]} = ir({:|, [], [:red, :green]})
   end
 
+  test "a [type, ...] list is a non-empty array" do
+    assert %Type{kind: :array, minimum: 1, items: %Type{kind: :integer}} =
+             ir([{:integer, [], []}, {:..., [], []}])
+  end
+
   test "a binary literal becomes a singleton enum" do
     assert %Type{kind: :enum, values: ["hello"]} = ir("hello")
   end
@@ -257,6 +262,25 @@ defmodule ToolCall.TypespecTest do
     end
   end
 
+  test "validate_type!/1 rejects fields that are not on a struct" do
+    type = %Type{
+      kind: :object,
+      struct: Date,
+      fields: [
+        %Field{
+          name: "bogus",
+          key: :bogus,
+          type: %Type{kind: :integer},
+          required: true
+        }
+      ]
+    }
+
+    assert_raise ArgumentError, ~r/struct/, fn ->
+      Typespec.validate_type!(type)
+    end
+  end
+
   test "validate_type!/1 rejects invalid UTF-8 metadata" do
     assert_raise ArgumentError, ~r/format must be valid UTF-8/, fn ->
       Typespec.validate_type!(%Type{kind: :string, format: <<255>>})
@@ -308,6 +332,7 @@ defmodule ToolCall.TypespecTest do
 
     assert Typespec.default_compatible?(char, "A")
     refute Typespec.default_compatible?(char, "e\u0301")
+    refute Typespec.default_compatible?(char, 0xD800)
   end
 
   test "default_compatible?/2 validates tuple shape and object fields" do
@@ -524,9 +549,14 @@ defmodule ToolCall.TypespecTest do
       end
     end
 
-    test "accepts a struct module and a plain map object" do
+    test "accepts a struct module with fields and a plain map object" do
+      fields =
+        for key <- [:calendar, :day, :month, :year] do
+          %Field{name: Atom.to_string(key), key: key, type: %Type{kind: :any}}
+        end
+
       assert %Type{kind: :object, struct: Date} =
-               Typespec.validate_type!(%Type{kind: :object, struct: Date})
+               Typespec.validate_type!(%Type{kind: :object, struct: Date, fields: fields})
 
       assert %Type{kind: :object, struct: nil} =
                Typespec.validate_type!(%Type{kind: :object, struct: nil})

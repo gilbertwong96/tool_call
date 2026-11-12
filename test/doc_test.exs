@@ -33,8 +33,12 @@ defmodule ToolCall.DocTest do
 
     assert %{param_heading: :parameters} = Doc.parse(params)
 
-    assert %{param_heading: :options, params: %{"timeout" => "request timeout"}, param_order: []} =
-             Doc.parse(options)
+    assert %{
+             param_heading: :options,
+             params: %{},
+             options: %{"timeout" => "request timeout"},
+             param_order: []
+           } = Doc.parse(options)
 
     assert %{param_heading: nil} = Doc.parse("Run.")
   end
@@ -144,7 +148,7 @@ defmodule ToolCall.DocTest do
     - `query`: free text
     """
 
-    assert %{params: %{"query" => "free text"}} = Doc.parse(doc)
+    assert %{params: %{}, options: %{"query" => "free text"}} = Doc.parse(doc)
   end
 
   test "accepts a ## Params heading" do

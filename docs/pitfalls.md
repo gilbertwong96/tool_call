@@ -88,9 +88,10 @@ bullet for an option the function does not take — is dropped, and the compile
 warns with the offending name, so a description that does not appear is visible
 rather than silent. `## Options` is the exception: it documents the keys of a
 keyword argument, so its bullets are not checked against parameter names, do not
-name an unannotated parameter by position, and do not warn. The section is not
-part of the tool description either — put the keys in the description or flatten
-them into parameters if the model must see them.
+name an unannotated parameter by position, and do not warn. `Doc.parse/1`
+returns those bullets under `:options`, not `:params`; the Builder ignores them.
+The section is not part of the tool description either — put the keys in the
+description or flatten them into parameters if the model must see them.
 
 ## `@typedoc` is consumed before `@before_compile`
 
@@ -181,9 +182,10 @@ function is skipped the way `@doc false` skips it, and the compile warns with th
 parameter name. The function is absent from `tools/1`, `emit/3` and
 `describe/2`, and `run/3` answers `{:unknown_tool, name, exposed_names}`. Narrow
 the argument, add a `TypeProvider`, or hide the function with `@doc false`. An
-untyped *field* inside an object, array or tuple is different: it renders as
-`{}` and keeps the tool. Runtime IR (`ToolCall.IR.Tool`) may still carry `:any`;
-the skip is a compile-time decision.
+`:any`/`term()` field inside an object, array or tuple is different: it renders
+as `{}` and keeps the tool. A **required** nested `:unsupported` value hides the
+tool; an optional nested one keeps it. Runtime IR (`ToolCall.IR.Tool`) may still
+carry `:any`; the skip is a compile-time decision.
 
 ## A typedoc companion needs Mix at compile time
 
@@ -307,6 +309,16 @@ accumulator per choice; a malformed fragment is
 `{:error, {:invalid_stream_arguments, ...}}` and a call that never receives a name is
 `{:error, {:missing_name, id}}`.
 
+## A hand-built struct type must match `__struct__/0`
+
+A runtime `%ToolCall.IR.Type{kind: :object, struct: Mod}` must list exactly the
+fields exposed by `Mod.__struct__/0`: every `Field.key` must exist, its
+`Field.name` must be `Atom.to_string(key)`, and `additional` must be `nil`.
+`ToolCall.Typespec.validate_tool!/1` rejects a mismatch, so a hand-built tool
+cannot silently dispatch into a partially initialized struct. During the
+current module's compilation the struct is not closed yet, so this shape check
+is deferred; compiler-generated IR is trusted at that point.
+
 ## A hand-built `:ref` needs its `$defs` entry
 
 `ToolCall.IR.Tool.defs` must hold every name a `:ref` points at.
@@ -391,7 +403,8 @@ kind.
 ## Result validation is strict to the value domain
 
 `float()` rejects an integer, `String.t()` requires valid UTF-8,
-`char()` is a codepoint and `charlist()` is a list — while `binary()`,
+`char()` is a valid Unicode scalar codepoint and `charlist()` is a proper list
+of them — while `binary()`,
 `bitstring()` and `nonempty_binary()` accept raw bytes without the UTF-8 or
 pattern requirement. `nil` is valid on any `nullable: true` node before every
 other rule. A closed plain object rejects unknown keys; a struct is checked by
@@ -516,7 +529,8 @@ The task is a different process: `self/0`, the process dictionary,
 `try/after` does not run on the kill, and a long-running NIF is not interrupted.
 Prefer a cooperative timeout inside the tool (Ecto `timeout:`, Req
 `receive_timeout`) for resources and NIFs. Without `task_supervisor:` a finite
-timeout uses an unlinked task and `:infinity` runs in the caller;
+timeout uses a private `Task.Supervisor` linked to the caller and `:infinity` runs in
+the caller; stopping it drains the normal exit message for a trapping caller;
 with it the supervisor owns the task, including `:infinity`. An unreachable or
 invalid supervisor answers `{:error, {:task_supervisor, reason}}`. The timeout
 policy runs at `execute/2` after approval, receives the raw args, and is not a
@@ -539,5 +553,7 @@ restarts.
 Some limits are intentional: nested/remote/provider typedoc inheritance,
 `@typep` typedoc recovery, overloaded specs, two arities of one function,
 tuple defaults, JSON numbers outside Erlang's finite range, `@doc` metadata-only
-entries and type-provider typedoc. See the Design boundaries section in
+entries, type-provider typedoc, and the unsupported standard-library aliases
+`iolist()`, `iodata()`, `maybe_improper_list/2` and
+`nonempty_improper_list/2`. See the Design boundaries section in
 [`design.md`](design.md).

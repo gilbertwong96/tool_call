@@ -44,7 +44,7 @@ defmodule ToolCall.Options do
       {:ok, nil} ->
         :ok
 
-      {:ok, timeout} when is_integer(timeout) ->
+      {:ok, timeout} when is_integer(timeout) and timeout >= 0 ->
         :ok
 
       {:ok, :infinity} ->

@@ -246,6 +246,19 @@ defmodule ToolCall.StreamTest do
     end
   end
 
+  test "a missing name wins over prepared arguments" do
+    call = %{id: "call_1", name: nil, parts: [], input: nil, args: %{"x" => 1}}
+
+    acc = %ToolCall.Stream{
+      provider: :anthropic,
+      calls: %{{:anthropic, 0} => call},
+      order: [{:anthropic, 0}],
+      next: 1
+    }
+
+    assert {:error, {:missing_name, "call_1"}} = ToolCall.Stream.finish(acc)
+  end
+
   test "an empty stream finishes with no calls" do
     assert {:ok, []} = Stream.aggregate([], :openai)
   end

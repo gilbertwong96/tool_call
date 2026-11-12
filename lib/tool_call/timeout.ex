@@ -32,10 +32,10 @@ defmodule ToolCall.Timeout do
 
     * `:task_supervisor` - a `Task.Supervisor` name. With a finite timeout the
       task is started under the supervisor; with `:infinity` a supervisor still
-      starts a task. Without a supervisor, a finite timeout uses an unlinked
-      task and `:infinity` runs in the caller. An unreachable or invalid
-      supervisor answers `{:error, {:task_supervisor, reason}}` instead of
-      exiting the caller.
+      starts a task. Without a supervisor, a finite timeout uses a private
+      `Task.Supervisor` and a task unlinked from the caller; `:infinity` runs in
+      the caller. An unreachable or invalid supervisor answers
+      `{:error, {:task_supervisor, reason}}` instead of exiting the caller.
   """
   @spec run((-> term()), timeout(), keyword()) :: term()
   def run(fun, timeout, opts) do
@@ -59,17 +59,21 @@ defmodule ToolCall.Timeout do
         {:ok, fun.()}
 
       _supervisor ->
-        with {:ok, task} <- start_task(fun, opts), do: await_task(task)
+        with {:ok, task, _cleanup} <- start_task(fun, opts), do: await_task(task)
     end
   end
 
   def run_tagged(fun, timeout, opts) when is_integer(timeout) and timeout >= 0 do
     case start_task(fun, opts) do
-      {:ok, task} ->
-        case Task.yield(task, timeout) do
-          {:ok, result} -> {:ok, result}
-          {:exit, reason} -> {:error, {:exited, reason}}
-          nil -> shutdown_task(Task.shutdown(task, :brutal_kill), timeout)
+      {:ok, task, cleanup} ->
+        try do
+          case Task.yield(task, timeout) do
+            {:ok, result} -> {:ok, result}
+            {:exit, reason} -> {:error, {:exited, reason}}
+            nil -> shutdown_task(Task.shutdown(task, :brutal_kill), timeout)
+          end
+        after
+          stop_supervisor(cleanup)
         end
 
       {:error, _reason} = error ->
@@ -85,15 +89,11 @@ defmodule ToolCall.Timeout do
   defp start_task(fun, opts) do
     case Keyword.get(opts, :task_supervisor) do
       nil ->
-        # Task.async links; unlink so a task exception is reported by yield
-        # instead of exiting the caller.
-        task = Task.async(fun)
-        Process.unlink(task.pid)
-        {:ok, task}
+        start_private_task(fun)
 
       supervisor when is_atom(supervisor) or is_pid(supervisor) ->
         try do
-          {:ok, Task.Supervisor.async_nolink(supervisor, fun)}
+          {:ok, Task.Supervisor.async_nolink(supervisor, fun), nil}
         rescue
           exception -> {:error, {:task_supervisor, exception}}
         catch
@@ -103,6 +103,52 @@ defmodule ToolCall.Timeout do
 
       other ->
         {:error, {:task_supervisor, {:invalid, other}}}
+    end
+  end
+
+  # A finite timeout without a caller-supplied supervisor still needs a
+  # supervisor so a raising task cannot deliver an exit signal to the caller.
+  defp start_private_task(fun) do
+    case Task.Supervisor.start_link() do
+      {:ok, supervisor} ->
+        try do
+          {:ok, Task.Supervisor.async_nolink(supervisor, fun), supervisor}
+        rescue
+          exception ->
+            stop_supervisor(supervisor)
+            {:error, {:task_supervisor, exception}}
+        catch
+          :exit, reason ->
+            stop_supervisor(supervisor)
+            {:error, {:task_supervisor, reason}}
+
+          kind, value ->
+            stop_supervisor(supervisor)
+            {:error, {:task_supervisor, {kind, value}}}
+        end
+
+      {:error, reason} ->
+        {:error, {:task_supervisor, reason}}
+    end
+  end
+
+  defp stop_supervisor(nil), do: :ok
+
+  defp stop_supervisor(supervisor) do
+    trapping? = match?({:trap_exit, true}, Process.info(self(), :trap_exit))
+
+    try do
+      Supervisor.stop(supervisor)
+    catch
+      :exit, _reason -> :ok
+    end
+
+    if trapping? do
+      receive do
+        {:EXIT, ^supervisor, _reason} -> :ok
+      after
+        0 -> :ok
+      end
     end
   end
 

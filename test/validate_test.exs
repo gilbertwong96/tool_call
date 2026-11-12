@@ -42,6 +42,16 @@ defmodule ToolCall.ValidateTest do
     assert {:error, _} = Validate.valid?(str(:charlist), "abc", %{})
   end
 
+  test "char and charlist reject invalid Unicode codepoints" do
+    assert {:error, {:expected_char, 0xD800}} = Validate.valid?(str(:char), 0xD800, %{})
+
+    assert {:error, {:expected_charlist, [0x110000]}} =
+             Validate.valid?(str(:charlist), [0x110000], %{})
+
+    assert {:error, {:expected_charlist, [0xD800]}} =
+             Validate.valid?(str(:charlist), [0xD800], %{})
+  end
+
   test "a validator replaces the kind rule" do
     node = %Type{kind: :string, validator: {ToolCall.Providers.Stdlib, :validate_date}}
 

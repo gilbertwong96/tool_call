@@ -79,6 +79,8 @@
 - `ToolCall.Providers.URI` and `ToolCall.Providers.Version` are optional type
   providers for the standard-library structs, using string wire forms and
   parsing with `URI.new/1` and `Version.parse/1`.
+- The `[t, ...]` non-empty list syntax is supported as `minItems: 1` and
+  dispatches as a list, equivalent to `nonempty_list(t)`.
 
 ### Changed
 
@@ -121,8 +123,9 @@
 - An enum that mixes atoms with booleans or integers stringifies the atoms, so
   the schema term is JSON-encodable by any encoder.
 
-- **A tool with an untyped argument is not exposed.** `term()`, `any()`, a
-  remote type without a provider and an `@opaque` struct leave the argument
+- **A tool with an argument whose root has no JSON type is not exposed.**
+  `term()`, `any()`, a remote type without a provider, an `@opaque` struct, or a
+  root `fun()`/`pid()`/`port()`/`reference()`/`mfa()` leaves the argument
   undescribable, so the function is skipped with a compile-time warning instead
   of shipping a `{}` schema. Runtime IR may still use `:any`.
 
@@ -173,10 +176,11 @@
   silently becoming `{}`.
 - A `## Options` bullet no longer becomes a same-named parameter's description;
   Options documents keyword keys, not function parameters.
-- A parameter whose root type is unrepresentable (`fun()`, `pid()`, `port()`,
-  `reference()`, `mfa()`) now hides the tool instead of exposing a schema the
-  dispatcher can never satisfy. Nested unrepresentable fields still render `{}`
-  and keep the tool.
+- A parameter whose root type or required nested path is unrepresentable
+  (`fun()`, `pid()`, `port()`, `reference()`, `mfa()`) now hides the tool
+  instead of exposing a schema the dispatcher can never satisfy. Optional
+  nested unrepresentable fields still render `{}` and keep the tool because
+  they can be omitted.
 - An aliased `no_return()` result now leaves `tool.result` as `nil`, matching
   the direct `no_return()` path.
 - `char()` default validation now requires exactly one codepoint, not one
@@ -194,6 +198,22 @@
 - `Runner.execute/2` rejects `:timeout_policy` and `:validate_result`; those
   options are meaningful only during `resolve/4`, and silently ignoring them
   was a trap.
+- Hand-built struct IR is now checked against the struct's actual
+  `__struct__/0` fields; mismatched or missing fields and non-nil
+  `additional` are rejected before dispatch.
+- `ToolCall.Doc.parse/1` now returns `## Options` bullets under `:options`
+  instead of `:params`, so the parser no longer presents keyword-option docs as
+  function parameters.
+- A negative `:timeout_policy` is rejected during option validation instead of
+  deferring the failure to a later dispatch phase.
+- Result validation now rejects invalid Unicode scalar values in `char()` and
+  `charlist()`; a charlist containing an out-of-range or surrogate codepoint no
+  longer passes validation.
+- The private timeout supervisor stays linked to the caller so caller death
+  tears down its task; its normal termination message is drained for callers
+  that trap exits.
+- Streaming calls now check for a missing name before using an already prepared
+  argument map, so a hand-built accumulator cannot bypass `{:missing_name, id}`.
 
 ## 0.1.0 - 2026-11-09
 

@@ -42,6 +42,24 @@ defmodule ToolCall.BuilderTest do
 
   import ToolCall.TestModule
 
+  test "supports non-empty list syntax" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(xs :: [integer(), ...]) :: :ok
+        def go(_xs), do: :ok
+      end
+      """)
+
+    assert ToolCall.tool_names(module) == ["go"]
+
+    assert %{"type" => "array", "items" => %{"type" => "integer"}, "minItems" => 1} =
+             param_schema(module, "go", "xs")
+  end
+
   test "omits defaults that are not compile-time literals" do
     module =
       compile!("""
@@ -1208,8 +1226,8 @@ defmodule ToolCall.BuilderTest do
     assert param_schema(module, "go", "timeout")["description"] == nil
   end
 
-  test "warns about types JSON cannot express" do
-    {_module, warnings} =
+  test "hides a tool with a required nested unrepresentable value" do
+    {module, warnings} =
       compile_with_warnings!("""
       defmodule FIXTURE do
         use ToolCall
@@ -1220,7 +1238,23 @@ defmodule ToolCall.BuilderTest do
       end
       """)
 
-    assert warnings =~ ~s(parameter "t" of go/1 has no JSON representation)
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "t")
+    assert ToolCall.tool_names(module) == []
+  end
+
+  test "keeps a tool with only an optional unrepresentable field" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Optional."
+        @spec go(t :: %{optional(:value) => pid()}) :: :ok
+        def go(_t), do: :ok
+      end
+      """)
+
+    assert ToolCall.tool_names(module) == ["go"]
   end
 
   test "does not expose a tool whose argument is unrepresentable" do

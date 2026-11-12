@@ -71,7 +71,7 @@ compile time; there are no runtime dependencies.
   `ToolCall.Providers.URI` and `ToolCall.Providers.Version` are optional string
   providers for those standard-library structs.
 - `use ToolCall, timeout: ...`, `approval: ...`, `audit: ...` — module-level
-  policies; `ToolCall.validate_policies!/1` checks them at startup.
+  policies; call `ToolCall.validate_policies!/1` at startup to check them.
 - `ToolCall.PolicyValidation` — one-shot supervision child (one per supervisor,
   with all modules) that runs the startup policy validation before the rest of
   the tree.

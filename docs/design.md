@@ -261,6 +261,7 @@ build warns. Depth 18 now compiles in 28 ms.
 | `%{optional(k) => t}` | `:object` | not in `required`; atom keys at dispatch |
 | `%{k() => t}` | `:object` | `additionalProperties: <t>`; keys stay strings |
 | `[t]`, `list(t)` | `:array` | `{"type":"array","items":...}` |
+| `[t, ...]` | `:array` | `+ "minItems": 1` |
 | `nonempty_list(t)` | `:array` | `+ "minItems": 1` |
 | `{a, b}`, `{a, b, c}` | `:tuple` | `prefixItems` + min/maxItems; strict keeps only the size; the function receives a tuple |
 | `tuple()` | `:tuple`, no fixed items | array with unconstrained items; the function receives a tuple |
@@ -293,12 +294,15 @@ diagnostics. A non-atom source is provenance and is dropped from the embedded
 IR. `ToolCall.emit/3`
 validates runtime IR before rendering.
 
-Not handled: bitstrings with explicit sizes and `@typep` field types inside a
-struct (the types chunk exposes public types only). Another module's non-struct
-type without a provider leaves the *argument* untyped, and a tool with an untyped
-argument is not exposed; the same applies to `term()`, `any()`, `@opaque`
-structs and the unrepresentable `fun()`/`pid()`/`port()`/`reference()`/`mfa()`
-domains. Recursive types and concrete structs are handled; see below.
+Not handled: bitstrings with explicit sizes, `@typep` field types inside a
+struct (the types chunk exposes public types only), and the standard-library
+list aliases `iolist()`, `iodata()`, `maybe_improper_list/2` and
+`nonempty_improper_list/2`. Another module's non-struct type without a provider
+leaves the *argument* untyped, and a tool with an untyped argument is not
+exposed; the same applies to `term()`, `any()`, `@opaque` structs and the
+unrepresentable `fun()`/`pid()`/`port()`/`reference()`/`mfa()` domains. A
+required nested unrepresentable path also hides the tool; an optional one does
+not. Recursive types and concrete structs are handled; see below.
 
 A union of the same kind is collapsed only when the collapse is exact. Integer
 bounds are treated as intervals: `0..10 | pos_integer()` is `0..∞`, a contained
@@ -454,7 +458,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
   raise.
 - `binary()`/`bitstring()`/`nonempty_binary()` use their real value domains (no
   UTF-8 or pattern requirement); `String.t()` requires valid UTF-8 and its
-  pattern; `char()` is a codepoint and `charlist()` a list.
+  pattern; `char()` is a valid Unicode scalar codepoint and `charlist()` is a
+  proper list of them.
 - `float()` requires a float; `number()` accepts integers and floats.
 - Structs check `is_struct/2`, required fields and field types; a closed plain
   object rejects unknown keys; an open object accepts them.
@@ -540,7 +545,11 @@ new. A timeout wraps the invocation and its result validation in a task.
 `run/4 timeout:` overrides the module default; `use ToolCall, timeout: ...`
 embeds a constant or a policy in the generated runner and disables the fast path
 for that module. With `:infinity` a `:task_supervisor` still starts a task;
-without one `:infinity` runs in the caller. The task is killed with
+without one a finite timeout starts a short-lived private `Task.Supervisor`
+linked to the caller; its normal exit message is drained when the caller traps
+exits, and caller death tears down the child task,
+while `:infinity` runs in the caller. Pass a `:task_supervisor` for hot timeout
+paths to avoid per-call supervisor startup. The task is killed with
 `:brutal_kill`; process-local state, ETS ownership, Ecto sandbox ownership and
 NIFs are not carried over, so cooperative timeouts inside the tool remain the
 better choice for DB/HTTP work. The timeout covers the invocation and result
@@ -565,6 +574,10 @@ for OpenAI, Anthropic, MCP and Gemini. OpenAI and Anthropic are precompiled per
 module; MCP renders on demand from the tool IR, because its schema is the same
 parameters object the other targets embed. Gemini also renders on demand: its
 `parameters` is a different OpenAPI subset, not the shared JSON Schema.
+MCP, Gemini, and `ToolCall.describe/2` validate the runtime IR before rendering;
+that validation may call `Code.ensure_compiled/1` for struct and validator
+modules, so those modules must remain loadable in the release. The precompiled
+OpenAI and Anthropic paths do not perform this validation.
 
 | | OpenAI | Anthropic | MCP | Gemini |
 |---|---|---|---|---|
@@ -803,6 +816,9 @@ These are intentional limits rather than missing implementation:
 - Defaults that JSON cannot carry, notably tuples, are omitted. JSON numbers
   outside Erlang's finite float range fail in the decoder before the library
   sees them.
+- `iolist()`, `iodata()`, `maybe_improper_list/2` and
+  `nonempty_improper_list/2` are not mapped; a top-level argument with one of
+  these types is hidden with the usual untyped warning.
 - `@doc` metadata-only entries have no description text. `@on_definition` is an
   accumulating hook shared with other libraries.
 - Type providers resolve types, not typedoc descriptions.

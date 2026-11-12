@@ -173,8 +173,9 @@ and convert in the function.
   `fun()`/`pid()`/`port()`/`reference()`/`mfa()` makes the schema undescribable,
   so the function is skipped like `@doc false` and the compile warns with the
   parameter name. Narrow the argument, add a `TypeProvider`, or opt out with
-  `@doc false`. An untyped field *inside* an object or array keeps the tool and
-  renders as `{}`.
+  `@doc false`. An `:any`/`term()` field *inside* an object or array keeps the
+  tool and renders as `{}`. A **required** nested `:unsupported` value hides the
+  tool; an optional nested one keeps it because the field can be omitted.
 - **Typedoc companions are written through Mix.** `@typedoc` fallback
   descriptions are stored next to the compiled beam via
   `Mix.Project.compile_path/0`. Compiling outside a Mix project (`elixirc`, an
@@ -484,7 +485,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"},
   `{:invalid_result, _}`.
 
 Validation is strict to the value domain: `float()` rejects `1`, `String.t()`
-requires valid UTF-8, `char()` is a codepoint and `charlist()` a list, while
+requires valid UTF-8, `char()` is a valid Unicode scalar codepoint and `charlist()` is a
+proper list of them, while
 `binary()`/`bitstring()` accept raw bytes. `nil` is valid for a `T | nil` return.
 `keyword(t)` and `MapSet.t(t)` also check their element types. A provider type
 (`Date.t()`, `MapSet.t()`, …) is checked through the provider's optional
@@ -673,10 +675,9 @@ use ToolCall, timeout: MyTimeouts
   the task. It receives the validated raw argument map, not the coerced values;
   an invalid call or a denied/pending approval returns before the policy runs.
 - `task_supervisor: MyApp.TaskSupervisor` runs the invocation under a
-  `Task.Supervisor` instead of an unlinked task, including a timeout supplied by
-  the module. With `timeout: :infinity` a supervisor still starts a task. An
-  unreachable or invalid supervisor answers
-  `{:error, {:task_supervisor, reason}}`.
+  `Task.Supervisor` instead of the private supervisor used by a finite timeout.
+  With `timeout: :infinity` a supervisor still starts a task. An unreachable or
+  invalid supervisor answers `{:error, {:task_supervisor, reason}}`.
 - Approval, timeout and audit policies run synchronously in the caller; only
   the invocation and its result validation are covered by the timeout. Keep
   policies fast; the overall deadline is the caller's.

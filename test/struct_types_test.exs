@@ -375,8 +375,8 @@ defmodule ToolCall.StructTypesTest do
     refute warnings =~ "no JSON type"
   end
 
-  test "an untyped field inside a definition warns once, not once per occurrence" do
-    {_module, warnings} =
+  test "a required unrepresentable field inside a definition hides the tool" do
+    {module, warnings} =
       compile_with_warnings!("""
       defmodule FIXTURE do
         use ToolCall
@@ -387,7 +387,8 @@ defmodule ToolCall.StructTypesTest do
       end
       """)
 
-    assert warnings |> String.split("no JSON representation") |> Enum.count_until(3) == 2
+    assert warnings =~ ~s(tool "go" is not exposed: parameter "x")
+    assert ToolCall.tool_names(module) == []
   end
 
   test "emitted schema closes the struct object" do

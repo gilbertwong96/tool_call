@@ -570,7 +570,11 @@ defmodule ToolCall.Builder do
   # with one is not a contract the model can honour. Skipping it keeps the
   # compile total and mirrors `@doc false`; the warning names the fix.
   defp expose(module, location, %Tool{} = tool, truncated, result_truncated, raw) do
-    case Enum.find(tool.params, &(&1.type.kind in [:any, :unsupported])) do
+    defs = tool.defs
+
+    case Enum.find(tool.params, fn param ->
+           root_unrepresentable?(param.type) or required_unrepresentable?(param.type, defs)
+         end) do
       nil ->
         warn_tool(module, location, tool, truncated, result_truncated)
         {{tool, location, truncated, result_truncated}, raw}
@@ -587,6 +591,50 @@ defmodule ToolCall.Builder do
         {nil, raw}
     end
   end
+
+  defp root_unrepresentable?(%Type{kind: kind}), do: kind in [:any, :unsupported]
+  defp root_unrepresentable?(_type), do: false
+
+  defp required_unrepresentable?(type, defs) do
+    required_unrepresentable?(type, defs, [])
+  end
+
+  defp required_unrepresentable?(%Type{nullable: true}, _defs, _seen), do: false
+
+  defp required_unrepresentable?(%Type{kind: :unsupported}, _defs, _seen), do: true
+
+  defp required_unrepresentable?(%Type{kind: :object} = type, defs, seen) do
+    Enum.any?(type.fields || [], fn field ->
+      field.required and required_unrepresentable?(field.type, defs, seen)
+    end)
+  end
+
+  defp required_unrepresentable?(%Type{kind: :array} = type, defs, seen) do
+    (type.minimum || 0) > 0 and required_unrepresentable?(type.items, defs, seen)
+  end
+
+  defp required_unrepresentable?(%Type{kind: :tuple, items: items}, defs, seen)
+       when is_list(items) do
+    Enum.any?(items, &required_unrepresentable?(&1, defs, seen))
+  end
+
+  defp required_unrepresentable?(%Type{kind: :union, variants: variants}, defs, seen)
+       when is_list(variants) do
+    variants != [] and Enum.all?(variants, &required_unrepresentable?(&1, defs, seen))
+  end
+
+  defp required_unrepresentable?(%Type{kind: :ref, ref: ref}, defs, seen) when is_map(defs) do
+    if ref in seen do
+      false
+    else
+      case Map.fetch(defs, ref) do
+        {:ok, type} -> required_unrepresentable?(type, defs, [ref | seen])
+        :error -> false
+      end
+    end
+  end
+
+  defp required_unrepresentable?(_type, _defs, _seen), do: false
 
   defp warn_tool(module, location, %Tool{} = tool, truncated, result_truncated) do
     arity = length(tool.params)

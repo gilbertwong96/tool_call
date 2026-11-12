@@ -99,6 +99,11 @@ defmodule ToolCall.Typespec do
 
   # `[t]` is a one-element list in the AST; `[]` is an empty list literal.
   def to_type([{:->, _, _}], _providers), do: %Type{kind: :unsupported, source: :fun}
+
+  def to_type([type, {:..., _, []}], providers) do
+    %Type{kind: :array, items: to_type(type, providers), minimum: 1}
+  end
+
   def to_type([type], providers), do: %Type{kind: :array, items: to_type(type, providers)}
   def to_type([], _providers), do: %Type{kind: :array, items: %Type{kind: :any}}
 
@@ -828,7 +833,9 @@ defmodule ToolCall.Typespec do
   `pattern_regex`.
 
   Use this for hand-built types before passing them to `ToolCall.Coerce` or
-  rendering them with `ToolCall.Emit`.
+  rendering them with `ToolCall.Emit`. A `:object` node with a `:struct` module
+  must list exactly that module's `__struct__/0` fields; this is stricter than
+  previous versions and rejects a partially specified struct shape.
   """
   @spec validate_type!(Type.t()) :: Type.t()
   def validate_type!(%Type{} = type) do
@@ -948,11 +955,103 @@ defmodule ToolCall.Typespec do
         )
 
       true ->
-        type
+        validate_struct_fields!(type, provider, m, f, a)
     end
   end
 
   defp validate_struct!(type, _provider, _module, _function, _args), do: type
+
+  defp validate_struct_fields!(
+         %Type{struct: module, fields: fields, additional: additional} = type,
+         provider,
+         m,
+         f,
+         a
+       ) do
+    if compiled_struct?(module) do
+      validate_compiled_struct_fields!(
+        type,
+        fields,
+        additional,
+        provider,
+        m,
+        f,
+        a,
+        module
+      )
+    else
+      type
+    end
+  end
+
+  defp validate_compiled_struct_fields!(
+         type,
+         fields,
+         additional,
+         provider,
+         m,
+         f,
+         a,
+         module
+       ) do
+    expected = struct_field_keys(module)
+    fields = List.wrap(fields)
+
+    invalid =
+      Enum.find(fields, fn
+        %Field{name: name, key: key} when is_binary(name) and is_atom(key) ->
+          name != Atom.to_string(key) or key not in expected
+
+        _other ->
+          true
+      end)
+
+    cond do
+      not is_nil(additional) ->
+        provider_type_error!(
+          provider,
+          m,
+          f,
+          a,
+          "struct #{inspect(module)} must not have additional properties"
+        )
+
+      invalid != nil ->
+        provider_type_error!(
+          provider,
+          m,
+          f,
+          a,
+          "struct #{inspect(module)} contains field #{inspect(invalid)} that is not one of " <>
+            "#{inspect(expected)}"
+        )
+
+      Enum.sort(Enum.map(fields, & &1.key)) != expected ->
+        provider_type_error!(
+          provider,
+          m,
+          f,
+          a,
+          "struct #{inspect(module)} fields must match #{inspect(expected)}"
+        )
+
+      true ->
+        type
+    end
+  end
+
+  defp compiled_struct?(module) do
+    match?({:module, ^module}, Code.ensure_compiled(module))
+  end
+
+  defp struct_field_keys(module) do
+    module.__struct__()
+    |> Map.keys()
+    |> Enum.reject(&(&1 in [:__struct__, :__exception__]))
+    |> Enum.sort()
+  rescue
+    _exception -> []
+  end
 
   defp validate_defs!(defs) when is_map(defs) do
     Enum.reduce(defs, %{}, fn
@@ -1126,7 +1225,7 @@ defmodule ToolCall.Typespec do
     do: within_bounds?(type, value)
 
   def default_compatible?(%Type{kind: :string, source: :char}, value) when is_integer(value),
-    do: value >= 0 and value <= 0x10FFFF
+    do: valid_codepoint?(value)
 
   def default_compatible?(%Type{kind: :string, source: :char}, value) when is_binary(value) do
     String.valid?(value) and match?([_], String.codepoints(value))
@@ -1244,6 +1343,10 @@ defmodule ToolCall.Typespec do
   end
 
   defp default_pattern?(%Type{}, _value), do: false
+
+  defp valid_codepoint?(value) when is_integer(value) do
+    value >= 0 and value <= 0x10FFFF and not (value >= 0xD800 and value <= 0xDFFF)
+  end
 
   defp json_value?(value)
        when is_nil(value) or is_boolean(value) or is_atom(value) or is_number(value),

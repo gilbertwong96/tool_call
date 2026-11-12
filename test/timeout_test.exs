@@ -174,6 +174,49 @@ defmodule ToolCall.TimeoutTest do
     assert {:error, {:timeout, 10}} = ToolCall.Runner.execute(call, timeout: 10)
   end
 
+  test "a private timed supervisor does not send an exit message to a trapping caller" do
+    previous = Process.flag(:trap_exit, true)
+
+    try do
+      assert :ok = ToolCall.Timeout.run(fn -> :ok end, 1_000, [])
+      refute_receive {:EXIT, _pid, _reason}, 50
+    after
+      Process.flag(:trap_exit, previous)
+    end
+  end
+
+  test "a private timed supervisor stops its task when the caller dies" do
+    parent = self()
+
+    caller =
+      spawn(fn ->
+        ToolCall.Timeout.run(
+          fn ->
+            send(parent, {:task, self()})
+            Process.sleep(:infinity)
+          end,
+          60_000,
+          []
+        )
+      end)
+
+    task =
+      receive do
+        {:task, task} -> task
+      after
+        1_000 -> flunk("timed task did not start")
+      end
+
+    ref = Process.monitor(task)
+    Process.exit(caller, :kill)
+
+    try do
+      assert_receive {:DOWN, ^ref, :process, ^task, _reason}, 1_000
+    after
+      if Process.alive?(task), do: Process.exit(task, :kill)
+    end
+  end
+
   test "a raising timed task returns an exited error" do
     assert {:error, {:exited, _reason}} =
              ToolCall.Timeout.run(fn -> raise "boom" end, 1_000, [])
@@ -223,6 +266,12 @@ defmodule ToolCall.TimeoutTest do
              ToolCall.run(module, :sleep, %{"ms" => 1},
                task_supervisor: :missing_timeout_supervisor
              )
+  end
+
+  test "Options rejects a negative timeout_policy" do
+    assert_raise ArgumentError, ~r/timeout_policy/, fn ->
+      ToolCall.Options.validate!([timeout_policy: -1], [:timeout_policy])
+    end
   end
 
   test "an invalid timeout raises" do

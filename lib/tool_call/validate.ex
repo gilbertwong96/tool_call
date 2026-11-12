@@ -163,6 +163,12 @@ defmodule ToolCall.Validate do
     :exit, reason -> {:error, {:validate_raised, reason}}
   end
 
+  defp valid_codepoint?(value) when is_integer(value) do
+    value >= 0 and value <= 0x10FFFF and not (value >= 0xD800 and value <= 0xDFFF)
+  end
+
+  defp valid_codepoint?(_value), do: false
+
   defp check_bounds(%Type{} = type, integer) do
     below? = not is_nil(type.minimum) and integer < type.minimum
     above? = not is_nil(type.maximum) and integer > type.maximum
@@ -189,13 +195,13 @@ defmodule ToolCall.Validate do
   end
 
   defp check_string(%Type{source: :char}, value) do
-    if is_integer(value) and value >= 0 and value <= 0x10FFFF,
+    if valid_codepoint?(value),
       do: :ok,
       else: {:error, {:expected_char, value}}
   end
 
   defp check_string(%Type{source: :charlist}, value) do
-    if is_list(value) and proper_list?(value) and Enum.all?(value, &is_integer/1),
+    if is_list(value) and proper_list?(value) and Enum.all?(value, &valid_codepoint?/1),
       do: :ok,
       else: {:error, {:expected_charlist, value}}
   end
