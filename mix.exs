@@ -1,7 +1,7 @@
 defmodule ToolCall.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.2.0"
 
   def project do
     [
@@ -68,7 +68,7 @@ defmodule ToolCall.MixProject do
   defp package do
     [
       licenses: ["MIT"],
-      files: ~w(lib docs README.md CHANGELOG.md LICENSE mix.exs .formatter.exs),
+      files: ~w(lib docs/*.md README.md CHANGELOG.md LICENSE mix.exs .formatter.exs),
       links: %{"GitHub" => "https://github.com/gilbertwong96/tool_call"}
     ]
   end

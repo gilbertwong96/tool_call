@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.2.0 - 2026-11-12
+
+### Breaking changes
+
+- **A tool with an argument whose root has no JSON type is not exposed.**
+  `term()`, `any()`, a remote type without a provider, an `@opaque` struct, or a
+  root `fun()`/`pid()`/`port()`/`reference()`/`mfa()` leaves the argument
+  undescribable, so the function is skipped with a compile-time warning instead
+  of shipping a `{}` schema. Runtime IR may still use `:any`.
+
+- **Compatibility break:** a struct type with a public `@type t` is now a closed
+  object that dispatch rebuilds, where 0.1 emitted `{}` and passed any value.
+  This covers scalar wrappers such as `Decimal.t()`, `URI.t()` and `Range.t()`;
+  add a `ToolCall.TypeProvider` to keep the old permissive shape or to send the
+  value as a scalar. `MapSet` and `Regex` have built-in providers, and
+  `@opaque` types are unchanged.
+
 ### Added
 
 - Derive a tool's `@spec` return type into `%ToolCall.IR.Tool{result: ...}`,
@@ -122,19 +139,6 @@
   unannotated parameter by position.
 - An enum that mixes atoms with booleans or integers stringifies the atoms, so
   the schema term is JSON-encodable by any encoder.
-
-- **A tool with an argument whose root has no JSON type is not exposed.**
-  `term()`, `any()`, a remote type without a provider, an `@opaque` struct, or a
-  root `fun()`/`pid()`/`port()`/`reference()`/`mfa()` leaves the argument
-  undescribable, so the function is skipped with a compile-time warning instead
-  of shipping a `{}` schema. Runtime IR may still use `:any`.
-
-- **Compatibility break:** a struct type with a public `@type t` is now a closed
-  object that dispatch rebuilds, where 0.1 emitted `{}` and passed any value.
-  This covers scalar wrappers such as `Decimal.t()`, `URI.t()` and `Range.t()`;
-  add a `ToolCall.TypeProvider` to keep the old permissive shape or to send the
-  value as a scalar. `MapSet` and `Regex` have built-in providers, and
-  `@opaque` types are unchanged.
 
 ### Fixed
 
