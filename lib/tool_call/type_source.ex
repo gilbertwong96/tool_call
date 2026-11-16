@@ -2,6 +2,8 @@ defmodule ToolCall.TypeSource do
   @moduledoc false
 
   defmodule Param do
+    @moduledoc false
+
     defstruct [:name, :type, named?: false]
 
     @type t :: %__MODULE__{
@@ -12,6 +14,8 @@ defmodule ToolCall.TypeSource do
   end
 
   defmodule Declaration do
+    @moduledoc false
+
     defstruct [
       :name,
       :arity,
