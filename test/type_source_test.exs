@@ -189,6 +189,15 @@ defmodule ToolCall.TypeSourceTest do
     assert Typespec.spec_signature({:not_a_spec, [], []}) == nil
   end
 
+  test "TypeAst substitutes variable nodes recursively" do
+    assert ToolCall.TypeAst.substitute_vars({:x, [], nil}, %{x: {:integer, [], []}}) ==
+             {:integer, [], []}
+
+    assert ToolCall.TypeAst.substitute_vars({:list, [], [{:x, [], nil}]}, %{
+             x: {:integer, [], []}
+           }) == {:list, [], [{:integer, [], []}]}
+  end
+
   test "constraint_bindings resolves forward and reverse references" do
     constraints = [x: {:list, [], [{:t, [], nil}]}, t: {:integer, [], []}]
 

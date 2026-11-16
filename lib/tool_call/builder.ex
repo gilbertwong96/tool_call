@@ -12,7 +12,7 @@ defmodule ToolCall.Builder do
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
   # docs/design.md release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Structs, Typedoc, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Structs, Typedoc, TypeAst, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
   alias ToolCall.TypeSource.Typespec, as: SourceTypespec
 
@@ -178,7 +178,7 @@ defmodule ToolCall.Builder do
 
         source_ast =
           type_ast
-          |> substitute_vars(bindings)
+          |> TypeAst.substitute_vars(bindings)
           |> expand_aliases(context.env)
           |> localize_module_types(context.module)
 
@@ -295,7 +295,7 @@ defmodule ToolCall.Builder do
   defp result_type(return_ast, bindings, context, {defs, registry}, name, arity, location) do
     source_ast =
       return_ast
-      |> substitute_vars(bindings)
+      |> TypeAst.substitute_vars(bindings)
       |> expand_aliases(context.env)
       |> localize_module_types(context.module)
 
@@ -1202,22 +1202,6 @@ defmodule ToolCall.Builder do
   end
 
   defp keyword_literal(_other, _value_type, _env), do: :error
-
-  defp substitute_vars({name, _meta, context} = node, bindings)
-       when is_atom(name) and is_atom(context) do
-    Map.get(bindings, name, node)
-  end
-
-  defp substitute_vars({left, right}, bindings),
-    do: {substitute_vars(left, bindings), substitute_vars(right, bindings)}
-
-  defp substitute_vars(list, bindings) when is_list(list),
-    do: Enum.map(list, &substitute_vars(&1, bindings))
-
-  defp substitute_vars({head, meta, args}, bindings),
-    do: {substitute_vars(head, bindings), meta, substitute_vars(args, bindings)}
-
-  defp substitute_vars(other, _bindings), do: other
 
   defp doc_value(nil), do: nil
   defp doc_value({_line, value}), do: value

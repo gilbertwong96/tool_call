@@ -3,6 +3,7 @@ defmodule ToolCall.TypeSource.Typespec do
 
   @behaviour ToolCall.TypeSource
 
+  alias ToolCall.TypeAst
   alias ToolCall.TypeSource.{Declaration, Param}
 
   @impl true
@@ -114,7 +115,7 @@ defmodule ToolCall.TypeSource.Typespec do
     bindings =
       Enum.reduce(constraints, %{}, fn
         {name, type_ast}, acc when is_atom(name) ->
-          Map.put(acc, name, substitute_vars(type_ast, acc))
+          Map.put(acc, name, TypeAst.substitute_vars(type_ast, acc))
 
         _other, acc ->
           acc
@@ -127,26 +128,10 @@ defmodule ToolCall.TypeSource.Typespec do
     |> Enum.reverse()
     |> Enum.reduce(bindings, fn
       {name, type_ast}, acc when is_atom(name) ->
-        Map.put(acc, name, substitute_vars(type_ast, acc))
+        Map.put(acc, name, TypeAst.substitute_vars(type_ast, acc))
 
       _other, acc ->
         acc
     end)
   end
-
-  defp substitute_vars({name, _meta, context} = node, bindings)
-       when is_atom(name) and is_atom(context) do
-    Map.get(bindings, name, node)
-  end
-
-  defp substitute_vars({left, right}, bindings),
-    do: {substitute_vars(left, bindings), substitute_vars(right, bindings)}
-
-  defp substitute_vars(list, bindings) when is_list(list),
-    do: Enum.map(list, &substitute_vars(&1, bindings))
-
-  defp substitute_vars({head, meta, args}, bindings),
-    do: {substitute_vars(head, bindings), meta, substitute_vars(args, bindings)}
-
-  defp substitute_vars(other, _bindings), do: other
 end
