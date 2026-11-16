@@ -163,13 +163,12 @@ defmodule ToolCall do
   defmacro __before_compile__(env) do
     module = env.module
     defs = module |> Module.get_attribute(:tool_call_defs) |> List.wrap()
-    specs = Module.get_attribute(module, :spec) |> List.wrap()
     overrides = module |> Module.get_attribute(:tool_param) |> List.wrap()
 
     providers = Module.get_attribute(module, :tool_call_type_providers) || []
 
     %{tools: tools, typedoc_keys: typedoc_keys} =
-      ToolCall.Builder.build(module, defs, specs, overrides, env, providers)
+      ToolCall.Builder.build(module, defs, overrides, env, providers)
 
     # Phase two only fills parameters that have no description yet. A compile
     # with `docs: false` writes no Docs chunk, so there is nothing to recover
@@ -259,12 +258,9 @@ defmodule ToolCall do
   end
 
   defp runner_clauses(tools, embedded, timeout, approval, audit) do
-    indirect = for tool <- tools, no_return_spec?(tool.source), do: tool.name
+    indirect = for tool <- tools, tool.indirect?, do: tool.name
     ToolCall.Codegen.runner_clauses(embedded, indirect, timeout, approval, audit)
   end
-
-  defp no_return_spec?({:"::", _, [_args, {:no_return, _, []}]}), do: true
-  defp no_return_spec?(_spec), do: false
 
   # Phase two: recover visible typedocs from the just-compiled bytecode and
   # publish a companion only when at least one description changed. The

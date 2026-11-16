@@ -14,19 +14,21 @@ defmodule ToolCall.Builder do
 
   alias ToolCall.{Doc, LocalTypes, Structs, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
+  alias ToolCall.TypeSource.Typespec, as: SourceTypespec
 
   @wire_formats [:number, :string_integer]
   @override_keys [:fun, :name, :wire, :description]
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
-  @spec build(module(), list(), list(), list(), Macro.Env.t(), [module()]) ::
+  @spec build(module(), list(), list(), Macro.Env.t(), [module()]) ::
           %{tools: [Tool.t()], typedoc_keys: Typedoc.typedoc_keys()}
-  def build(module, defs, specs, overrides, env, providers) do
+  def build(module, defs, overrides, env, providers) do
     overrides = normalize_overrides(module, overrides)
+    type_source = SourceTypespec.load(module, env)
 
     context = %{
       module: module,
-      specs: specs,
+      type_source: type_source,
       overrides: overrides,
       env: env,
       providers: providers,
@@ -129,106 +131,50 @@ defmodule ToolCall.Builder do
     arity = length(head_args)
     location = {file, line}
 
-    case find_spec(context.specs, name, arity) do
-      {nil, _count} ->
-        warn_no_spec(context.module, location, name, arity, context.specs)
-        []
-
-      {spec, count} ->
-        warn_overloads(context.module, location, name, arity, count)
+    case SourceTypespec.fetch(context.type_source, name, arity) do
+      {:ok, declaration} ->
+        for warning <- declaration.warnings, do: warn(context.module, location, warning)
 
         {tool, truncated, result_truncated?} =
-          make_tool(name, head_args, doc, spec, context, location)
+          make_tool(name, head_args, doc, declaration, context, location)
 
         [{tool, location, truncated, result_truncated?}]
+
+      {:error, messages} ->
+        for message <- messages, do: warn(context.module, location, message)
+        []
     end
-  end
-
-  defp warn_no_spec(module, location, name, arity, specs) do
-    reduced =
-      for {:spec, ast, _location} <- specs,
-          {^name, spec_arity} <- [spec_signature(ast)],
-          spec_arity < arity,
-          uniq: true,
-          do: spec_arity
-
-    case reduced do
-      [] ->
-        warn(
-          module,
-          location,
-          "#{name}/#{arity} has no @spec; skipped. A tool without a typespec cannot be described."
-        )
-
-      arities ->
-        existing = Enum.map_join(Enum.sort(arities), ", ", &"#{name}/#{&1}")
-
-        warn(
-          module,
-          location,
-          "#{name}/#{arity} has no @spec; found #{existing} instead. A reduced arity " <>
-            "does not describe the defaulted arguments; add a spec for the full arity."
-        )
-    end
-  end
-
-  defp warn_overloads(_module, _location, _name, _arity, count) when count < 2, do: :ok
-
-  defp warn_overloads(module, location, name, arity, count) do
-    warn(
-      module,
-      location,
-      "#{name}/#{arity} has #{count} @spec clauses; using the first one. " <>
-        "Overloaded tools cannot be expressed as a single JSON Schema."
-    )
   end
 
   defp visible?(nil), do: true
   defp visible?({_line, false}), do: false
   defp visible?({_line, _text}), do: true
 
-  # `@spec` accumulates newest-first; reverse so "the first one" in the warning
-  # means the first declared.
-  defp find_spec(specs, name, arity) do
-    matching =
-      for {:spec, ast, _location} <- specs, match_spec?(ast, name, arity), do: ast
+  defp make_tool(name, head_args, doc, declaration, context, location) do
+    {:"::", _, [head, return_ast]} = declaration.source
+    {^name, _, _spec_args} = head
 
-    matching = Enum.reverse(matching)
-    {List.first(matching), length(matching)}
-  end
-
-  defp match_spec?(spec, name, arity), do: spec_signature(spec) == {name, arity}
-
-  @doc false
-  @spec spec_signature(term()) :: {atom(), non_neg_integer()} | nil
-  def spec_signature(spec) do
-    case unwrap_spec(spec) do
-      {{:"::", _, [{fun, _, args}, _return]}, _constraints} when is_atom(fun) and is_list(args) ->
-        {fun, length(args)}
-
-      _ ->
-        nil
-    end
-  end
-
-  defp make_tool(name, head_args, doc, spec, context, location) do
-    {spec, constraints} = unwrap_spec(spec)
-    {:"::", _, [head, return_ast]} = spec
-    {^name, _, spec_args} = head
-
-    bindings = constraint_bindings(constraints)
+    bindings = declaration.bindings
     defaults = Enum.map(head_args, &default_of/1)
     doc_info = Doc.parse(doc_value(doc))
-    arity = length(spec_args)
+    arity = declaration.arity
 
     {params, {{defs, registry}, truncated}} =
-      spec_args
+      declaration.params
       |> Enum.zip(defaults)
       |> Enum.with_index(1)
-      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {{arg_ast, default}, index},
+      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {{param, default}, index},
                                                         {defs_registry, truncated} ->
-        {param_name, type_ast, named?} = split_arg(arg_ast, index, head_args)
+        {param_name, named?} =
+          if param.named? do
+            {Atom.to_string(param.name), true}
+          else
+            {fallback, _type_ast, false} = unnamed_arg(param.type, index, head_args)
+            {fallback, false}
+          end
+
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
+        type_ast = param.type
 
         source_ast =
           type_ast
@@ -309,9 +255,10 @@ defmodule ToolCall.Builder do
        params: params,
        module: context.module,
        fun: name,
-       source: spec,
+       source: declaration.source,
        defs: defs,
-       result: result
+       result: result,
+       indirect?: declaration.indirect?
      }, truncated, result_truncated?}
   end
 
@@ -1082,16 +1029,6 @@ defmodule ToolCall.Builder do
     end
   end
 
-  defp split_arg({:"::", _, [{var, _, ctx}, type]}, index, head_args)
-       when is_atom(var) and is_atom(ctx) do
-    case Atom.to_string(var) do
-      "_" <> _ -> unnamed_arg(type, index, head_args)
-      name -> {name, type, true}
-    end
-  end
-
-  defp split_arg(type_ast, index, head_args), do: unnamed_arg(type_ast, index, head_args)
-
   defp doc_param_name(%{param_order: names}, index, fallback, false) do
     case Enum.at(names, index - 1) do
       nil -> {fallback, false}
@@ -1265,39 +1202,6 @@ defmodule ToolCall.Builder do
   end
 
   defp keyword_literal(_other, _value_type, _env), do: :error
-
-  defp unwrap_spec({:when, _, [spec, constraints]}) when is_list(constraints),
-    do: {spec, constraints}
-
-  defp unwrap_spec(spec), do: {spec, []}
-
-  # `@spec id(x) :: x when x: integer()` constrains a type variable, but a tool
-  # schema has no variables: bind them to the type the spec gives.
-  @doc false
-  @spec constraint_bindings(list()) :: map()
-  def constraint_bindings(constraints) do
-    bindings =
-      Enum.reduce(constraints, %{}, fn
-        {name, type_ast}, acc when is_atom(name) ->
-          Map.put(acc, name, substitute_vars(type_ast, acc))
-
-        _other, acc ->
-          acc
-      end)
-
-    # A constraint may refer to a variable declared after it (`when x: [t],
-    # t: integer()`); the reverse pass resolves that direction without looping
-    # on recursive constraints such as `when x: [x]`.
-    constraints
-    |> Enum.reverse()
-    |> Enum.reduce(bindings, fn
-      {name, type_ast}, acc when is_atom(name) ->
-        Map.put(acc, name, substitute_vars(type_ast, acc))
-
-      _other, acc ->
-        acc
-    end)
-  end
 
   defp substitute_vars({name, _meta, context} = node, bindings)
        when is_atom(name) and is_atom(context) do

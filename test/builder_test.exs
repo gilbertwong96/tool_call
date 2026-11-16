@@ -24,7 +24,6 @@ defmodule ToolCall.BuilderTest.Capture do
       ToolCall.Builder.build(
         module,
         module |> Module.get_attribute(:tool_call_defs) |> List.wrap(),
-        module |> Module.get_attribute(:spec) |> List.wrap(),
         module |> Module.get_attribute(:tool_param) |> List.wrap(),
         env,
         Module.get_attribute(module, :tool_call_type_providers) || []
@@ -1060,14 +1059,7 @@ defmodule ToolCall.BuilderTest do
            }
   end
 
-  test "exposes the pure spec and warning-location helpers" do
-    assert ToolCall.Builder.spec_signature({:not_a_spec, [], []}) == nil
-    assert ToolCall.Builder.spec_signature({:"::", [], [{:go, [], []}, :ok]}) == {:go, 0}
-
-    assert ToolCall.Builder.constraint_bindings([{:x, {:integer, [], []}}, :bad]) == %{
-             x: {:integer, [], []}
-           }
-
+  test "exposes the warning-location helper" do
     assert ToolCall.Builder.warn_location({nil, nil}) == []
     assert ToolCall.Builder.warn_location({"file.ex", nil}) == [file: "file.ex"]
     assert ToolCall.Builder.warn_location({"file.ex", 3}) == [file: "file.ex", line: 3]

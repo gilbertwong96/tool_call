@@ -181,10 +181,11 @@ defmodule ToolCall.TypeSourceTest do
     refute aliased.indirect?
   end
 
-  test "spec_signature unwraps when constraints" do
+  test "spec_signature handles wrapped and bare specs" do
     spec = {:when, [], [{:"::", [], [{:go, [], []}, :ok]}, [x: {:integer, [], []}]]}
 
     assert Typespec.spec_signature(spec) == {:go, 0}
+    assert Typespec.spec_signature({:"::", [], [{:go, [], []}, :ok]}) == {:go, 0}
     assert Typespec.spec_signature({:not_a_spec, [], []}) == nil
   end
 
@@ -194,6 +195,10 @@ defmodule ToolCall.TypeSourceTest do
     assert Typespec.constraint_bindings(constraints) == %{
              x: {:list, [], [{:integer, [], []}]},
              t: {:integer, [], []}
+           }
+
+    assert Typespec.constraint_bindings([{:x, {:integer, [], []}}, :bad]) == %{
+             x: {:integer, [], []}
            }
   end
 end

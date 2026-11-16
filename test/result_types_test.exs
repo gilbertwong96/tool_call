@@ -82,6 +82,50 @@ defmodule ToolCall.ResultTypesTest do
              """)
   end
 
+  test "exact no_return() is dispatched indirectly" do
+    tool =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: no_return()
+        def go(x), do: raise(ArgumentError, inspect(x))
+      end
+      """)
+
+    assert tool.indirect?
+  end
+
+  test "none() and an aliased no_return() are not indirect" do
+    none =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: none()
+        def go(x), do: x
+      end
+      """)
+
+    aliased =
+      tool("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @type nope :: no_return()
+
+        @doc "Go."
+        @spec go(x :: integer()) :: nope()
+        def go(_x), do: :ignored
+      end
+      """)
+
+    refute none.indirect?
+    refute aliased.indirect?
+  end
+
   test "an aliased no_return() also leaves the result empty" do
     assert %Tool{result: nil} =
              tool("""
