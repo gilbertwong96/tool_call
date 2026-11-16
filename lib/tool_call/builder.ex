@@ -12,7 +12,7 @@ defmodule ToolCall.Builder do
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
   # docs/design.md release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Structs, Typedoc, TypeAst, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
   alias ToolCall.TypeSource.Typespec, as: SourceTypespec
 
