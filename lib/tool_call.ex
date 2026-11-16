@@ -30,6 +30,12 @@ defmodule ToolCall do
   never calls `Code.fetch_docs/1`. The companion is ordinary compiled code,
   loaded on first use like any other module.
 
+  ## Type source
+
+  The current type source is the internal typespec provider. It may be replaced
+  by a future compiler-signature source. `@spec` remains supported for now; the
+  wire schema and public tool API do not depend on that syntax.
+
   ## Supported typespec subset
 
   See `docs/design.md`. `@type`, `@typep` and `@opaque` declarations in the same

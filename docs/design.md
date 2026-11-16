@@ -27,6 +27,13 @@ Two artefacts come out of that single declaration:
 1. a wire schema (`ToolCall.emit/3`), and
 2. a dispatcher that validates, coerces and applies (`ToolCall.run/3`).
 
+## Type source
+
+The current type source is the internal typespec provider. It may be replaced
+by a future compiler-signature source. `@spec`
+remains supported for now; the wire schema and public tool API do not depend on
+that syntax.
+
 ## Non-goals
 
 - Being an HTTP client. This library produces schemas and runs functions; the
