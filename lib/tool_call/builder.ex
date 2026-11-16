@@ -151,9 +151,6 @@ defmodule ToolCall.Builder do
   defp visible?({_line, _text}), do: true
 
   defp make_tool(name, head_args, doc, declaration, context, location) do
-    {:"::", _, [head, return_ast]} = declaration.source
-    {^name, _, _spec_args} = head
-
     bindings = declaration.bindings
     defaults = Enum.map(head_args, &default_of/1)
     doc_info = Doc.parse(doc_value(doc))
@@ -247,7 +244,7 @@ defmodule ToolCall.Builder do
     warn_unknown_doc_bullets(context.module, location, name, arity, doc_info, params)
 
     {result, defs, result_truncated?} =
-      result_type(return_ast, bindings, context, {defs, registry}, name, arity, location)
+      result_type(declaration.return, bindings, context, {defs, registry}, name, arity, location)
 
     {%Tool{
        name: Atom.to_string(name),
