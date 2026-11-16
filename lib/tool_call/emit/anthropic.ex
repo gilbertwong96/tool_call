@@ -4,7 +4,8 @@ defmodule ToolCall.Emit.Anthropic do
 
   Anthropic returns `tool_use.input` already decoded, so it is subject to the
   provider's own JSON parser. Prefer `wire: :string_integer` for large integers; see
-  `docs/number-handling.md`.
+  `docs/number-handling.md` and the target matrix in
+  [`docs/projection.md`](projection.html).
   """
 
   alias ToolCall.Emit.Schema

@@ -17,7 +17,8 @@ defmodule ToolCall.Emit.Gemini do
   The envelope is one declaration: `{"name", "description", "parameters"}`.
   `strict` is ignored because Gemini has no per-tool flag. When
   `additionalProperties` or recursion must be preserved, send
-  `parametersJsonSchema` yourself.
+  `parametersJsonSchema` yourself. See the target matrix in
+  [`docs/projection.md`](projection.html).
   """
 
   alias ToolCall.Emit.Schema

@@ -7,7 +7,8 @@ defmodule ToolCall.Emit.OpenAI do
   optional values are typed `["T", "null"]`, and every object is closed with
   `additionalProperties: false`. `strict: :fine_tuned` keeps that shape and
   drops `pattern`, `format`, numeric bounds and array bounds, which fine-tuned
-  models reject.
+  models reject. See the target matrix in
+  [`docs/projection.md`](projection.html).
   """
 
   alias ToolCall.Emit.Schema

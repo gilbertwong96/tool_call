@@ -22,6 +22,7 @@ defmodule ToolCall.MixProject do
           "CHANGELOG.md",
           "docs/usage.md",
           "docs/design.md",
+          "docs/projection.md",
           "docs/roadmap.md",
           "docs/pitfalls.md",
           "docs/number-handling.md"

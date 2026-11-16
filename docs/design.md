@@ -579,18 +579,11 @@ that validation may call `Code.ensure_compiled/1` for struct and validator
 modules, so those modules must remain loadable in the release. The precompiled
 OpenAI and Anthropic paths do not perform this validation.
 
-| | OpenAI | Anthropic | MCP | Gemini |
-|---|---|---|---|---|
-| Shape | `{"type":"function","function":{...}}` | `{name, description, input_schema}` | `{name, description, inputSchema}` | `{name, description, parameters}` in `functionDeclarations` |
-| Top level | must be an object | any JSON Schema | an object schema (`type: "object"`) | an object schema (`type: "OBJECT"`) |
-| `strict: true` | sets the flag, makes every property required, closes every object, warns about parameters that cannot be typed; `:fine_tuned` drops pattern/format/bounds | n/a | renders the closed subset; MCP has no flag | ignored for valid values; invalid values still raise |
-| `$ref` / `$defs` | supported, strict mode included | supported | supported | not supported; a recursive parameter raises |
-| Type casing | lowercase JSON Schema | lowercase JSON Schema | lowercase JSON Schema | uppercase OpenAPI `Type` enum |
-| Nullability | `["T", "null"]` | `["T", "null"]` / `anyOf` | same as OpenAI | `nullable: true` |
-| Who parses arguments | you (a JSON string) | the provider (`input` arrives decoded) | varies | the provider (a `functionCall` map) |
+The wire envelopes, target-specific losses, and the current `allOf`/`not`
+limits are canonical in [`projection.md`](projection.md).
 
-The last row matters for large integers: when the provider parses, you inherit
-its numeric precision. It is the reason `wire: :string_integer` exists.
+When the provider parses arguments, you inherit its numeric precision. It is the
+reason `wire: :string_integer` exists.
 
 These four are the complete emitter set. OpenAI-compatible APIs can usually
 consume the OpenAI Chat Completions target. There is no dedicated target for the

@@ -9,7 +9,8 @@ defmodule ToolCall.Emit.Schema do
   `$ref`, no `oneOf`. A recursive type is rendered once per tool under `$defs`,
   beside `properties`, and referenced by `{"$ref": "#/$defs/<name>"}`. Strict
   mode applies the same rules to a definition as to a nested object. See the
-  Recursive types section of `docs/design.md`.
+  Recursive types section of `docs/design.md` and the target matrix in
+  [`docs/projection.md`](projection.html).
   """
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
