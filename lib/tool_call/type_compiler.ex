@@ -1,5 +1,11 @@
 defmodule ToolCall.TypeCompiler do
-  @moduledoc false
+  @moduledoc """
+  Compiles a source-neutral declaration's type ASTs into `ToolCall.IR.Type` values.
+
+  The compiler owns alias expansion, local-type expansion, recursive `$defs`
+  hoisting, provider mapping, and result-type handling. the builder
+  remains responsible for docs, defaults, parameter names, and overrides.
+  """
 
   alias ToolCall.IR.Type
   alias ToolCall.{LocalTypes, TypeAst, Typespec}

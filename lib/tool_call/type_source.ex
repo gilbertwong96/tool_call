@@ -1,8 +1,14 @@
 defmodule ToolCall.TypeSource do
-  @moduledoc false
+  @moduledoc """
+  Internal contract for function-declaration sources.
+
+  A source loads its compile-time state once, then returns a `Declaration` for a
+  function name and arity. the builder consumes the declaration; wire
+  emitters never see a source-specific AST.
+  """
 
   defmodule Param do
-    @moduledoc false
+    @moduledoc "One parameter in a `ToolCall.TypeSource.Declaration`."
 
     defstruct [:name, :type, named?: false]
 
@@ -14,7 +20,13 @@ defmodule ToolCall.TypeSource do
   end
 
   defmodule Declaration do
-    @moduledoc false
+    @moduledoc """
+    A source-neutral function declaration consumed by the builder.
+
+    `source` is compile-time provenance and is dropped from embedded tools.
+    `source_label` is used in diagnostics so a future signature source does not
+    have to mention `@spec`. `warnings` carries non-fatal source diagnostics.
+    """
 
     defstruct [
       :name,
@@ -37,7 +49,7 @@ defmodule ToolCall.TypeSource do
             source: term(),
             source_label: String.t(),
             indirect?: boolean(),
-            warnings: [String.t()]
+            warnings: [ToolCall.Diagnostic.t()]
           }
   end
 
@@ -46,5 +58,5 @@ defmodule ToolCall.TypeSource do
   @callback load(module(), Macro.Env.t()) :: state()
 
   @callback fetch(state(), atom(), non_neg_integer()) ::
-              {:ok, Declaration.t()} | {:error, [String.t()]}
+              {:ok, Declaration.t()} | {:error, [ToolCall.Diagnostic.t()]}
 end

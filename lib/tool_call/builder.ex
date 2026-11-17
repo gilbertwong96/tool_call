@@ -124,6 +124,12 @@ defmodule ToolCall.Builder do
     end
   end
 
+  defp valid_diagnostic?(%ToolCall.Diagnostic{severity: severity, message: message})
+       when severity in [:warning, :error] and is_binary(message),
+       do: true
+
+  defp valid_diagnostic?(_other), do: false
+
   defp validate_declaration_metadata(%Declaration{} = declaration) do
     cond do
       not is_map(declaration.bindings) ->
@@ -136,8 +142,8 @@ defmodule ToolCall.Builder do
         {:error, "declaration source_label must be a string"}
 
       not is_list(declaration.warnings) or
-          not Enum.all?(declaration.warnings, &is_binary/1) ->
-        {:error, "declaration warnings must be a list of strings"}
+          not Enum.all?(declaration.warnings, &valid_diagnostic?/1) ->
+        {:error, "declaration warnings must be ToolCall.Diagnostic structs"}
 
       true ->
         :ok
@@ -221,7 +227,8 @@ defmodule ToolCall.Builder do
       {:ok, declaration} ->
         validate_declaration!(declaration, name, arity, head_args)
 
-        for warning <- declaration.warnings, do: warn(context.module, location, warning)
+        for warning <- declaration.warnings,
+            do: warn(context.module, location, ToolCall.Diagnostic.message(warning))
 
         {tool, truncated, result_truncated?} =
           make_tool(name, head_args, doc, declaration, context, location)
@@ -229,7 +236,9 @@ defmodule ToolCall.Builder do
         [{tool, location, truncated, result_truncated?, declaration.indirect?}]
 
       {:error, messages} ->
-        for message <- messages, do: warn(context.module, location, message)
+        for message <- messages,
+            do: warn(context.module, location, ToolCall.Diagnostic.message(message))
+
         []
     end
   end

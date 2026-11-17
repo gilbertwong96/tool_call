@@ -18,6 +18,7 @@ defmodule ToolCall.TypeSourceTest do
 
   import ToolCall.TestModule
 
+  alias ToolCall.Diagnostic
   alias ToolCall.TypeSource.{Declaration, Param}
   alias ToolCall.TypeSource.Typespec
 
@@ -37,6 +38,13 @@ defmodule ToolCall.TypeSourceTest do
       {:error, messages} -> messages
       other -> flunk("expected an error, got: #{inspect(other)}")
     end
+  end
+
+  defp diagnostic?(diagnostics, text) do
+    Enum.any?(diagnostics, fn
+      %Diagnostic{message: message} -> String.contains?(message, text)
+      _other -> false
+    end)
   end
 
   test "named parameters keep their spec names and types" do
@@ -108,10 +116,8 @@ defmodule ToolCall.TypeSourceTest do
 
     assert declaration.return == :ok
 
-    assert Enum.any?(
-             declaration.warnings,
-             &String.contains?(&1, "has 2 @spec clauses")
-           )
+    assert [%Diagnostic{} | _] = declaration.warnings
+    assert diagnostic?(declaration.warnings, "has 2 @spec clauses")
   end
 
   test "a missing spec reports the function" do
@@ -125,7 +131,8 @@ defmodule ToolCall.TypeSourceTest do
       end
       """)
 
-    assert Enum.any?(messages, &String.contains?(&1, "has no @spec"))
+    assert [%Diagnostic{} | _] = messages
+    assert diagnostic?(messages, "has no @spec")
   end
 
   test "a reduced arity reports the existing arity" do
@@ -139,7 +146,8 @@ defmodule ToolCall.TypeSourceTest do
       end
       """)
 
-    assert Enum.any?(messages, &String.contains?(&1, "found go/1 instead"))
+    assert [%Diagnostic{} | _] = messages
+    assert diagnostic?(messages, "found go/1 instead")
   end
 
   test "exact no_return is indirect" do

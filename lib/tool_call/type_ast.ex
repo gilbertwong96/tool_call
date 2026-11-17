@@ -1,5 +1,11 @@
 defmodule ToolCall.TypeAst do
-  @moduledoc false
+  @moduledoc """
+  Shared normalization for typespec ASTs before they reach `ToolCall.TypeCompiler`.
+
+  Normalization substitutes `when` variables, expands aliases, and turns
+  `__MODULE__.t()` references into local calls so local-type expansion can see
+  them.
+  """
 
   @doc false
   @spec normalize(term(), Macro.Env.t()) :: term()

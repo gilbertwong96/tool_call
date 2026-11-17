@@ -1,9 +1,15 @@
 defmodule ToolCall.TypeSource.Typespec do
-  @moduledoc false
+  @moduledoc """
+  The default `@spec`-backed function-declaration source.
+
+  It matches `{name, arity}` specifications, preserves first-declared wins,
+  resolves `when` bindings, and reports missing or overloaded specs as
+  diagnostics.
+  """
 
   @behaviour ToolCall.TypeSource
 
-  alias ToolCall.TypeAst
+  alias ToolCall.{Diagnostic, TypeAst}
   alias ToolCall.TypeSource.{Declaration, Param}
 
   @impl true
@@ -74,15 +80,19 @@ defmodule ToolCall.TypeSource.Typespec do
     case reduced do
       [] ->
         [
-          "#{name}/#{arity} has no @spec; skipped. A tool without a typespec cannot be described."
+          Diagnostic.warning(
+            "#{name}/#{arity} has no @spec; skipped. A tool without a typespec cannot be described."
+          )
         ]
 
       arities ->
         existing = Enum.map_join(Enum.sort(arities), ", ", &"#{name}/#{&1}")
 
         [
-          "#{name}/#{arity} has no @spec; found #{existing} instead. A reduced arity " <>
-            "does not describe the defaulted arguments; add a spec for the full arity."
+          Diagnostic.warning(
+            "#{name}/#{arity} has no @spec; found #{existing} instead. A reduced arity " <>
+              "does not describe the defaulted arguments; add a spec for the full arity."
+          )
         ]
     end
   end
@@ -91,8 +101,10 @@ defmodule ToolCall.TypeSource.Typespec do
 
   defp overload_warnings(name, arity, count) do
     [
-      "#{name}/#{arity} has #{count} @spec clauses; using the first one. " <>
-        "Overloaded tools cannot be expressed as a single JSON Schema."
+      Diagnostic.warning(
+        "#{name}/#{arity} has #{count} @spec clauses; using the first one. " <>
+          "Overloaded tools cannot be expressed as a single JSON Schema."
+      )
     ]
   end
 
