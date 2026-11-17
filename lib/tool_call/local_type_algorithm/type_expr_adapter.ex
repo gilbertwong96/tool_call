@@ -15,8 +15,7 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   alias ToolCall.LocalTypeAlgorithm.AstAdapter
 
   @impl true
-  def local_call({:ref, {name, arity}, args, _source_args}),
-    do: {:ok, {name, arity}, args}
+  def local_call({:ref, {name, arity}, args}), do: {:ok, {name, arity}, args}
 
   def local_call(_node), do: :error
 
@@ -60,11 +59,72 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   def strip_meta(node), do: node
 
   @impl true
-  def name(key, _args, {:ref, key, _node_args, source_args}) do
-    AstAdapter.name(key, source_args)
+  def name(key, args, _node), do: name(key, args)
+
+  @doc false
+  def name({type_name, _arity} = key, args) do
+    name =
+      case Enum.map(args, &arg_name/1) do
+        [] ->
+          Atom.to_string(type_name)
+
+        parts ->
+          Atom.to_string(type_name) <>
+            "_" <> Enum.join(parts, "_") <> "_" <> signature(key, args)
+      end
+
+    sanitized =
+      name
+      |> String.replace(~r/[^A-Za-z0-9_]/, "_")
+      |> String.slice(0, 64)
+      |> String.trim_trailing("_")
+
+    if sanitized == "", do: "type", else: sanitized
   end
 
-  def name(key, args, _node), do: AstAdapter.name(key, args)
+  defp signature(key, args) do
+    key
+    |> then(&{&1, args})
+    |> :erlang.phash2()
+    |> Integer.to_string(16)
+    |> String.downcase()
+    |> String.slice(0, 4)
+  end
+
+  defp arg_name({:annotated, type, _metadata}), do: arg_name(type)
+  defp arg_name({:primitive, :integer}), do: "integer"
+  defp arg_name({:integer_range, _low, _high}), do: "integer"
+  defp arg_name({:primitive, :number}), do: "number"
+  defp arg_name({:primitive, :float}), do: "number"
+  defp arg_name({:literal, value}) when is_number(value), do: arg_name_type(value)
+  defp arg_name({:primitive, :string}), do: "string"
+  defp arg_name({:string, _metadata}), do: "string"
+  defp arg_name({:primitive, :boolean}), do: "boolean"
+  defp arg_name({:primitive, :atom}), do: "atom"
+  defp arg_name({:list, inner}), do: "list_" <> arg_name(inner)
+  defp arg_name({:nonempty_list, inner}), do: "list_" <> arg_name(inner)
+  defp arg_name({:map, _fields, _additional}), do: "map"
+  defp arg_name({:tuple, _items}), do: "tuple"
+
+  defp arg_name({:union, variants}),
+    do: Enum.map_join(variants, "_or_", &arg_name/1)
+
+  defp arg_name({:remote, module, :t, _args}), do: module_arg_name(module)
+
+  defp arg_name({:remote, module, function, _args}),
+    do: module_arg_name(module) <> "_" <> Atom.to_string(function)
+
+  defp arg_name({:literal, value}) when is_atom(value) and value not in [true, false, nil],
+    do: Atom.to_string(value)
+
+  defp arg_name(_other), do: "any"
+
+  defp arg_name_type(value) when is_integer(value), do: "integer"
+  defp arg_name_type(value) when is_float(value), do: "number"
+
+  defp module_arg_name(module) do
+    module |> Module.split() |> List.last() |> String.downcase()
+  end
 
   @doc false
   def expand(root, definitions, opts \\ []) do
@@ -80,7 +140,7 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   defp collect(node, definitions, keys) do
     keys =
       case node do
-        {:ref, key, _args, _source} ->
+        {:ref, key, _args} ->
           if Map.has_key?(definitions, key), do: MapSet.put(keys, key), else: keys
 
         _other ->

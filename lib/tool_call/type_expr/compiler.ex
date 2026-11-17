@@ -75,7 +75,7 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:ref, ref}, _providers), do: %Type{kind: :ref, ref: ref}
 
-  def to_type({:ref, {name, arity}, _args, _source_args}, _providers),
+  def to_type({:ref, {name, arity}, _args}, _providers),
     do: %Type{kind: :any, source: {name, arity}}
 
   def to_type({:local_ref, index}, _providers),

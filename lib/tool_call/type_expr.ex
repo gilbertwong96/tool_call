@@ -7,10 +7,8 @@ defmodule ToolCall.TypeExpr do
   `ToolCall.IR.Type` wire metadata such as transforms, validators, or JSON Schema
   refs; `TypeCompiler` resolves those later.
 
-  A parameterized local reference keeps its source AST arguments as provenance
-  so `$defs` names stay identical to the typespec-AST expansion. `:local_ref`
-  is an intermediate index produced during expansion; `rewrite_refs` turns it
-  into a named `:ref`.
+  `:local_ref` is an intermediate index produced during local-type expansion;
+  `rewrite_refs` turns it into a named `:ref`.
   """
 
   @type field :: {atom(), t(), boolean()}
@@ -31,7 +29,7 @@ defmodule ToolCall.TypeExpr do
           | {:negation, t()}
           | {:var, atom()}
           | {:ref, String.t()}
-          | {:ref, {atom(), non_neg_integer()}, [t()], [term()]}
+          | {:ref, {atom(), non_neg_integer()}, [t()]}
           | {:local_ref, non_neg_integer()}
           | {:remote, module(), atom(), [t()]}
           | {:builtin, atom(), [t()]}
@@ -53,7 +51,7 @@ defmodule ToolCall.TypeExpr do
   def children({:union, items}), do: items
   def children({:intersection, items}), do: items
   def children({:negation, item}), do: [item]
-  def children({:ref, _key, args, _source}), do: args
+  def children({:ref, _key, args}), do: args
   def children({:remote, _module, _function, args}), do: args
   def children({:builtin, _name, args}), do: args
   def children({:dynamic, item}), do: [item]
@@ -80,7 +78,7 @@ defmodule ToolCall.TypeExpr do
   def put_children({:tuple, _items}, children), do: {:tuple, children}
   def put_children({:union, _items}, children), do: {:union, children}
   def put_children({:intersection, _items}, children), do: {:intersection, children}
-  def put_children({:ref, key, _args, source}, children), do: {:ref, key, children, source}
+  def put_children({:ref, key, _args}, children), do: {:ref, key, children}
 
   def put_children({:remote, module, function, _args}, children),
     do: {:remote, module, function, children}

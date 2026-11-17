@@ -139,8 +139,7 @@ defmodule ToolCall.TypeExpr.Typespec do
   defp local(:struct, []), do: {:map, [], :any}
 
   defp local(name, args) do
-    {:ref, {name, length(args)}, Enum.map(args, &from_ast/1),
-     Enum.map(args, &TypeAst.strip_meta/1)}
+    {:ref, {name, length(args)}, Enum.map(args, &from_ast/1)}
   end
 
   defp string(source), do: {:string, %{source: source}}
