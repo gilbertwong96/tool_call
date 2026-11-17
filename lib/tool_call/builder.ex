@@ -231,18 +231,15 @@ defmodule ToolCall.Builder do
       {:ok, declaration} ->
         validate_declaration!(declaration, name, arity, head_args)
 
-        for warning <- declaration.warnings,
-            do: warn(context.module, location, ToolCall.Diagnostic.message(warning))
+        Enum.each(declaration.warnings, &emit_diagnostic(context.module, location, &1))
 
         {tool, truncated, result_truncated?} =
           make_tool(name, head_args, doc, declaration, context, location)
 
         [{tool, location, truncated, result_truncated?, declaration.indirect?}]
 
-      {:error, messages} ->
-        for message <- messages,
-            do: warn(context.module, location, ToolCall.Diagnostic.message(message))
-
+      {:error, diagnostics} ->
+        Enum.each(diagnostics, &emit_diagnostic(context.module, location, &1))
         []
     end
   end
@@ -1196,6 +1193,13 @@ defmodule ToolCall.Builder do
 
   defp doc_value(nil), do: nil
   defp doc_value({_line, value}), do: value
+
+  defp emit_diagnostic(module, location, %ToolCall.Diagnostic{} = diagnostic) do
+    case diagnostic do
+      %{severity: :warning} -> warn(module, location, diagnostic.message)
+      %{severity: :error} -> raise ArgumentError, "#{inspect(module)}: #{diagnostic.message}"
+    end
+  end
 
   defp warn(module, location, message) do
     IO.warn("#{inspect(module)}: #{message}", warn_location(location))

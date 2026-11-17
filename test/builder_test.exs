@@ -73,6 +73,19 @@ defmodule ToolCall.BuilderTest.FakeUnnamedSource do
   end
 end
 
+defmodule ToolCall.BuilderTest.ErrorSource do
+  @moduledoc false
+  @behaviour ToolCall.TypeSource
+
+  @impl true
+  def load(_module, _env), do: :state
+
+  @impl true
+  def fetch(:state, :go, _arity) do
+    {:error, [ToolCall.Diagnostic.error("this declaration cannot be compiled")]}
+  end
+end
+
 defmodule ToolCall.BuilderTest.Capture do
   @moduledoc false
   # Exposes the Builder result from inside a fixture's compilation without
@@ -1173,6 +1186,19 @@ defmodule ToolCall.BuilderTest do
 
     assert_raise ArgumentError, ~r/declaration/, fn ->
       ToolCall.Builder.validate_declaration!(declaration, :go, 2, [{:x, [], nil}])
+    end
+  end
+
+  test "a source error diagnostic fails the compile" do
+    assert_raise ArgumentError, ~r/this declaration cannot be compiled/, fn ->
+      compile!("""
+      defmodule FIXTURE do
+        @tool_call_defs [{:go, [{:x, [], nil}], nil, "nofile", 1}]
+        @tool_call_type_source ToolCall.BuilderTest.ErrorSource
+        @before_compile ToolCall.BuilderTest.Capture
+        def go(x), do: x
+      end
+      """)
     end
   end
 
