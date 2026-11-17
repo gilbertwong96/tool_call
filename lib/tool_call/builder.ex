@@ -277,15 +277,6 @@ defmodule ToolCall.Builder do
           )
         end
 
-        if param_truncated? do
-          warn(
-            context.module,
-            location,
-            "parameter \"#{param_name}\" of #{name}/#{arity} hit the type expansion " <>
-              "budget; the rest of the type is treated as {}. Flatten the type hierarchy."
-          )
-        end
-
         truncated =
           if param_truncated?, do: MapSet.put(truncated, param_name), else: truncated
 
@@ -315,14 +306,7 @@ defmodule ToolCall.Builder do
     {result, result_truncated?, compiler} =
       TypeCompiler.compile_result(compiler, declaration.return)
 
-    if result_truncated? do
-      warn(
-        context.module,
-        location,
-        "return type of #{name}/#{arity} hit the type expansion budget; the rest of " <>
-          "the type is treated as {}. Result validation will accept any value there."
-      )
-    end
+    warn_truncated(context.module, location, name, truncated, result_truncated?)
 
     {%Tool{
        name: Atom.to_string(name),
@@ -334,6 +318,29 @@ defmodule ToolCall.Builder do
        defs: TypeCompiler.defs(compiler),
        result: result
      }, truncated, result_truncated?}
+  end
+
+  # The `$defs` budget is per tool, not per parameter, so it is reported once for
+  # the whole tool: a per-parameter message blames whichever parameter happened
+  # to be compiled when the budget ran out.
+  defp warn_truncated(module, location, name, truncated, result_truncated?) do
+    parts =
+      Enum.map(truncated, &"parameter \"#{&1}\"") ++
+        if(result_truncated?, do: ["the return type"], else: [])
+
+    if parts != [] do
+      warn(
+        module,
+        location,
+        "tool #{inspect(to_string(name))} reached the type expansion budget: " <>
+          "#{Enum.join(parts, ", ")} left part of the type unresolved, which renders " <>
+          "as {} and accepts any value there." <>
+          if(result_truncated?, do: " Result validation will accept any value there.", else: "") <>
+          " Flatten the type hierarchy or split the tool."
+      )
+    end
+
+    :ok
   end
 
   defp warn_unknown_doc_bullets(
