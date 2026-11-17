@@ -30,9 +30,9 @@ Two artefacts come out of that single declaration:
 ## Type source
 
 The current type source is the internal typespec provider. It may be replaced
-by a future compiler-signature source. `@spec`
-remains supported for now; the wire schema and public tool API do not depend on
-that syntax.
+by a future compiler-signature source. The wire schema and IR do not depend on
+the typespec AST shape; the current provider still requires `@spec` to declare a
+tool.
 
 ## Non-goals
 
@@ -97,7 +97,10 @@ therefore keeps value-domain facts and wire decisions separate; see
 def f(a :: T, b)            @on_definition
       │                          │  {name, head_args, doc, file, line}
       ▼                          ▼
-  @spec f(A, B) :: R  ───►  ToolCall.Builder (compile time)
+  @spec f(A, B) :: R  ───►  ToolCall.TypeSource.Typespec
+                                 │  {name, arity} -> Declaration
+                                 ▼
+                          ToolCall.Builder (compile time)
                                  │  alias expansion, default detection,
                                  │  local-type inlining, $defs hoisting,
                                  │  struct discovery and resolution
@@ -576,8 +579,9 @@ startup, and later supervisor restarts do not re-run the validation.
 
 ## Provider subsets
 
-The same IR is normalized for the provider formats below. Runtime emitters exist
-for OpenAI, Anthropic, MCP and Gemini. OpenAI and Anthropic are precompiled per
+The same IR is normalized for the provider formats described in
+[`projection.md`](projection.md). Runtime emitters exist for OpenAI, Anthropic,
+MCP and Gemini. OpenAI and Anthropic are precompiled per
 module; MCP renders on demand from the tool IR, because its schema is the same
 parameters object the other targets embed. Gemini also renders on demand: its
 `parameters` is a different OpenAPI subset, not the shared JSON Schema.
