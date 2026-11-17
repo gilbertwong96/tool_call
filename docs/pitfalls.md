@@ -361,9 +361,11 @@ cost. The 32-definition budget is per **tool**, shared by its parameters in
 declaration order, so an earlier parameter that grows can push a later one into
 `{}`; the 8-instantiation bound is per key within one expansion. Definitions a
 struct module contributes are budgeted per struct, not by the tool budget, so a
-tool with several struct parameters can exceed 32 entries in total. Depth is
-linear, not a cliff: a 100 000-level value coerces in about 0.3 s without
-raising.
+tool with several struct parameters can exceed 32 entries in total. The compile
+reports truncation once per tool, naming the affected parameters and whether the
+return type was hit, because which parameter runs out is an artifact of
+declaration order rather than a property of that parameter. Depth is linear, not
+a cliff: a 100 000-level value coerces in about 0.3 s without raising.
 
 ## Result validation is opt-in and sees the raw return
 

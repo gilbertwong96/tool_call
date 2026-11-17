@@ -25,14 +25,15 @@ internal seams exist, but the syntax is not stable enough to parse.
 These are implemented partially, or deliberately left for later.
 
 - **Set-theoretic projection beyond the exact cases.** `ToolCall.TypeExpr.Projection`
-  lowers intersections and differences that JSON Schema can carry exactly: maps,
-  integer ranges, literals and enums. A bare complement or a disjoint-kind
-  intersection still reports `:unsupported` and warns. Extending that means
-  deciding on more set operations, not turning on something already written. See
-  [`projection.md`](projection.md).
-- **Diagnostic severity for sources.** The builder now fails the compile on an
-  `:error` diagnostic, but every shipped source still reports `:warning`; a
-  source uses `:error` only when a declaration is unusable rather than skippable.
+  lowers what JSON Schema can carry exactly: maps, tuples, integer ranges,
+  literals, enums, identical refs and remotes, and string constraint narrowing.
+  A bare complement or a disjoint-kind intersection still reports `:unsupported`
+  and warns. Extending that means deciding on more set operations, not turning on
+  something already written. See [`projection.md`](projection.md).
+- **Diagnostic severity for shipped sources.** The builder fails the compile on
+  an `:error` diagnostic and honours a diagnostic's own `@spec` position, but
+  every shipped source still reports `:warning`; `:error` exists for sources that
+  cannot skip a declaration.
 
 ## Later / not scheduled
 

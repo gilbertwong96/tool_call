@@ -86,9 +86,13 @@ set operation only when the result is representable exactly, through
 | `:any` / `:none` identity | yes | — |
 | integer ranges and `integer()` | overlap, emptiness | — |
 | literals and enums | overlap, difference | — |
-| maps | field and `additionalProperties` merge | conflicting field types |
+| maps | field and `additionalProperties` merge; a closed side keeps the object closed | conflicting field types |
+| tuples | same-arity position-wise merge; `tuple()` is the identity | different arity |
+| identical `ref` / `remote` | the node itself | different targets |
+| strings | pattern/format narrowing when they agree | two different patterns or formats |
 | `and not <range>` | split into at most two ranges | — |
-| other intersections | — | disjoint kinds, refs, providers |
+| `and not <union>` | each variant subtracted in turn | — |
+| other intersections | — | disjoint kinds, provider types |
 | bare complement (`not t`) | — | no exact JSON Schema form |
 
 An inexact operation yields `{:unsupported, :intersection}` (or `:negation`) and

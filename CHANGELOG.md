@@ -17,12 +17,41 @@
   consistent within a schema. Only the emitted bytes of a parameterized
   recursive type differ.
 
+- `$defs` names for parameterized recursive **struct** types now hash the same
+  normalized `TypeExpr` term as other recursive types, so one schema no longer
+  mixes two naming schemes. As with the type-level change above, the readable
+  part is unchanged and only the emitted bytes of a parameterized recursive
+  struct differ.
+
 ### Added
 
 - A function-declaration source can return an `:error` severity diagnostic in
   `ToolCall.Diagnostic`; the build then fails with that message instead of
   warning and skipping the tool. The shipped `@spec` source still reports
   warnings only.
+
+- `ToolCall.Diagnostic` carries an optional `line`/`column`, and the builder
+  prefers it over the definition location. An overloaded `@spec` warning now
+  points at the spec it came from rather than at the `def` line.
+
+- `ToolCall.TypeExpr.Projection` intersects tuples, identical refs and remotes,
+  and narrows string `pattern`/`format` constraints; subtraction accepts a union
+  on the right and flattens its result. Cases JSON Schema cannot express still
+  degrade to `:unsupported` with a warning.
+
+### Fixed
+
+- A tool that hits the type-expansion budget now gets one warning naming the
+  affected parameters and whether the result type was truncated, instead of one
+  message per parameter. Which parameter runs out is an artifact of declaration
+  order, so the per-parameter message blamed the wrong one.
+
+- Typespec shapes neither mapper understands (for example a charlist literal)
+  stay `:any` rather than becoming `:unsupported`, so an unknown nested value
+  still renders as `{}` and keeps the tool instead of hiding it.
+
+- Local `$defs` names that collide now take a numeric suffix. Keeping the first
+  and dropping the second left a `$ref` pointing at another type's body.
 
 ## 0.2.0 - 2026-11-12
 
