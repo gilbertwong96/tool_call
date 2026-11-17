@@ -14,7 +14,7 @@ defmodule ToolCall.Structs do
   # `__struct__/1` raising on a missing key, so `enforced_keys/1` removes one
   # field at a time and keeps the fields whose removal raises.
 
-  alias ToolCall.LocalTypes
+  alias ToolCall.{LegacyTypespec, LocalTypes}
 
   @spec struct?(module()) :: boolean()
   def struct?(module) when is_atom(module) do
@@ -150,8 +150,8 @@ defmodule ToolCall.Structs do
   end
 
   defp current_type(module) do
-    types = List.wrap(Module.get_attribute(module, :type))
-    opaques = List.wrap(Module.get_attribute(module, :opaque))
+    types = List.wrap(LegacyTypespec.get_attribute(module, :type))
+    opaques = List.wrap(LegacyTypespec.get_attribute(module, :opaque))
 
     {parameterized?, found} =
       Enum.reduce(types, {false, nil}, fn
@@ -188,7 +188,7 @@ defmodule ToolCall.Structs do
   @type field_status :: :ok | :truncated | :parameterized_t | :non_literal_t | :no_typespec
 
   defp do_fields(module) do
-    case Code.Typespec.fetch_types(module) do
+    case LegacyTypespec.fetch_types(module) do
       {:ok, entries} -> from_entries(module, entries)
       :error -> from_source(module)
     end
@@ -205,7 +205,7 @@ defmodule ToolCall.Structs do
   end
 
   defp type_fields(module, body) do
-    {:"::", _, [{:t, _, []}, type_ast]} = Code.Typespec.type_to_quoted({:t, body, []})
+    {:"::", _, [{:t, _, []}, type_ast]} = LegacyTypespec.type_to_quoted({:t, body, []})
     from_type_ast(module, type_ast, definitions(module))
   end
 
@@ -504,14 +504,14 @@ defmodule ToolCall.Structs do
   end
 
   defp definitions(module) do
-    case Code.Typespec.fetch_types(module) do
+    case LegacyTypespec.fetch_types(module) do
       {:ok, entries} -> Enum.reduce(entries, %{}, &definition_entry/2)
       :error -> %{}
     end
   end
 
   defp definition_entry({:type, {name, body, params}}, acc) do
-    case Code.Typespec.type_to_quoted({name, body, params}) do
+    case LegacyTypespec.type_to_quoted({name, body, params}) do
       {:"::", _, [{^name, _, vars}, type_ast]} ->
         Map.put(acc, {name, length(params)}, {vars, type_ast})
 

@@ -9,12 +9,12 @@ defmodule ToolCall.TypeSource.Typespec do
 
   @behaviour ToolCall.TypeSource
 
-  alias ToolCall.{Diagnostic, TypeAst}
+  alias ToolCall.{Diagnostic, LegacyTypespec, TypeAst}
   alias ToolCall.TypeSource.{Declaration, Param}
 
   @impl true
   def load(module, _env) when is_atom(module) do
-    specs = module |> Module.get_attribute(:spec) |> List.wrap()
+    specs = module |> LegacyTypespec.get_attribute(:spec) |> List.wrap()
 
     index =
       Enum.reduce(specs, %{}, fn {:spec, ast, _location} = entry, index ->

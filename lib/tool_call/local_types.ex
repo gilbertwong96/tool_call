@@ -3,6 +3,8 @@
 # obscure the messages without a runtime benefit.
 defmodule ToolCall.LocalTypes do
   @moduledoc false
+
+  alias ToolCall.LegacyTypespec
   # Inlines `@type`, `@typep` and `@opaque` definitions declared in the module
   # being compiled, so that `@spec f(x :: my_type())` produces a real schema
   # instead of degrading to `:any`.
@@ -77,7 +79,7 @@ defmodule ToolCall.LocalTypes do
   def definitions(module) do
     for attribute <- [:type, :typep, :opaque],
         {_kind, {:"::", _, [{name, _, params}, body]}, _location} <-
-          List.wrap(Module.get_attribute(module, attribute)),
+          List.wrap(LegacyTypespec.get_attribute(module, attribute)),
         is_atom(name),
         into: %{} do
       params = List.wrap(params)
