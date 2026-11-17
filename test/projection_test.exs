@@ -12,12 +12,13 @@ defmodule ToolCall.ProjectionTest do
             union :: integer() | String.t(),
             count :: pos_integer(),
             date :: Date.t(),
+            code :: nonempty_binary(),
             tags :: [String.t(), ...],
             pair :: {integer(), String.t()},
             meta :: map(),
             note :: %{optional(:text) => term()}
           ) :: :ok
-    def go(_union, _count, _date, _tags, _pair, _meta, _note), do: :ok
+    def go(_union, _count, _date, _code, _tags, _pair, _meta, _note), do: :ok
   end
   """
 
@@ -77,6 +78,7 @@ defmodule ToolCall.ProjectionTest do
 
     assert properties["count"]["minimum"] == 1
     assert properties["date"]["format"] == "date"
+    assert properties["code"]["pattern"] == "^[\\s\\S]+$"
     assert properties["tags"]["minItems"] == 1
 
     assert properties["pair"]["prefixItems"] == [
@@ -95,6 +97,7 @@ defmodule ToolCall.ProjectionTest do
 
     assert properties["count"]["minimum"] == 1
     assert properties["date"]["format"] == "date"
+    assert properties["code"]["pattern"] == "^[\\s\\S]+$"
     assert properties["tags"]["minItems"] == 1
     refute Map.has_key?(properties["pair"], "prefixItems")
     assert properties["pair"]["minItems"] == 2
@@ -107,6 +110,7 @@ defmodule ToolCall.ProjectionTest do
 
     refute Map.has_key?(properties["count"], "minimum")
     refute Map.has_key?(properties["date"], "format")
+    refute Map.has_key?(properties["code"], "pattern")
     refute Map.has_key?(properties["tags"], "minItems")
     refute Map.has_key?(properties["pair"], "prefixItems")
     refute Map.has_key?(properties["pair"], "minItems")

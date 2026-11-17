@@ -55,6 +55,7 @@ defmodule ToolCall.TypeSourceTest do
     assert declaration.return == :ok
     assert declaration.bindings == %{}
     assert declaration.indirect? == false
+    assert declaration.source_label == "the @spec"
     assert declaration.warnings == []
 
     assert [%Param{name: :city, named?: true}, %Param{name: :days, named?: true}] =

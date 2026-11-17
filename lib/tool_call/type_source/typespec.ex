@@ -37,6 +37,7 @@ defmodule ToolCall.TypeSource.Typespec do
            return: return_ast,
            bindings: constraint_bindings(constraints),
            source: spec,
+           source_label: "the @spec",
            indirect?: match?({:no_return, _, []}, return_ast),
            warnings: overload_warnings(name, arity, length(matching))
          }}

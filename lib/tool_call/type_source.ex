@@ -23,6 +23,7 @@ defmodule ToolCall.TypeSource do
       :return,
       :bindings,
       :source,
+      source_label: "the type declaration",
       indirect?: false,
       warnings: []
     ]
@@ -34,6 +35,7 @@ defmodule ToolCall.TypeSource do
             return: term(),
             bindings: %{atom() => term()},
             source: term(),
+            source_label: String.t(),
             indirect?: boolean(),
             warnings: [String.t()]
           }

@@ -12,6 +12,67 @@ defmodule ToolCall.BuilderNilDescription do
   def go(x), do: x
 end
 
+defmodule ToolCall.BuilderTest.FakeSource do
+  @moduledoc false
+  @behaviour ToolCall.TypeSource
+
+  @impl true
+  def load(_module, _env), do: :state
+
+  @impl true
+  def fetch(:state, :go, 1) do
+    {:ok,
+     %ToolCall.TypeSource.Declaration{
+       name: :go,
+       arity: 1,
+       params: [
+         %ToolCall.TypeSource.Param{
+           name: :x,
+           type: {:integer, [], []},
+           named?: true
+         }
+       ],
+       return: :ok,
+       bindings: %{},
+       source: :not_a_spec_ast,
+       indirect?: false,
+       warnings: []
+     }}
+  end
+
+  def fetch(_state, name, arity), do: {:error, ["no fake declaration for #{name}/#{arity}"]}
+end
+
+defmodule ToolCall.BuilderTest.FakeUnnamedSource do
+  @moduledoc false
+  @behaviour ToolCall.TypeSource
+
+  @impl true
+  def load(_module, _env), do: :state
+
+  @impl true
+  def fetch(:state, :go, 1) do
+    {:ok,
+     %ToolCall.TypeSource.Declaration{
+       name: :go,
+       arity: 1,
+       params: [
+         %ToolCall.TypeSource.Param{
+           name: nil,
+           type: {:integer, [], []},
+           named?: false
+         }
+       ],
+       return: :ok,
+       bindings: %{},
+       source: :fake,
+       source_label: "the fake declaration",
+       indirect?: false,
+       warnings: []
+     }}
+  end
+end
+
 defmodule ToolCall.BuilderTest.Capture do
   @moduledoc false
   # Exposes the Builder result from inside a fixture's compilation without
@@ -20,13 +81,18 @@ defmodule ToolCall.BuilderTest.Capture do
   defmacro __before_compile__(env) do
     module = env.module
 
+    source =
+      Module.get_attribute(module, :tool_call_type_source) ||
+        ToolCall.TypeSource.Typespec
+
     result =
       ToolCall.Builder.build(
         module,
         module |> Module.get_attribute(:tool_call_defs) |> List.wrap(),
         module |> Module.get_attribute(:tool_param) |> List.wrap(),
         env,
-        Module.get_attribute(module, :tool_call_type_providers) || []
+        Module.get_attribute(module, :tool_call_type_providers) || [],
+        source
       )
 
     quote do
@@ -1057,6 +1123,56 @@ defmodule ToolCall.BuilderTest do
              "type" => "array",
              "items" => %{"type" => "integer"}
            }
+  end
+
+  test "consumes a source-neutral declaration without parsing a spec AST" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        @tool_call_defs [{:go, [{:x, [], nil}], nil, "nofile", 1}]
+        @tool_call_type_source ToolCall.BuilderTest.FakeSource
+        @before_compile ToolCall.BuilderTest.Capture
+        def go(x), do: x
+      end
+      """)
+
+    result = module.__build_result__()
+    assert [%{name: "go", source: :not_a_spec_ast, params: [param]}] = result.tools
+    assert param.name == "x"
+    assert param.type.kind == :integer
+    assert param.required
+  end
+
+  test "uses the declaration source label in parameter-name warnings" do
+    {_module, warnings} =
+      compile_with_warnings!("""
+      defmodule FIXTURE do
+        @tool_call_defs [{:go, [{:x, [], nil}], nil, "nofile", 1}]
+        @tool_call_type_source ToolCall.BuilderTest.FakeUnnamedSource
+        @before_compile ToolCall.BuilderTest.Capture
+        def go(x), do: x
+      end
+      """)
+
+    assert warnings =~ "has no name in the fake declaration"
+    refute warnings =~ "has no name in the @spec"
+  end
+
+  test "rejects a declaration whose params do not match the function head" do
+    declaration = %ToolCall.TypeSource.Declaration{
+      name: :go,
+      arity: 2,
+      params: [%ToolCall.TypeSource.Param{name: :x, type: {:integer, [], []}, named?: true}],
+      return: :ok,
+      bindings: %{},
+      source: nil,
+      indirect?: false,
+      warnings: []
+    }
+
+    assert_raise ArgumentError, ~r/declaration/, fn ->
+      ToolCall.Builder.validate_declaration!(declaration, :go, 2, [{:x, [], nil}])
+    end
   end
 
   test "exposes the warning-location helper" do

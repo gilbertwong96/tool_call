@@ -3,8 +3,8 @@
 # obscure the messages without a runtime benefit.
 defmodule ToolCall.Builder do
   @moduledoc false
-  # Compile-time assembly: pairs each `def` with its `@doc`, `@spec` and
-  # default arguments, then builds the embedded `ToolCall.IR.Tool` list.
+  # Compile-time assembly: pairs each `def` with its declaration and default
+  # arguments, then builds the embedded `ToolCall.IR.Tool` list.
   #
   # This runs inside `@before_compile`, never at runtime: `mix release` strips
   # the `Docs` and `Dbgi` chunks, so `Code.Typespec` / `Code.fetch_docs` are not
@@ -14,21 +14,30 @@ defmodule ToolCall.Builder do
 
   alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
-  alias ToolCall.TypeSource.Typespec, as: SourceTypespec
+  alias ToolCall.TypeSource.Declaration
+  alias ToolCall.TypeSource.Param, as: SourceParam
 
   @wire_formats [:number, :string_integer]
   @override_keys [:fun, :name, :wire, :description]
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
-  @spec build(module(), list(), list(), Macro.Env.t(), [module()]) ::
+  @spec build(module(), list(), list(), Macro.Env.t(), [module()], module()) ::
           %{tools: [Tool.t()], typedoc_keys: Typedoc.typedoc_keys()}
-  def build(module, defs, overrides, env, providers) do
+  def build(
+        module,
+        defs,
+        overrides,
+        env,
+        providers,
+        type_source \\ ToolCall.TypeSource.Typespec
+      ) do
     overrides = normalize_overrides(module, overrides)
-    type_source = SourceTypespec.load(module, env)
+    type_source_state = type_source.load(module, env)
 
     context = %{
       module: module,
       type_source: type_source,
+      type_source_state: type_source_state,
       overrides: overrides,
       env: env,
       providers: providers,
@@ -50,6 +59,78 @@ defmodule ToolCall.Builder do
     validate_names(module, entries)
 
     %{tools: tools, typedoc_keys: typedoc_keys(tools, context.definitions)}
+  end
+
+  @doc false
+  @spec validate_declaration!(Declaration.t(), atom(), non_neg_integer(), list()) :: :ok
+  def validate_declaration!(%Declaration{} = declaration, name, arity, head_args) do
+    case validate_declaration_checks(declaration, name, arity, head_args) do
+      :ok ->
+        :ok
+
+      {:error, message} ->
+        raise ArgumentError,
+              "invalid type source declaration for #{name}/#{arity}: #{message}"
+    end
+  end
+
+  defp validate_declaration_checks(declaration, name, arity, head_args) do
+    with :ok <- validate_declaration_name(declaration, name),
+         :ok <- validate_declaration_arity(declaration, arity),
+         :ok <- validate_declaration_params(declaration, arity, head_args) do
+      validate_declaration_metadata(declaration)
+    end
+  end
+
+  defp validate_declaration_name(%Declaration{name: name}, name), do: :ok
+
+  defp validate_declaration_name(%Declaration{name: actual}, name) do
+    {:error, "declaration name #{inspect(actual)} does not match #{inspect(name)}"}
+  end
+
+  defp validate_declaration_arity(%Declaration{arity: arity}, arity), do: :ok
+
+  defp validate_declaration_arity(%Declaration{arity: actual}, arity) do
+    {:error, "declaration arity #{actual} does not match #{arity}"}
+  end
+
+  defp validate_declaration_params(%Declaration{params: params}, arity, head_args) do
+    head_arity = length(head_args)
+    param_count = if is_list(params), do: length(params), else: 0
+
+    cond do
+      head_arity != arity ->
+        {:error, "function head has #{head_arity} arguments, expected #{arity}"}
+
+      not is_list(params) or param_count != arity ->
+        {:error, "declaration has #{param_count} params, expected #{arity}"}
+
+      not Enum.all?(params, &match?(%SourceParam{}, &1)) ->
+        {:error, "declaration params must be ToolCall.TypeSource.Param structs"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp validate_declaration_metadata(%Declaration{} = declaration) do
+    cond do
+      not is_map(declaration.bindings) ->
+        {:error, "declaration bindings must be a map"}
+
+      not is_boolean(declaration.indirect?) ->
+        {:error, "declaration indirect? must be a boolean"}
+
+      not is_binary(declaration.source_label) ->
+        {:error, "declaration source_label must be a string"}
+
+      not is_list(declaration.warnings) or
+          not Enum.all?(declaration.warnings, &is_binary/1) ->
+        {:error, "declaration warnings must be a list of strings"}
+
+      true ->
+        :ok
+    end
   end
 
   defp cyclic_keys(module, env) do
@@ -131,8 +212,10 @@ defmodule ToolCall.Builder do
     arity = length(head_args)
     location = {file, line}
 
-    case SourceTypespec.fetch(context.type_source, name, arity) do
+    case context.type_source.fetch(context.type_source_state, name, arity) do
       {:ok, declaration} ->
+        validate_declaration!(declaration, name, arity, head_args)
+
         for warning <- declaration.warnings, do: warn(context.module, location, warning)
 
         {tool, truncated, result_truncated?} =
@@ -200,9 +283,9 @@ defmodule ToolCall.Builder do
           warn(
             context.module,
             location,
-            "parameter #{index} of #{name}/#{arity} has no name in the @spec; using " <>
-              "\"#{param_name}\". Write it as `#{param_name} :: <type>` so the model sees a " <>
-              "meaningful property name."
+            "parameter #{index} of #{name}/#{arity} has no name in " <>
+              "#{declaration.source_label}; using \"#{param_name}\". Write it as " <>
+              "`#{param_name} :: <type>` so the model sees a meaningful property name."
           )
         end
 
