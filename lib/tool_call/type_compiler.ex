@@ -18,8 +18,7 @@ defmodule ToolCall.TypeCompiler do
           context: context(),
           definitions: map(),
           cyclic: MapSet.t(),
-          defs: map(),
-          registry: map()
+          defs: map()
         }
 
   @spec new(context()) :: t()
@@ -30,8 +29,7 @@ defmodule ToolCall.TypeCompiler do
       context: context,
       definitions: definitions,
       cyclic: LocalTypeAlgorithm.cyclic_keys(definitions, TypeExprAdapter),
-      defs: %{},
-      registry: %{}
+      defs: %{}
     }
   end
 
