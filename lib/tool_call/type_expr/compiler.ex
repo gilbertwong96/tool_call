@@ -44,7 +44,7 @@ defmodule ToolCall.TypeExpr.Compiler do
   def to_type({:enum, values}, _providers) when is_list(values),
     do: %Type{kind: :enum, values: values}
 
-  def to_type({:string, metadata}, _providers), do: string(metadata)
+  def to_type({:string, metadata}, _providers) when is_map(metadata), do: string(metadata)
   def to_type({:list, item}, providers), do: %Type{kind: :array, items: to_type(item, providers)}
 
   def to_type({:nonempty_list, item}, providers) do
@@ -53,10 +53,10 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:tuple, nil}, _providers), do: %Type{kind: :tuple, items: nil}
 
-  def to_type({:tuple, items}, providers),
+  def to_type({:tuple, items}, providers) when is_list(items),
     do: %Type{kind: :tuple, items: Enum.map(items, &to_type(&1, providers))}
 
-  def to_type({:map, fields, additional}, providers) do
+  def to_type({:map, fields, additional}, providers) when is_list(fields) do
     %Type{
       kind: :object,
       fields:
@@ -72,17 +72,18 @@ defmodule ToolCall.TypeExpr.Compiler do
     }
   end
 
-  def to_type({:union, variants}, providers) do
+  def to_type({:union, variants}, providers) when is_list(variants) do
     Typespec.union_type(Enum.map(variants, &to_type(&1, providers)))
   end
 
-  def to_type({:annotated, type, metadata}, providers) do
+  def to_type({:annotated, type, metadata}, providers) when is_map(metadata) do
     type
     |> to_type(providers)
     |> put_meta(metadata)
   end
 
-  def to_type({:intersection, variants}, providers), do: projection(variants, providers)
+  def to_type({:intersection, variants}, providers) when is_list(variants),
+    do: projection(variants, providers)
 
   def to_type({:negation, _type}, _providers), do: %Type{kind: :unsupported, source: :negation}
 
@@ -96,7 +97,7 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:var, name}, _providers), do: %Type{kind: :any, source: {:var, name}}
 
-  def to_type({:remote, module, function, args}, providers) do
+  def to_type({:remote, module, function, args}, providers) when is_list(args) do
     Typespec.resolve_remote(module, function, Enum.map(args, &to_type(&1, providers)), providers)
   end
 

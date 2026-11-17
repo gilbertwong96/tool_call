@@ -67,6 +67,19 @@ defmodule ToolCall.TypeExprTest do
   test "a malformed expression degrades to unsupported" do
     assert %ToolCall.IR.Type{kind: :unsupported, source: {:invalid_type_expr, :nope}} =
              ToolCall.TypeExpr.Compiler.to_type(:nope, [])
+
+    for malformed <- [
+          {:map, :not_a_list, nil},
+          {:tuple, :not_a_list},
+          {:union, :not_a_list},
+          {:remote, String, :t, :not_a_list},
+          {:string, :not_a_map},
+          {:enum, :not_a_list},
+          {:annotated, {:primitive, :integer}, :not_a_map}
+        ] do
+      assert %ToolCall.IR.Type{kind: :unsupported} =
+               ToolCall.TypeExpr.Compiler.to_type(malformed, [])
+    end
   end
 
   test "keeps unsupported types explicit" do
