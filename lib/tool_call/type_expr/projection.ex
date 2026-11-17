@@ -58,6 +58,10 @@ defmodule ToolCall.TypeExpr.Projection do
   def intersect({:literal, value}, right), do: intersect_literal(value, right)
   def intersect(left, {:literal, value}), do: intersect_literal(value, left)
 
+  def intersect({:enum, left_values}, {:enum, right_values})
+      when is_list(left_values) and is_list(right_values),
+      do: {:ok, enum(Enum.filter(left_values, &(&1 in right_values)))}
+
   def intersect({:union, variants}, right), do: intersect_union(variants, right)
   def intersect(left, {:union, variants}), do: intersect_union(variants, left)
 
@@ -75,6 +79,21 @@ defmodule ToolCall.TypeExpr.Projection do
   def subtract(left, :none), do: {:ok, left}
   def subtract(:none, _right), do: {:ok, :none}
   def subtract(left, right) when left == right, do: {:ok, :none}
+
+  def subtract(left, {:union, variants}) when is_list(variants) do
+    variants
+    |> Enum.reduce_while({:ok, left}, fn variant, {:ok, acc} ->
+      case subtract(acc, variant) do
+        {:ok, :none} -> {:halt, {:ok, :none}}
+        {:ok, result} -> {:cont, {:ok, result}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, result} -> {:ok, union([result])}
+      :error -> :error
+    end
+  end
 
   def subtract({:annotated, type, metadata}, right) do
     case subtract(type, right) do
@@ -111,9 +130,7 @@ defmodule ToolCall.TypeExpr.Projection do
       end
     end)
     |> case do
-      {:ok, []} -> {:ok, :none}
-      {:ok, [single]} -> {:ok, single}
-      {:ok, results} -> {:ok, {:union, Enum.reverse(results)}}
+      {:ok, results} -> {:ok, union(Enum.reverse(results))}
       :error -> :error
     end
   end
@@ -157,9 +174,7 @@ defmodule ToolCall.TypeExpr.Projection do
       end
     end)
     |> case do
-      {:ok, []} -> {:ok, :none}
-      {:ok, [single]} -> {:ok, single}
-      {:ok, results} -> {:ok, {:union, Enum.reverse(results)}}
+      {:ok, results} -> {:ok, union(Enum.reverse(results))}
       :error -> :error
     end
   end
@@ -244,7 +259,7 @@ defmodule ToolCall.TypeExpr.Projection do
   defp remaining_ranges([{from, to}]),
     do: integer_range(normalize_bound(from), normalize_bound(to))
 
-  defp remaining_ranges(ranges), do: {:ok, {:union, Enum.map(ranges, &range_node/1)}}
+  defp remaining_ranges(ranges), do: {:ok, union(Enum.map(ranges, &range_node/1))}
 
   defp subtract_literal(value, {:literal, value}), do: {:ok, :none}
   defp subtract_literal(value, {:enum, values}), do: reject_value(value, values)
@@ -255,13 +270,26 @@ defmodule ToolCall.TypeExpr.Projection do
 
   defp subtract_literal(_value, _right), do: :error
 
-  defp reject_value(value, values) do
-    case Enum.reject(values, &(&1 == value)) do
-      [] -> {:ok, :none}
-      [single] -> {:ok, {:literal, single}}
-      rest -> {:ok, {:enum, rest}}
-    end
+  defp reject_value(value, values), do: {:ok, enum(Enum.reject(values, &(&1 == value)))}
+
+  defp union(items) do
+    items
+    |> Enum.flat_map(fn
+      {:union, nested} -> nested
+      item -> [item]
+    end)
+    |> Enum.reject(&(&1 == :none))
+    |> Enum.uniq()
+    |> enum_or_union()
   end
+
+  defp enum_or_union([]), do: :none
+  defp enum_or_union([single]), do: single
+  defp enum_or_union(items), do: {:union, items}
+
+  defp enum([]), do: :none
+  defp enum([single]), do: {:literal, single}
+  defp enum(values), do: {:enum, values}
 
   defp range_node({from, to}) do
     case {normalize_bound(from), normalize_bound(to)} do

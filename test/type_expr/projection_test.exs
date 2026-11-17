@@ -46,6 +46,25 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect(left, right) == :error
   end
 
+  test "enums intersect to their common values" do
+    assert Projection.intersect({:enum, [:a, :b]}, {:enum, [:b, :c]}) == {:ok, {:literal, :b}}
+    assert Projection.intersect({:enum, [:a]}, {:enum, [:c]}) == {:ok, :none}
+  end
+
+  test "subtracting a union subtracts each variant and stays flat" do
+    assert Projection.subtract(
+             {:integer_range, 1, 10},
+             {:union, [{:integer_range, 2, 3}, {:integer_range, 8, 9}]}
+           ) ==
+             {:ok,
+              {:union,
+               [
+                 {:integer_range, 1, 1},
+                 {:integer_range, 4, 7},
+                 {:integer_range, 10, 10}
+               ]}}
+  end
+
   test "a negation operand becomes a difference" do
     assert Projection.intersect({:enum, [:a, :b, :c]}, {:negation, {:literal, :b}}) ==
              {:ok, {:enum, [:a, :c]}}

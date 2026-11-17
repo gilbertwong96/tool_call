@@ -14,7 +14,7 @@ defmodule ToolCall.TypeCompilerTest do
   end
 
   test "compiles a scalar parameter" do
-    state = TypeCompiler.new(context())
+    state = context() |> TypeCompiler.prepare() |> TypeCompiler.new()
 
     assert {%Type{kind: :integer}, false, _state} =
              TypeCompiler.compile_param(state, {:primitive, :integer})
@@ -31,7 +31,11 @@ defmodule ToolCall.TypeCompilerTest do
           ]}}
     }
 
-    state = TypeCompiler.new(%{context() | definitions: definitions})
+    state =
+      context()
+      |> Map.put(:definitions, definitions)
+      |> TypeCompiler.prepare()
+      |> TypeCompiler.new()
 
     {type, false, state} =
       TypeCompiler.compile_param(state, {:ref, {:tree, 0}, []})
@@ -41,7 +45,7 @@ defmodule ToolCall.TypeCompilerTest do
   end
 
   test "returns nil for no_return and none results" do
-    state = TypeCompiler.new(context())
+    state = context() |> TypeCompiler.prepare() |> TypeCompiler.new()
 
     assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :no_return})
     assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :none})

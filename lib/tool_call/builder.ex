@@ -38,6 +38,8 @@ defmodule ToolCall.Builder do
     overrides = normalize_overrides(module, overrides)
     type_source_state = type_source.load(module, env)
 
+    definitions = definitions(module, env)
+
     context = %{
       module: module,
       type_source: type_source,
@@ -45,8 +47,8 @@ defmodule ToolCall.Builder do
       overrides: overrides,
       env: env,
       providers: providers,
-      definitions: definitions(module, env),
-      cyclic: cyclic_keys(module, env)
+      definitions: definitions,
+      type_compiler: TypeCompiler.prepare(%{definitions: definitions, providers: providers})
     }
 
     entries =
@@ -154,12 +156,6 @@ defmodule ToolCall.Builder do
     end
   end
 
-  defp cyclic_keys(module, env) do
-    module
-    |> definitions(env)
-    |> LocalTypes.cyclic_keys()
-  end
-
   defp definitions(module, env) do
     module
     |> LocalTypes.definitions()
@@ -252,7 +248,7 @@ defmodule ToolCall.Builder do
     defaults = Enum.map(head_args, &default_of/1)
     doc_info = Doc.parse(doc_value(doc))
     arity = declaration.arity
-    compiler = TypeCompiler.new(context)
+    compiler = TypeCompiler.new(context.type_compiler)
 
     {params, {compiler, truncated}} =
       declaration.params

@@ -59,9 +59,6 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   def strip_meta(node), do: node
 
   @impl true
-  def name(key, args, _node), do: name(key, args)
-
-  @doc false
   def name(key, args), do: RefName.build(key, args, &arg_name/1)
 
   defp arg_name({:annotated, type, _metadata}), do: arg_name(type)

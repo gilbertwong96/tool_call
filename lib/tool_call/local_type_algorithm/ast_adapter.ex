@@ -88,9 +88,6 @@ defmodule ToolCall.LocalTypeAlgorithm.AstAdapter do
   def strip_meta(ast), do: ToolCall.TypeAst.strip_meta(ast)
 
   @impl true
-  def name(key, args, _node), do: name(key, args)
-
-  @doc false
   def name(key, args), do: RefName.build(key, args, &arg_name/1)
 
   defp arg_name({name, _, _}) when name in [:non_neg_integer, :pos_integer, :neg_integer, :byte],

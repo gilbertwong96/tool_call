@@ -14,6 +14,12 @@ defmodule ToolCall.TypeCompiler do
 
   @type context :: map()
 
+  @type prepared :: %{
+          context: context(),
+          definitions: map(),
+          cyclic: MapSet.t()
+        }
+
   @type t :: %{
           context: context(),
           definitions: map(),
@@ -21,17 +27,25 @@ defmodule ToolCall.TypeCompiler do
           defs: map()
         }
 
-  @spec new(context()) :: t()
-  def new(context) when is_map(context) do
+  @doc """
+  Converts the module's local type definitions once.
+
+  The result is shared by every tool in the module; `new/1` only resets the
+  per-tool `$defs` budget.
+  """
+  @spec prepare(context()) :: prepared()
+  def prepare(context) when is_map(context) do
     definitions = type_expr_definitions(context.definitions)
 
     %{
       context: context,
       definitions: definitions,
-      cyclic: LocalTypeAlgorithm.cyclic_keys(definitions, TypeExprAdapter),
-      defs: %{}
+      cyclic: LocalTypeAlgorithm.cyclic_keys(definitions, TypeExprAdapter)
     }
   end
+
+  @spec new(prepared()) :: t()
+  def new(prepared) when is_map(prepared), do: Map.put(prepared, :defs, %{})
 
   @spec defs(t()) :: map()
   def defs(%{defs: defs}), do: defs
