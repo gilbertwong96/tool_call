@@ -12,7 +12,7 @@ defmodule ToolCall.Builder do
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
   # docs/design.md release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, TypeCompiler, Typedoc, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, TypeCompiler, Typedoc, TypeExpr, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
   alias ToolCall.TypeSource.Declaration
   alias ToolCall.TypeSource.Param, as: SourceParam
@@ -121,6 +121,9 @@ defmodule ToolCall.Builder do
       not params_well_formed?(params) ->
         {:error, "declaration params must be ToolCall.TypeSource.Param structs with a type"}
 
+      error = invalid_param_type(params) ->
+        error
+
       true ->
         :ok
     end
@@ -128,6 +131,26 @@ defmodule ToolCall.Builder do
 
   defp params_well_formed?(params) do
     Enum.all?(params, &match?(%SourceParam{type: type} when not is_nil(type), &1))
+  end
+
+  defp invalid_param_type(params) do
+    Enum.find_value(params, fn
+      %SourceParam{name: name, type: type} ->
+        case TypeExpr.validate(type) do
+          :ok -> nil
+          {:error, reason} -> {:error, "declaration param #{inspect(name)}: #{reason}"}
+        end
+
+      _other ->
+        nil
+    end)
+  end
+
+  defp invalid_return_type(return) do
+    case TypeExpr.validate(return) do
+      :ok -> nil
+      {:error, reason} -> "declaration return: #{reason}"
+    end
   end
 
   defp valid_diagnostic?(%ToolCall.Diagnostic{severity: severity, message: message})
@@ -140,6 +163,9 @@ defmodule ToolCall.Builder do
     cond do
       is_nil(declaration.return) ->
         {:error, "declaration return must be a ToolCall.TypeExpr"}
+
+      invalid_return_type(declaration.return) != nil ->
+        {:error, invalid_return_type(declaration.return)}
 
       not is_boolean(declaration.indirect?) ->
         {:error, "declaration indirect? must be a boolean"}

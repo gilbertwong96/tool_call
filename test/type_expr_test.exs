@@ -82,6 +82,22 @@ defmodule ToolCall.TypeExprTest do
     end
   end
 
+  test "validates nested type expression shape" do
+    assert TypeExpr.validate({:map, [{:a, {:primitive, :integer}, true}], nil}) == :ok
+
+    assert {:error, message} = TypeExpr.validate({:map, [{:a, :bad, true}], nil})
+    assert message =~ "fields[0]"
+
+    assert {:error, message} = TypeExpr.validate({:tuple, [:bad]})
+    assert message =~ "items[0]"
+
+    assert {:error, message} = TypeExpr.validate({:string, %{pattern: 1}})
+    assert message =~ "pattern"
+
+    assert {:error, message} = TypeExpr.validate({:map, [], {:primitive, :bogus}})
+    assert message =~ "additional"
+  end
+
   test "keeps unsupported types explicit" do
     assert from_ast({:fun, [], []}) == {:unsupported, :fun}
     assert from_ast({:pid, [], []}) == {:unsupported, :pid}

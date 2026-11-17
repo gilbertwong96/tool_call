@@ -1171,6 +1171,28 @@ defmodule ToolCall.BuilderTest do
     refute warnings =~ "has no name in the @spec"
   end
 
+  test "rejects a malformed nested type expression" do
+    declaration = %ToolCall.TypeSource.Declaration{
+      name: :go,
+      arity: 1,
+      params: [
+        %ToolCall.TypeSource.Param{
+          name: :x,
+          type: {:tuple, [:not_a_type]},
+          named?: true
+        }
+      ],
+      return: {:literal, :ok},
+      source: nil,
+      indirect?: false,
+      warnings: []
+    }
+
+    assert_raise ArgumentError, ~r/type expression/, fn ->
+      ToolCall.Builder.validate_declaration!(declaration, :go, 1, [{:x, [], nil}])
+    end
+  end
+
   test "rejects a declaration whose params do not match the function head" do
     declaration = %ToolCall.TypeSource.Declaration{
       name: :go,

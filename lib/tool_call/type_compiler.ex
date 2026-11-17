@@ -72,6 +72,16 @@ defmodule ToolCall.TypeCompiler do
   end
 
   defp compile(state, type_expr) do
+    case TypeExpr.validate(type_expr) do
+      :ok ->
+        compile_valid(state, type_expr)
+
+      {:error, reason} ->
+        {%Type{kind: :unsupported, source: {:invalid_type_expr, reason}}, false, state}
+    end
+  end
+
+  defp compile_valid(state, type_expr) do
     max_defs = max(LocalTypes.max_defs() - map_size(state.defs), 0)
 
     {expanded, truncated?, insts} =
