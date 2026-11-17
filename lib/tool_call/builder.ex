@@ -116,12 +116,16 @@ defmodule ToolCall.Builder do
       not is_list(params) or param_count != arity ->
         {:error, "declaration has #{param_count} params, expected #{arity}"}
 
-      not Enum.all?(params, &match?(%SourceParam{}, &1)) ->
-        {:error, "declaration params must be ToolCall.TypeSource.Param structs"}
+      not params_well_formed?(params) ->
+        {:error, "declaration params must be ToolCall.TypeSource.Param structs with a type"}
 
       true ->
         :ok
     end
+  end
+
+  defp params_well_formed?(params) do
+    Enum.all?(params, &match?(%SourceParam{type: type} when not is_nil(type), &1))
   end
 
   defp valid_diagnostic?(%ToolCall.Diagnostic{severity: severity, message: message})
@@ -132,6 +136,9 @@ defmodule ToolCall.Builder do
 
   defp validate_declaration_metadata(%Declaration{} = declaration) do
     cond do
+      is_nil(declaration.return) ->
+        {:error, "declaration return must be a ToolCall.TypeExpr"}
+
       not is_boolean(declaration.indirect?) ->
         {:error, "declaration indirect? must be a boolean"}
 
