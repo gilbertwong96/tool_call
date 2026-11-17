@@ -11,8 +11,8 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
 
   @behaviour ToolCall.LocalTypeAlgorithm.Adapter
 
-  alias ToolCall.TypeExpr
   alias ToolCall.LocalTypeAlgorithm.{AstAdapter, RefName}
+  alias ToolCall.TypeExpr
 
   @impl true
   def local_call({:ref, {name, arity}, args}), do: {:ok, {name, arity}, args}
