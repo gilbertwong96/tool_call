@@ -58,6 +58,20 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprParityTest do
     %{ast_defs: ast_definitions(), type_expr_defs: type_expr_definitions()}
   end
 
+  test "AST and TypeExpr naming agree for the same argument" do
+    for source <- ["integer()", "String.t()", "[integer()]", "%{a: integer()}", "1 | 2", ":leaf"] do
+      ast_args = [quoted(source)]
+      type_expr_args = Enum.map(ast_args, &ToolCall.TypeExpr.Typespec.from_ast/1)
+
+      assert ToolCall.LocalTypes.name({:tree, 1}, ast_args) ==
+               ToolCall.LocalTypeAlgorithm.RefName.build(
+                 {:tree, 1},
+                 type_expr_args,
+                 &ToolCall.LocalTypeAlgorithm.RefName.arg_name/1
+               )
+    end
+  end
+
   test "cyclic detection matches between adapters", %{
     ast_defs: ast_defs,
     type_expr_defs: type_expr_defs

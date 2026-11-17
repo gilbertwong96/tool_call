@@ -14,7 +14,7 @@ defmodule ToolCall.LocalTypes do
   # the legacy AST adapter.
 
   alias ToolCall.{LegacyTypespec, LocalTypeAlgorithm}
-  alias ToolCall.LocalTypeAlgorithm.AstAdapter
+  alias ToolCall.LocalTypeAlgorithm.{AstAdapter, RefName}
 
   @type instantiation :: LocalTypeAlgorithm.instantiation()
 
@@ -62,7 +62,7 @@ defmodule ToolCall.LocalTypes do
 
   @doc false
   @spec name({atom(), non_neg_integer()}, [term()]) :: String.t()
-  def name(key, args), do: AstAdapter.name(key, args)
+  def name(key, args), do: RefName.from_ast(key, args)
 
   @doc false
   def substitute(body, params, args), do: AstAdapter.substitute(body, params, args)

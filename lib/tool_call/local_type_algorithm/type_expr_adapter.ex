@@ -5,13 +5,13 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   @moduledoc """
   `ToolCall.TypeExpr` adapter for `ToolCall.LocalTypeAlgorithm`.
 
-  Parameterized local references keep their source AST arguments as provenance,
-  so `$defs` names stay identical to the typespec-AST expansion.
+  Naming goes through `ToolCall.LocalTypeAlgorithm.RefName`, the same entry point
+  the AST adapter uses, so both recursion paths hash the same terms.
   """
 
   @behaviour ToolCall.LocalTypeAlgorithm.Adapter
 
-  alias ToolCall.{LocalTypeAlgorithm, TypeExpr}
+  alias ToolCall.TypeExpr
   alias ToolCall.LocalTypeAlgorithm.{AstAdapter, RefName}
 
   @impl true
@@ -59,47 +59,7 @@ defmodule ToolCall.LocalTypeAlgorithm.TypeExprAdapter do
   def strip_meta(node), do: node
 
   @impl true
-  def name(key, args), do: RefName.build(key, args, &arg_name/1)
-
-  defp arg_name({:annotated, type, _metadata}), do: arg_name(type)
-  defp arg_name({:primitive, :integer}), do: "integer"
-  defp arg_name({:integer_range, _low, _high}), do: "integer"
-  defp arg_name({:primitive, :number}), do: "number"
-  defp arg_name({:primitive, :float}), do: "number"
-  defp arg_name({:literal, value}) when is_number(value), do: arg_name_type(value)
-  defp arg_name({:primitive, :string}), do: "string"
-  defp arg_name({:string, _metadata}), do: "string"
-  defp arg_name({:primitive, :boolean}), do: "boolean"
-  defp arg_name({:primitive, :atom}), do: "atom"
-  defp arg_name({:list, inner}), do: "list_" <> arg_name(inner)
-  defp arg_name({:nonempty_list, inner}), do: "list_" <> arg_name(inner)
-  defp arg_name({:map, _fields, _additional}), do: "map"
-  defp arg_name({:tuple, _items}), do: "tuple"
-
-  defp arg_name({:union, variants}),
-    do: Enum.map_join(variants, "_or_", &arg_name/1)
-
-  defp arg_name({:remote, module, :t, _args}), do: module_arg_name(module)
-
-  defp arg_name({:remote, module, function, _args}),
-    do: module_arg_name(module) <> "_" <> Atom.to_string(function)
-
-  defp arg_name({:literal, value}) when is_atom(value) and value not in [true, false, nil],
-    do: Atom.to_string(value)
-
-  defp arg_name(_other), do: "any"
-
-  defp arg_name_type(value) when is_integer(value), do: "integer"
-  defp arg_name_type(value) when is_float(value), do: "number"
-
-  defp module_arg_name(module) do
-    module |> Module.split() |> List.last() |> String.downcase()
-  end
-
-  @doc false
-  def expand(root, definitions, opts \\ []) do
-    LocalTypeAlgorithm.expand(root, definitions, __MODULE__, opts)
-  end
+  def name(key, args), do: RefName.build(key, args, &RefName.arg_name/1)
 
   defp map(node, fun) do
     node = fun.(node)
