@@ -21,6 +21,12 @@ defmodule ToolCall.TypeAst do
   end
 
   @doc false
+  @spec int_literal(term()) :: {:ok, integer()} | :error
+  def int_literal(value) when is_integer(value), do: {:ok, value}
+  def int_literal({:-, _, [value]}) when is_integer(value), do: {:ok, -value}
+  def int_literal(_other), do: :error
+
+  @doc false
   @spec substitute_vars(term(), %{atom() => term()}) :: term()
   def substitute_vars({name, _meta, context} = node, bindings)
       when is_atom(name) and is_atom(context) do

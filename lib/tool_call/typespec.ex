@@ -11,7 +11,7 @@ defmodule ToolCall.Typespec do
   """
 
   alias ToolCall.IR.{Field, Param, Tool, Type}
-  alias ToolCall.Patterns
+  alias ToolCall.{Patterns, TypeAst}
   alias ToolCall.Providers.Stdlib
   alias ToolCall.Structs
 
@@ -77,7 +77,7 @@ defmodule ToolCall.Typespec do
   end
 
   def to_type({:.., _, [low, high]}, providers) do
-    case {int_literal(low), int_literal(high)} do
+    case {TypeAst.int_literal(low), TypeAst.int_literal(high)} do
       {{:ok, low}, {:ok, high}} -> %Type{kind: :integer, minimum: low, maximum: high}
       _ -> local(:.., [low, high], providers)
     end
@@ -1443,10 +1443,6 @@ defmodule ToolCall.Typespec do
   def untyped?(nil), do: false
   def untyped?(%Type{}), do: false
   # --- helpers --------------------------------------------------------------
-
-  defp int_literal(int) when is_integer(int), do: {:ok, int}
-  defp int_literal({:-, _, [int]}) when is_integer(int), do: {:ok, -int}
-  defp int_literal(_other), do: :error
 
   defp flatten_union({:|, _, [left, right]}, providers) do
     Enum.concat(flatten_union(left, providers), flatten_union(right, providers))
