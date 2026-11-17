@@ -84,7 +84,9 @@ defmodule ToolCall.TypeCompiler do
     expanded = TypeExprAdapter.rewrite_refs(expanded, names)
 
     defs =
-      Enum.reduce(Enum.with_index(insts), defs, fn {inst, index}, defs ->
+      insts
+      |> Stream.with_index()
+      |> Enum.reduce(defs, fn {inst, index}, defs ->
         body = TypeExprAdapter.rewrite_refs(inst.body, names)
         type = TypeExpr.Compiler.to_type(body, state.context.providers)
         Map.put(defs, Map.fetch!(names, index), type)
@@ -102,7 +104,7 @@ defmodule ToolCall.TypeCompiler do
   def assign_names(insts, defs) do
     {names, defs} =
       insts
-      |> Enum.with_index()
+      |> Stream.with_index()
       |> Enum.reduce({%{}, defs}, fn {inst, index}, {names, defs} ->
         name = unique_name(inst.name, defs)
         {Map.put(names, index, name), Map.put_new(defs, name, nil)}
