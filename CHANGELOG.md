@@ -17,6 +17,13 @@
   consistent within a schema. Only the emitted bytes of a parameterized
   recursive type differ.
 
+### Added
+
+- A function-declaration source can return an `:error` severity diagnostic in
+  `ToolCall.Diagnostic`; the build then fails with that message instead of
+  warning and skipping the tool. The shipped `@spec` source still reports
+  warnings only.
+
 ## 0.2.0 - 2026-11-12
 
 ### Breaking changes

@@ -24,15 +24,15 @@ internal seams exist, but the syntax is not stable enough to parse.
 
 These are implemented partially, or deliberately left for later.
 
-- **Set-theoretic projection.** `TypeExpr` has `:intersection` and `:negation`
-  nodes, and `TypeExpr.Compiler` lowers both to `:unsupported`. Implementing
-  them means deciding what an "exact" intersection is and how a negation reaches
-  JSON Schema; neither is silently approximated to `anyOf` today. See
+- **Set-theoretic projection beyond the exact cases.** `ToolCall.TypeExpr.Projection`
+  lowers intersections and differences that JSON Schema can carry exactly: maps,
+  integer ranges, literals and enums. A bare complement or a disjoint-kind
+  intersection still reports `:unsupported` and warns. Extending that means
+  deciding on more set operations, not turning on something already written. See
   [`projection.md`](projection.md).
-- **Diagnostic severity.** `ToolCall.Diagnostic` carries `:warning | :error`, but
-  every current producer emits warnings and the builder renders both the same
-  way. Severity becomes meaningful when a source can fail a compile rather than
-  skip a tool.
+- **Diagnostic severity for sources.** The builder now fails the compile on an
+  `:error` diagnostic, but every shipped source still reports `:warning`; a
+  source uses `:error` only when a declaration is unusable rather than skippable.
 
 ## Later / not scheduled
 

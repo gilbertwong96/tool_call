@@ -76,11 +76,25 @@ The emitter:
 
 ## Current IR limits
 
-The current `ToolCall.IR.Type` has no intersection or negation kind. The
-emitters therefore never emit `allOf` or `not`. A future native type source must
-either lower those constructs to a supported subset or add explicit IR
-representation and emitter tests. They must not silently become `anyOf`, which
-would weaken the schema without telling the model.
+`ToolCall.IR.Type` has no intersection or negation kind, and no emitter writes
+`allOf` or `not`; Gemini's subset rejects both. `TypeExpr` therefore lowers a
+set operation only when the result is representable exactly, through
+`ToolCall.TypeExpr.Projection`:
 
-`allOf` and `not` are also absent from Gemini's subset, so a future
-representation would need a target-specific fallback or an error.
+| Operation | Lowered exactly | Degrades to `:unsupported` |
+|---|---|---|
+| `:any` / `:none` identity | yes | — |
+| integer ranges and `integer()` | overlap, emptiness | — |
+| literals and enums | overlap, difference | — |
+| maps | field and `additionalProperties` merge | conflicting field types |
+| `and not <range>` | split into at most two ranges | — |
+| other intersections | — | disjoint kinds, refs, providers |
+| bare complement (`not t`) | — | no exact JSON Schema form |
+
+An inexact operation yields `{:unsupported, :intersection}` (or `:negation`) and
+the build warns with the existing "no JSON representation" message. It is never
+silently widened to `anyOf` or `any`, because that would tell the model the wrong
+contract.
+
+A future native type source that needs more than these cases must either add an
+IR representation with emitter tests or report a diagnostic.
