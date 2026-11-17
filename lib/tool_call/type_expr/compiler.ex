@@ -8,6 +8,7 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   alias ToolCall.IR.{Field, Type}
   alias ToolCall.{Patterns, Providers.Stdlib, Typespec}
+  alias ToolCall.TypeExpr.Projection
 
   @spec to_type(ToolCall.TypeExpr.t(), [module()]) :: Type.t()
   def to_type(:any, _providers), do: %Type{kind: :any}
@@ -34,6 +35,9 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:integer_range, low, high}, _providers),
     do: %Type{kind: :integer, minimum: low, maximum: high}
+
+  def to_type({:enum, values}, _providers) when is_list(values),
+    do: %Type{kind: :enum, values: values}
 
   def to_type({:string, metadata}, _providers), do: string(metadata)
   def to_type({:list, item}, providers), do: %Type{kind: :array, items: to_type(item, providers)}
@@ -67,11 +71,15 @@ defmodule ToolCall.TypeExpr.Compiler do
     Typespec.union_type(Enum.map(variants, &to_type(&1, providers)))
   end
 
-  def to_type({:intersection, _variants}, _providers),
-    do: %Type{kind: :unsupported, source: :intersection}
+  def to_type({:annotated, type, metadata}, providers) do
+    type
+    |> to_type(providers)
+    |> put_meta(metadata)
+  end
 
-  def to_type({:negation, _type}, _providers),
-    do: %Type{kind: :unsupported, source: :negation}
+  def to_type({:intersection, variants}, providers), do: projection(variants, providers)
+
+  def to_type({:negation, _type}, _providers), do: %Type{kind: :unsupported, source: :negation}
 
   def to_type({:ref, ref}, _providers), do: %Type{kind: :ref, ref: ref}
 
@@ -104,11 +112,21 @@ defmodule ToolCall.TypeExpr.Compiler do
   def to_type({:dynamic, _type}, _providers), do: %Type{kind: :any, source: :dynamic}
   def to_type({:unsupported, reason}, _providers), do: %Type{kind: :unsupported, source: reason}
 
-  def to_type({:annotated, type, metadata}, providers) do
-    type = to_type(type, providers)
+  defp projection([], _providers), do: %Type{kind: :unsupported, source: :intersection}
 
-    type
-    |> put_meta(metadata)
+  defp projection([only], providers), do: to_type(only, providers)
+
+  defp projection([first | rest], providers) do
+    Enum.reduce_while(rest, {:ok, first}, fn variant, {:ok, acc} ->
+      case Projection.intersect(acc, variant) do
+        {:ok, result} -> {:cont, {:ok, result}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, result} -> to_type(result, providers)
+      :error -> %Type{kind: :unsupported, source: :intersection}
+    end
   end
 
   defp put_meta(type, metadata) do

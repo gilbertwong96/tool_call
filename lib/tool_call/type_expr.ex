@@ -18,7 +18,8 @@ defmodule ToolCall.TypeExpr do
           | :none
           | {:literal, term()}
           | {:primitive, :boolean | :integer | :float | :number | :string | :atom}
-          | {:integer_range, integer(), integer()}
+          | {:integer_range, integer() | nil, integer() | nil}
+          | {:enum, [term()]}
           | {:string, map()}
           | {:list, t()}
           | {:nonempty_list, t()}
@@ -56,6 +57,7 @@ defmodule ToolCall.TypeExpr do
   def children({:builtin, _name, args}), do: args
   def children({:dynamic, item}), do: [item]
   def children({:annotated, item, _meta}), do: [item]
+  def children({:enum, _values}), do: []
   def children({:local_ref, _index}), do: []
   def children({:var, _name}), do: []
   def children(_node), do: []
