@@ -75,8 +75,13 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:ref, ref}, _providers), do: %Type{kind: :ref, ref: ref}
 
-  def to_type({:ref, {name, arity}, _args}, _providers),
+  def to_type({:ref, {name, arity}, _args, _source_args}, _providers),
     do: %Type{kind: :any, source: {name, arity}}
+
+  def to_type({:local_ref, index}, _providers),
+    do: %Type{kind: :any, source: {:local_ref, index}}
+
+  def to_type({:var, name}, _providers), do: %Type{kind: :any, source: {:var, name}}
 
   def to_type({:remote, module, function, args}, providers) do
     Typespec.resolve_remote(module, function, Enum.map(args, &to_type(&1, providers)), providers)

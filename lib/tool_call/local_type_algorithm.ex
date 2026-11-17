@@ -20,7 +20,7 @@ defmodule ToolCall.LocalTypeAlgorithm do
     @callback ref(non_neg_integer()) :: term()
     @callback rewrite_refs(term(), %{non_neg_integer() => String.t()}) :: term()
     @callback strip_meta(term()) :: term()
-    @callback name(key(), [term()]) :: String.t()
+    @callback name(key(), [term()], term()) :: String.t()
   end
 
   alias ToolCall.LocalTypeAlgorithm.Adapter
@@ -136,7 +136,7 @@ defmodule ToolCall.LocalTypeAlgorithm do
             |> adapter.substitute(params, args)
             |> walk([key | seen], definitions, adapter, state)
 
-          entry = %{key: key, args: args, body: expanded}
+          entry = %{key: key, args: args, name: adapter.name(key, args, node), body: expanded}
 
           {adapter.ref(index), %{state | insts: Map.put(state.insts, index, entry)}}
         end

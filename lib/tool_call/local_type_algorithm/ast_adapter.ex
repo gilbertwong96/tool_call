@@ -83,14 +83,12 @@ defmodule ToolCall.LocalTypeAlgorithm.AstAdapter do
   end
 
   @impl true
-  def strip_meta(ast) do
-    Macro.prewalk(ast, fn
-      {name, _meta, args} -> {name, [], args}
-      node -> node
-    end)
-  end
+  def strip_meta(ast), do: ToolCall.TypeAst.strip_meta(ast)
 
   @impl true
+  def name(key, args, _node), do: name(key, args)
+
+  @doc false
   def name({type_name, _arity} = key, args) do
     name =
       case Enum.map(args, &arg_name/1) do

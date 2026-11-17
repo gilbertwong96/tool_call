@@ -27,6 +27,15 @@ defmodule ToolCall.TypeAst do
   def int_literal(_other), do: :error
 
   @doc false
+  @spec strip_meta(term()) :: term()
+  def strip_meta(ast) do
+    Macro.prewalk(ast, fn
+      {name, _meta, args} -> {name, [], args}
+      node -> node
+    end)
+  end
+
+  @doc false
   @spec substitute_vars(term(), %{atom() => term()}) :: term()
   def substitute_vars({name, _meta, context} = node, bindings)
       when is_atom(name) and is_atom(context) do

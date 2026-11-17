@@ -62,6 +62,9 @@ defmodule ToolCall.TypeExpr.Typespec do
     {:remote, module, function, Enum.map(args, &from_ast/1)}
   end
 
+  def from_ast({name, _meta, context}) when is_atom(name) and is_atom(context),
+    do: {:var, name}
+
   def from_ast({name, _, args}) when is_atom(name) and is_list(args) do
     local(name, args)
   end
@@ -134,7 +137,11 @@ defmodule ToolCall.TypeExpr.Typespec do
   defp local(name, []) when name in [:term, :any], do: :any
   defp local(name, []) when name in @unrepresentable, do: {:unsupported, name}
   defp local(:struct, []), do: {:map, [], :any}
-  defp local(name, args), do: {:ref, {name, length(args)}, Enum.map(args, &from_ast/1)}
+
+  defp local(name, args) do
+    {:ref, {name, length(args)}, Enum.map(args, &from_ast/1),
+     Enum.map(args, &TypeAst.strip_meta/1)}
+  end
 
   defp string(source), do: {:string, %{source: source}}
 end
