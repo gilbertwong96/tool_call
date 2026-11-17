@@ -195,6 +195,8 @@ defmodule ToolCall.TypeExpr.Projection do
     if in_range?(value, low, high), do: {:ok, {:literal, value}}, else: {:ok, :none}
   end
 
+  defp intersect_integer(_low, _high, {:literal, _value}), do: {:ok, :none}
+
   defp intersect_integer(low, high, {:enum, values}) when is_list(values) do
     kept = Enum.filter(values, &(is_integer(&1) and in_range?(&1, low, high)))
 
@@ -205,6 +207,10 @@ defmodule ToolCall.TypeExpr.Projection do
   end
 
   defp intersect_integer(low, high, {:primitive, :integer}), do: integer_range(low, high)
+
+  defp intersect_integer(_low, _high, {:primitive, kind}) when kind not in [:integer, :number],
+    do: {:ok, :none}
+
   defp intersect_integer(_low, _high, _right), do: :error
 
   defp intersect_enum_primitive(values, kind) do

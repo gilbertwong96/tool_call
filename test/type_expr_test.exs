@@ -59,6 +59,16 @@ defmodule ToolCall.TypeExprTest do
     assert from_ast(ref) == {:ref, "tree"}
   end
 
+  test "a non-JSON literal degrades instead of crashing" do
+    assert %ToolCall.IR.Type{kind: :unsupported} =
+             ToolCall.TypeExpr.Compiler.to_type({:literal, {1, 2}}, [])
+  end
+
+  test "a malformed expression degrades to unsupported" do
+    assert %ToolCall.IR.Type{kind: :unsupported, source: {:invalid_type_expr, :nope}} =
+             ToolCall.TypeExpr.Compiler.to_type(:nope, [])
+  end
+
   test "keeps unsupported types explicit" do
     assert from_ast({:fun, [], []}) == {:unsupported, :fun}
     assert from_ast({:pid, [], []}) == {:unsupported, :pid}

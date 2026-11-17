@@ -96,11 +96,11 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
            ) == :error
   end
 
-  test "an impossible field intersection is reported, not widened" do
+  test "a disjoint required field makes the map empty" do
     left = {:map, [{:a, {:primitive, :integer}, true}], nil}
     right = {:map, [{:a, {:primitive, :string}, true}], nil}
 
-    assert Projection.intersect(left, right) == :error
+    assert Projection.intersect(left, right) == {:ok, :none}
   end
 
   test "enums intersect to their common values" do

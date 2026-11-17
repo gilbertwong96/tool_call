@@ -31,6 +31,11 @@ defmodule ToolCall.TypeExpr.Compiler do
   def to_type({:literal, value}, _providers) when is_binary(value),
     do: %Type{kind: :enum, values: [value], source: value}
 
+  # A literal that is not a JSON scalar cannot be described, but it must not
+  # crash the compiler.
+  def to_type({:literal, value}, _providers),
+    do: %Type{kind: :unsupported, source: {:literal, value}}
+
   def to_type({:primitive, kind}, _providers), do: primitive(kind)
 
   def to_type({:integer_range, low, high}, _providers),
@@ -111,6 +116,11 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:dynamic, _type}, _providers), do: %Type{kind: :any, source: :dynamic}
   def to_type({:unsupported, reason}, _providers), do: %Type{kind: :unsupported, source: reason}
+
+  # A malformed expression from an external source must not take down the
+  # compiler; the IR becomes untyped with a diagnostic-friendly source.
+  def to_type(other, _providers),
+    do: %Type{kind: :unsupported, source: {:invalid_type_expr, other}}
 
   defp additional_type(nil, _providers), do: nil
   defp additional_type(:none, _providers), do: nil
