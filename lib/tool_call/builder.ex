@@ -22,7 +22,11 @@ defmodule ToolCall.Builder do
   @literal_sigils [:sigil_s, :sigil_S, :sigil_c, :sigil_C, :sigil_w, :sigil_W]
 
   @spec build(module(), list(), list(), Macro.Env.t(), [module()], module()) ::
-          %{tools: [Tool.t()], typedoc_keys: Typedoc.typedoc_keys()}
+          %{
+            tools: [Tool.t()],
+            typedoc_keys: Typedoc.typedoc_keys(),
+            indirect: MapSet.t(String.t())
+          }
   def build(
         module,
         defs,
@@ -55,10 +59,17 @@ defmodule ToolCall.Builder do
 
     tools = Enum.map(entries, &elem(&1, 0))
 
+    indirect =
+      for {tool, _location, _truncated, _result_truncated, true} <- entries, do: tool.name
+
     validate_overrides(module, overrides, tools)
     validate_names(module, entries)
 
-    %{tools: tools, typedoc_keys: typedoc_keys(tools, context.definitions)}
+    %{
+      tools: tools,
+      typedoc_keys: typedoc_keys(tools, context.definitions),
+      indirect: MapSet.new(indirect)
+    }
   end
 
   @doc false
@@ -163,7 +174,7 @@ defmodule ToolCall.Builder do
   defp unique_tool_names(entries, module) do
     {entries, _seen} =
       Enum.flat_map_reduce(entries, MapSet.new(), fn {tool, location, _truncated,
-                                                      _result_truncated} = entry,
+                                                      _result_truncated, _indirect?} = entry,
                                                      seen ->
         if MapSet.member?(seen, tool.name) do
           warn(
@@ -183,7 +194,7 @@ defmodule ToolCall.Builder do
   end
 
   defp validate_names(module, entries) do
-    for {%Tool{name: name}, location, _truncated, _result_truncated} <- entries,
+    for {%Tool{name: name}, location, _truncated, _result_truncated, _indirect?} <- entries,
         not ToolCall.ProviderName.valid?(name) do
       warn(
         module,
@@ -215,7 +226,7 @@ defmodule ToolCall.Builder do
         {tool, truncated, result_truncated?} =
           make_tool(name, head_args, doc, declaration, context, location)
 
-        [{tool, location, truncated, result_truncated?}]
+        [{tool, location, truncated, result_truncated?, declaration.indirect?}]
 
       {:error, messages} ->
         for message <- messages, do: warn(context.module, location, message)
@@ -318,8 +329,7 @@ defmodule ToolCall.Builder do
        fun: name,
        source: declaration.source,
        defs: TypeCompiler.defs(compiler),
-       result: result,
-       indirect?: declaration.indirect?
+       result: result
      }, truncated, result_truncated?}
   end
 
@@ -468,7 +478,8 @@ defmodule ToolCall.Builder do
 
   defp resolve_and_warn(entries, context, module) do
     {entries, _raw} =
-      Enum.map_reduce(entries, %{}, fn {tool, location, truncated, result_truncated}, raw ->
+      Enum.map_reduce(entries, %{}, fn {tool, location, truncated, result_truncated, indirect?},
+                                       raw ->
         {tool, warnings, raw} =
           Structs.Resolve.run(
             tool,
@@ -478,7 +489,7 @@ defmodule ToolCall.Builder do
           )
 
         Enum.each(warnings, &warn(module, location, &1))
-        expose(module, location, tool, truncated, result_truncated, raw)
+        expose(module, location, tool, truncated, result_truncated, indirect?, raw)
       end)
 
     Enum.reject(entries, &is_nil/1)
@@ -487,7 +498,7 @@ defmodule ToolCall.Builder do
   # A parameter with no JSON type cannot be described to a model, and a tool
   # with one is not a contract the model can honour. Skipping it keeps the
   # compile total and mirrors `@doc false`; the warning names the fix.
-  defp expose(module, location, %Tool{} = tool, truncated, result_truncated, raw) do
+  defp expose(module, location, %Tool{} = tool, truncated, result_truncated, indirect?, raw) do
     defs = tool.defs
 
     case Enum.find(tool.params, fn param ->
@@ -495,7 +506,7 @@ defmodule ToolCall.Builder do
          end) do
       nil ->
         warn_tool(module, location, tool, truncated, result_truncated)
-        {{tool, location, truncated, result_truncated}, raw}
+        {{tool, location, truncated, result_truncated, indirect?}, raw}
 
       %Param{name: param} ->
         warn(

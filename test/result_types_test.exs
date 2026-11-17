@@ -1,3 +1,23 @@
+defmodule ToolCall.ResultTypesTest.Capture do
+  @moduledoc false
+
+  defmacro __before_compile__(env) do
+    result =
+      ToolCall.Builder.build(
+        env.module,
+        env.module |> Module.get_attribute(:tool_call_defs) |> List.wrap(),
+        env.module |> Module.get_attribute(:tool_param) |> List.wrap(),
+        env,
+        Module.get_attribute(env.module, :tool_call_type_providers) || []
+      )
+
+    quote do
+      @doc false
+      def __indirect_tools__, do: unquote(Macro.escape(result.indirect))
+    end
+  end
+end
+
 defmodule ToolCall.ResultTypesTest do
   use ExUnit.Case, async: true
 
@@ -7,6 +27,11 @@ defmodule ToolCall.ResultTypesTest do
   defp tool(source) do
     module = compile!(source)
     Enum.find(ToolCall.tools(module), &(&1.name == "go"))
+  end
+
+  defp indirect_tools(source) do
+    module = compile!(source)
+    module.__indirect_tools__()
   end
 
   test "a native return type lands on the tool" do
@@ -83,34 +108,36 @@ defmodule ToolCall.ResultTypesTest do
   end
 
   test "exact no_return() is dispatched indirectly" do
-    tool =
-      tool("""
+    indirect =
+      indirect_tools("""
       defmodule FIXTURE do
         use ToolCall
 
         @doc "Go."
         @spec go(x :: integer()) :: no_return()
         def go(x), do: raise(ArgumentError, inspect(x))
+        @before_compile ToolCall.ResultTypesTest.Capture
       end
       """)
 
-    assert tool.indirect?
+    assert "go" in indirect
   end
 
   test "none() and an aliased no_return() are not indirect" do
     none =
-      tool("""
+      indirect_tools("""
       defmodule FIXTURE do
         use ToolCall
 
         @doc "Go."
         @spec go(x :: integer()) :: none()
         def go(x), do: x
+        @before_compile ToolCall.ResultTypesTest.Capture
       end
       """)
 
     aliased =
-      tool("""
+      indirect_tools("""
       defmodule FIXTURE do
         use ToolCall
 
@@ -119,11 +146,12 @@ defmodule ToolCall.ResultTypesTest do
         @doc "Go."
         @spec go(x :: integer()) :: nope()
         def go(_x), do: :ignored
+        @before_compile ToolCall.ResultTypesTest.Capture
       end
       """)
 
-    refute none.indirect?
-    refute aliased.indirect?
+    refute "go" in none
+    refute "go" in aliased
   end
 
   test "an aliased no_return() also leaves the result empty" do

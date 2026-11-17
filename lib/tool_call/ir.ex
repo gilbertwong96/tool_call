@@ -147,10 +147,6 @@ defmodule ToolCall.IR do
 
     `result` is the declared `@spec` return type, or nil for a `no_return()`
     spec. Result validation uses it; it is never rendered.
-
-    `indirect?` is internal dispatch metadata: a tool whose return type is
-    exactly `no_return()` uses `apply/3` so the generated clause does not look
-    like a function that returns normally. It is not a wire field.
     """
     defstruct name: nil,
               description: nil,
@@ -159,8 +155,7 @@ defmodule ToolCall.IR do
               fun: nil,
               source: nil,
               defs: %{},
-              result: nil,
-              indirect?: false
+              result: nil
 
     @type t :: %__MODULE__{}
   end

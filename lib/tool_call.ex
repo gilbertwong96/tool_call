@@ -174,7 +174,7 @@ defmodule ToolCall do
 
     providers = Module.get_attribute(module, :tool_call_type_providers) || []
 
-    %{tools: tools, typedoc_keys: typedoc_keys} =
+    %{tools: tools, typedoc_keys: typedoc_keys, indirect: indirect} =
       ToolCall.Builder.build(module, defs, overrides, env, providers)
 
     # Phase two only fills parameters that have no description yet. A compile
@@ -203,7 +203,7 @@ defmodule ToolCall do
     tools_body = tools_body(embedded, companion, generation, typedoc_keys)
     schemas_body = schemas_body(schemas, companion, generation, typedoc_keys)
 
-    runner_clauses = runner_clauses(tools, embedded, timeout, approval, audit)
+    runner_clauses = runner_clauses(embedded, indirect, timeout, approval, audit)
 
     quote do
       @doc false
@@ -264,9 +264,8 @@ defmodule ToolCall do
     end
   end
 
-  defp runner_clauses(tools, embedded, timeout, approval, audit) do
-    indirect = for tool <- tools, tool.indirect?, do: tool.name
-    ToolCall.Codegen.runner_clauses(embedded, indirect, timeout, approval, audit)
+  defp runner_clauses(embedded, indirect, timeout, approval, audit) do
+    ToolCall.Codegen.runner_clauses(embedded, MapSet.to_list(indirect), timeout, approval, audit)
   end
 
   # Phase two: recover visible typedocs from the just-compiled bytecode and
