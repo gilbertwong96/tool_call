@@ -373,7 +373,7 @@ budget and warning path described above, so their schemas do not change.
 
 Names are readable and derived from the instantiation: `tree` for a zero-argument
 type; a parameterized one renders its arguments by kind and appends a
-four-hex-digit signature of the instantiation (`tree_integer_40ca`). Sanitised to
+four-hex-digit signature of the instantiation (`tree_integer_<hash>`). Sanitised to
 `[A-Za-z0-9_]`, truncated at 64 characters, with `_2`, `_3` on a collision after
 truncation. The name is a pure function of `{key, args}` and of nothing else, so
 adding a parameter cannot rename an existing entry, and two compiles of the same

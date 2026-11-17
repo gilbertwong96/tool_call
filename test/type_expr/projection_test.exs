@@ -53,6 +53,18 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
                nil}}
   end
 
+  test "enums narrow against primitives, and string sources must agree" do
+    assert Projection.intersect({:enum, [:a, 1]}, {:primitive, :atom}) == {:ok, {:literal, :a}}
+
+    assert Projection.intersect({:primitive, :string}, {:enum, ["a", :b]}) ==
+             {:ok, {:literal, "a"}}
+
+    assert Projection.intersect(
+             {:string, %{source: :char}},
+             {:string, %{source: :charlist}}
+           ) == :error
+  end
+
   test "an impossible field intersection is reported, not widened" do
     left = {:map, [{:a, {:primitive, :integer}, true}], nil}
     right = {:map, [{:a, {:primitive, :string}, true}], nil}
@@ -128,6 +140,11 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
 
     assert Projection.intersect({:string, %{format: "date"}}, {:string, %{format: "time"}}) ==
              :error
+  end
+
+  test "subtracting integer() removes the whole integer domain" do
+    assert Projection.subtract({:integer_range, 1, 10}, {:primitive, :integer}) == {:ok, :none}
+    assert Projection.subtract({:primitive, :integer}, {:primitive, :integer}) == {:ok, :none}
   end
 
   test "unsupported differences report an error" do

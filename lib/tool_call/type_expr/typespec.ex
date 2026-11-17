@@ -31,7 +31,7 @@ defmodule ToolCall.TypeExpr.Typespec do
   def from_ast({:.., _, [low, high]}) do
     case {TypeAst.int_literal(low), TypeAst.int_literal(high)} do
       {{:ok, low}, {:ok, high}} -> {:integer_range, low, high}
-      _other -> {:builtin, :.., [from_ast(low), from_ast(high)]}
+      _other -> :any
     end
   end
 

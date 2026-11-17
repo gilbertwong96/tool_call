@@ -343,7 +343,7 @@ exception should travel as a scalar.
 ## `$defs` names are derived, so treat them as opaque
 
 Names are a pure function of the type and its instantiation: `tree` for a
-zero-argument type, `tree_integer_40ca` for a parameterized one, where the suffix
+zero-argument type, `tree_integer_<hash>` for a parameterized one, where the suffix
 is a signature of the instantiation. They do not depend on any other parameter,
 so adding one cannot rename an existing entry, and two compiles of the same
 source produce the same names. They are still not a public API: do not depend on

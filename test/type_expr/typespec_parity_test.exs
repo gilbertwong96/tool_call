@@ -50,6 +50,7 @@ defmodule ToolCall.TypeExpr.TypespecParityTest do
     "no_return()",
     "none()",
     "1..10",
+    "{:.., [], [{:x, [], nil}, 2]}",
     "-5",
     "~c\"abc\"",
     "\"literal\"",

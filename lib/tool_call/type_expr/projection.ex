@@ -62,6 +62,12 @@ defmodule ToolCall.TypeExpr.Projection do
       when is_list(left_values) and is_list(right_values),
       do: {:ok, enum(Enum.filter(left_values, &(&1 in right_values)))}
 
+  def intersect({:enum, values}, {:primitive, kind}) when is_list(values),
+    do: intersect_enum_primitive(values, kind)
+
+  def intersect({:primitive, kind}, {:enum, values}) when is_list(values),
+    do: intersect_enum_primitive(values, kind)
+
   def intersect({:union, variants}, right), do: intersect_union(variants, right)
   def intersect(left, {:union, variants}), do: intersect_union(variants, left)
 
@@ -177,6 +183,18 @@ defmodule ToolCall.TypeExpr.Projection do
 
   defp intersect_integer(_low, _high, _right), do: :error
 
+  defp intersect_enum_primitive(values, kind) do
+    kept = Enum.filter(values, &literal_of_kind?(&1, kind))
+    {:ok, enum(kept)}
+  end
+
+  defp literal_of_kind?(value, :string) when is_binary(value), do: true
+  defp literal_of_kind?(value, :atom) when is_atom(value), do: true
+  defp literal_of_kind?(value, :boolean) when is_boolean(value), do: true
+  defp literal_of_kind?(value, :integer) when is_integer(value), do: true
+  defp literal_of_kind?(value, :number) when is_number(value), do: true
+  defp literal_of_kind?(_value, _kind), do: false
+
   defp intersect_literal(value, {:literal, value}), do: {:ok, {:literal, value}}
   defp intersect_literal(_value, {:literal, _other}), do: {:ok, :none}
 
@@ -249,12 +267,13 @@ defmodule ToolCall.TypeExpr.Projection do
   # than keeping one and dropping the other.
   defp intersect_strings(left, right) do
     with {:ok, pattern} <- narrower(left, right, :pattern),
-         {:ok, format} <- narrower(left, right, :format) do
+         {:ok, format} <- narrower(left, right, :format),
+         {:ok, source} <- narrower(left, right, :source) do
       metadata =
         %{}
         |> put_present(:pattern, pattern)
         |> put_present(:format, format)
-        |> put_present(:source, Map.get(left, :source) || Map.get(right, :source))
+        |> put_present(:source, source)
 
       {:ok, {:string, metadata}}
     end
@@ -316,6 +335,8 @@ defmodule ToolCall.TypeExpr.Projection do
   defp intersect_additional(_additional, nil), do: {:ok, nil}
 
   defp intersect_additional(left, right), do: intersect(left, right)
+
+  defp subtract_integer(_low, _high, {:primitive, :integer}), do: {:ok, :none}
 
   defp subtract_integer(low, high, {:integer_range, right_low, right_high}) do
     left_low = low || :neg_infinity
