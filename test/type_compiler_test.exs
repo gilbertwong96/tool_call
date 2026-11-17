@@ -44,6 +44,21 @@ defmodule ToolCall.TypeCompilerTest do
     assert map_size(TypeCompiler.defs(state)) == 1
   end
 
+  test "colliding instantiation names take a numeric suffix" do
+    insts = [
+      %{name: "tree", key: {:tree, 0}, args: []},
+      %{name: "tree", key: {:tree, 0}, args: []}
+    ]
+
+    assert TypeCompiler.assign_names(insts, %{}) == {%{0 => "tree", 1 => "tree_2"}, %{}}
+
+    seeded = %{"tree" => %ToolCall.IR.Type{kind: :string}}
+
+    assert {names, defs} = TypeCompiler.assign_names([%{name: "tree"}], seeded)
+    assert names == %{0 => "tree_2"}
+    assert defs == seeded
+  end
+
   test "returns nil for no_return and none results" do
     state = context() |> TypeCompiler.prepare() |> TypeCompiler.new()
 

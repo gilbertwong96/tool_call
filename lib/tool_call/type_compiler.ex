@@ -80,17 +80,45 @@ defmodule ToolCall.TypeCompiler do
         max_defs: max_defs
       )
 
-    names = for {inst, index} <- Enum.with_index(insts), into: %{}, do: {index, inst.name}
+    {names, defs} = assign_names(insts, state.defs)
     expanded = TypeExprAdapter.rewrite_refs(expanded, names)
 
     defs =
-      Enum.reduce(insts, state.defs, fn inst, defs ->
+      Enum.reduce(Enum.with_index(insts), defs, fn {inst, index}, defs ->
         body = TypeExprAdapter.rewrite_refs(inst.body, names)
-        Map.put_new(defs, inst.name, TypeExpr.Compiler.to_type(body, state.context.providers))
+        type = TypeExpr.Compiler.to_type(body, state.context.providers)
+        Map.put(defs, Map.fetch!(names, index), type)
       end)
 
     type = TypeExpr.Compiler.to_type(expanded, state.context.providers)
     {type, truncated?, %{state | defs: defs}}
+  end
+
+  # Two instantiations can hash to the same readable name. Keeping the first and
+  # dropping the second would leave a `$ref` pointing at another type's body, so
+  # a collision takes a numeric suffix instead.
+  @doc false
+  @spec assign_names([map()], map()) :: {%{non_neg_integer() => String.t()}, map()}
+  def assign_names(insts, defs) do
+    {names, defs} =
+      insts
+      |> Enum.with_index()
+      |> Enum.reduce({%{}, defs}, fn {inst, index}, {names, defs} ->
+        name = unique_name(inst.name, defs)
+        {Map.put(names, index, name), Map.put_new(defs, name, nil)}
+      end)
+
+    {names, Map.reject(defs, fn {_name, type} -> is_nil(type) end)}
+  end
+
+  defp unique_name(name, defs), do: unique_name(name, defs, 1)
+
+  defp unique_name(base, defs, counter) do
+    candidate = if counter == 1, do: base, else: "#{base}_#{counter}"
+
+    if Map.has_key?(defs, candidate),
+      do: unique_name(base, defs, counter + 1),
+      else: candidate
   end
 
   # Local type definitions arrive as AST because they can be recursive and are
