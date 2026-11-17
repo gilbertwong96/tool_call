@@ -12,7 +12,7 @@ defmodule ToolCall.Builder do
   # closes; see `ToolCall.__after_compile__/2`. See docs/design.md and the
   # docs/design.md release notes.
 
-  alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, Typedoc, Typespec}
+  alias ToolCall.{Doc, LocalTypes, Structs, TypeAst, TypeCompiler, Typedoc, Typespec}
   alias ToolCall.IR.{Param, Tool, Type}
   alias ToolCall.TypeSource.Declaration
   alias ToolCall.TypeSource.Param, as: SourceParam
@@ -143,14 +143,8 @@ defmodule ToolCall.Builder do
     module
     |> LocalTypes.definitions()
     |> Map.new(fn {key, {params, body}} ->
-      {key, {params, normalize_type(body, env)}}
+      {key, {params, TypeAst.normalize(body, env)}}
     end)
-  end
-
-  defp normalize_type(ast, env) do
-    ast
-    |> expand_aliases(env)
-    |> localize_module_types(env.module)
   end
 
   defp typedoc_keys(tools, definitions) do
@@ -238,13 +232,14 @@ defmodule ToolCall.Builder do
     defaults = Enum.map(head_args, &default_of/1)
     doc_info = Doc.parse(doc_value(doc))
     arity = declaration.arity
+    compiler = TypeCompiler.new(context)
 
-    {params, {{defs, registry}, truncated}} =
+    {params, {compiler, truncated}} =
       declaration.params
       |> Enum.zip(defaults)
       |> Enum.with_index(1)
-      |> Enum.map_reduce({{%{}, %{}}, MapSet.new()}, fn {{param, default}, index},
-                                                        {defs_registry, truncated} ->
+      |> Enum.map_reduce({compiler, MapSet.new()}, fn {{param, default}, index},
+                                                      {compiler, truncated} ->
         {param_name, named?} =
           if param.named? do
             {Atom.to_string(param.name), true}
@@ -254,30 +249,9 @@ defmodule ToolCall.Builder do
           end
 
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
-        type_ast = param.type
 
-        source_ast =
-          type_ast
-          |> TypeAst.substitute_vars(bindings)
-          |> expand_aliases(context.env)
-          |> localize_module_types(context.module)
-
-        {defs, _registry} = defs_registry
-        max_defs = max(LocalTypes.max_defs() - map_size(defs), 0)
-
-        {type_ast, truncated?, insts} =
-          LocalTypes.expand(source_ast, context.definitions,
-            cyclic: context.cyclic,
-            max_defs: max_defs
-          )
-
-        {type_ast, defs_registry} =
-          hoist_instantiations(type_ast, insts, defs_registry, context)
-
-        type_ast =
-          type_ast
-          |> expand_aliases(context.env)
-          |> localize_module_types(context.module)
+        {type, source_ast, param_truncated?, compiler} =
+          TypeCompiler.compile_param(compiler, param.type, bindings)
 
         if not named? do
           warn(
@@ -289,9 +263,7 @@ defmodule ToolCall.Builder do
           )
         end
 
-        type = Typespec.to_type(type_ast, context.providers)
-
-        if truncated? do
+        if param_truncated? do
           warn(
             context.module,
             location,
@@ -301,7 +273,7 @@ defmodule ToolCall.Builder do
         end
 
         truncated =
-          if truncated?, do: MapSet.put(truncated, param_name), else: truncated
+          if param_truncated?, do: MapSet.put(truncated, param_name), else: truncated
 
         {%Param{
            name: param_name,
@@ -309,7 +281,7 @@ defmodule ToolCall.Builder do
            default: default_value(default, context.env, type),
            required: default == :none,
            source: source_ast
-         }, {defs_registry, truncated}}
+         }, {compiler, truncated}}
       end)
 
     params =
@@ -326,8 +298,17 @@ defmodule ToolCall.Builder do
 
     warn_unknown_doc_bullets(context.module, location, name, arity, doc_info, params)
 
-    {result, defs, result_truncated?} =
-      result_type(declaration.return, bindings, context, {defs, registry}, name, arity, location)
+    {result, result_truncated?, compiler} =
+      TypeCompiler.compile_result(compiler, declaration.return, bindings)
+
+    if result_truncated? do
+      warn(
+        context.module,
+        location,
+        "return type of #{name}/#{arity} hit the type expansion budget; the rest of " <>
+          "the type is treated as {}. Result validation will accept any value there."
+      )
+    end
 
     {%Tool{
        name: Atom.to_string(name),
@@ -336,7 +317,7 @@ defmodule ToolCall.Builder do
        module: context.module,
        fun: name,
        source: declaration.source,
-       defs: defs,
+       defs: TypeCompiler.defs(compiler),
        result: result,
        indirect?: declaration.indirect?
      }, truncated, result_truncated?}
@@ -364,96 +345,6 @@ defmodule ToolCall.Builder do
           "the bullet is ignored."
       )
     end
-  end
-
-  defp result_type({:no_return, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
-    do: {nil, defs, false}
-
-  defp result_type({:none, _meta, []}, _bindings, _context, {defs, _registry}, _n, _a, _l),
-    do: {nil, defs, false}
-
-  defp result_type(return_ast, bindings, context, {defs, registry}, name, arity, location) do
-    source_ast =
-      return_ast
-      |> TypeAst.substitute_vars(bindings)
-      |> expand_aliases(context.env)
-      |> localize_module_types(context.module)
-
-    remaining = max(LocalTypes.max_defs() - map_size(defs), 0)
-
-    {type_ast, truncated?, insts} =
-      LocalTypes.expand(source_ast, context.definitions,
-        cyclic: context.cyclic,
-        max_defs: remaining
-      )
-
-    {type_ast, {defs, _registry}} =
-      hoist_instantiations(type_ast, insts, {defs, registry}, context)
-
-    type_ast =
-      type_ast
-      |> expand_aliases(context.env)
-      |> localize_module_types(context.module)
-
-    if truncated? do
-      warn(
-        context.module,
-        location,
-        "return type of #{name}/#{arity} hit the type expansion budget; the rest of " <>
-          "the type is treated as {}. Result validation will accept any value there."
-      )
-    end
-
-    type = Typespec.to_type(type_ast, context.providers)
-
-    case type do
-      %Type{kind: :unsupported, source: source} when source in [:no_return, :none] ->
-        {nil, defs, truncated?}
-
-      _other ->
-        {type, defs, truncated?}
-    end
-  end
-
-  defp hoist_instantiations(type_ast, insts, {defs, registry}, context) do
-    {refs, registry} =
-      Enum.map_reduce(insts, registry, fn inst, registry ->
-        {ref_name, registry} = assign_name(inst, registry)
-        {ref_name, registry}
-      end)
-
-    names = refs |> Enum.with_index() |> Map.new(fn {ref, index} -> {index, ref} end)
-
-    defs =
-      insts
-      |> Enum.zip(refs)
-      |> Enum.reduce(defs, fn {inst, ref_name}, defs ->
-        body = LocalTypes.rewrite_refs(inst.body, names)
-        Map.put_new(defs, ref_name, Typespec.to_type(body, context.providers))
-      end)
-
-    {LocalTypes.rewrite_refs(type_ast, names), {defs, registry}}
-  end
-
-  defp assign_name(%{key: key, args: args}, registry) do
-    instantiation = {key, args}
-
-    case Map.fetch(registry, instantiation) do
-      {:ok, ref_name} ->
-        {ref_name, registry}
-
-      :error ->
-        ref_name = unique_ref_name(LocalTypes.name(key, args), registry, 1)
-        {ref_name, Map.put(registry, instantiation, ref_name)}
-    end
-  end
-
-  defp unique_ref_name(base, registry, counter) do
-    candidate = if counter == 1, do: base, else: "#{base}_#{counter}"
-
-    if Enum.any?(registry, fn {_instantiation, name} -> name == candidate end),
-      do: unique_ref_name(base, registry, counter + 1),
-      else: candidate
   end
 
   defp drop_incompatible_default(%Param{default: nil} = param, _module, _location, _name, _arity),
@@ -583,7 +474,7 @@ defmodule ToolCall.Builder do
             tool,
             context.providers,
             raw,
-            &normalize_type(&1, context.env)
+            &TypeAst.normalize(&1, context.env)
           )
 
         Enum.each(warnings, &warn(module, location, &1))
@@ -1285,26 +1176,6 @@ defmodule ToolCall.Builder do
 
   defp doc_value(nil), do: nil
   defp doc_value({_line, value}), do: value
-
-  # `__MODULE__.t()` and `ThisModule.t()` are remote references to the current
-  # module; treat them as the local call `t()` so LocalTypes can inline them.
-  # Aliases are expanded first, so `alias __MODULE__, as: Self` works too.
-  defp localize_module_types(ast, module) do
-    Macro.prewalk(ast, fn
-      {{:., _, [remote, fun]}, meta, args}
-      when is_atom(fun) and is_list(args) and remote == module ->
-        {fun, meta, args}
-
-      node ->
-        node
-    end)
-  end
-
-  defp expand_aliases(ast, env), do: Macro.prewalk(ast, &expand_alias(&1, env))
-
-  defp expand_alias({:__aliases__, _, _} = node, env), do: Macro.expand(node, env)
-  defp expand_alias({:__MODULE__, _, _} = node, env), do: Macro.expand(node, env)
-  defp expand_alias(node, _env), do: node
 
   defp warn(module, location, message) do
     IO.warn("#{inspect(module)}: #{message}", warn_location(location))

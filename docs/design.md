@@ -100,9 +100,12 @@ def f(a :: T, b)            @on_definition
   @spec f(A, B) :: R  ───►  ToolCall.TypeSource.Typespec
                                  │  {name, arity} -> Declaration
                                  ▼
+                          ToolCall.TypeCompiler
+                                 │  alias expansion, local-type inlining,
+                                 │  $defs hoisting
+                                 ▼
                           ToolCall.Builder (compile time)
-                                 │  alias expansion, default detection,
-                                 │  local-type inlining, $defs hoisting,
+                                 │  docs, default detection, names,
                                  │  struct discovery and resolution
                                  ▼
                         ToolCall.IR.Tool (params, defs)
