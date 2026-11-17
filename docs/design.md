@@ -607,20 +607,11 @@ provider-neutral parameters yourself. `ToolCall.Stream` follows the same
 streaming subset (OpenAI Chat Completions, Anthropic Messages, Gemini
 `functionCall`).
 
-OpenAI accepts `pattern`, the nine `format` values (`date-time`, `time`,
-`date`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uuid`) and the numeric
-and array bounds in strict mode **for standard models**. Fine-tuned models reject
-those keywords and refuse the schema. `strict: :fine_tuned` renders the same
-strict shape without them, on demand (it is not one of the precompiled
-literals).
-
-Gemini's `parameters` is a 22-field OpenAPI 3.0 subset, not JSON Schema: it has
-no `additionalProperties`, `$ref`/`$defs`, `oneOf`, `prefixItems` or `const`,
-and its `enum` is a string list. The emitter drops `additionalProperties` (an
-object stays open, so dispatch may reject an extra key the schema allowed),
-drops `prefixItems` (a tuple keeps only `minItems`/`maxItems`), drops a
-non-string enum, and raises for a recursive parameter. `parametersJsonSchema`
-accepts full JSON Schema but is not emitted.
+Target-specific keyword support, tuple/ref handling, object closure, and
+Gemini's OpenAPI subset are listed in
+[`projection.md`](projection.md). The split is deliberate: `Emit.Schema` owns
+the shared JSON Schema subset, and each target emitter owns the losses it needs.
+The strict/fine-tuned rationale is in Decisions below.
 
 ## Decisions
 
