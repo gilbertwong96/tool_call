@@ -94,6 +94,42 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
              {:ok, {:integer_range, nil, 3}}
   end
 
+  test "tuples intersect position by position" do
+    left = {:tuple, [{:primitive, :integer}, {:primitive, :string}]}
+    right = {:tuple, [{:integer_range, 1, 5}, {:primitive, :string}]}
+
+    assert Projection.intersect(left, right) ==
+             {:ok, {:tuple, [{:integer_range, 1, 5}, {:primitive, :string}]}}
+
+    assert Projection.intersect(left, {:tuple, [{:primitive, :integer}]}) == {:ok, :none}
+  end
+
+  test "an unconstrained tuple is the identity for a fixed tuple" do
+    fixed = {:tuple, [{:primitive, :integer}]}
+
+    assert Projection.intersect({:tuple, nil}, fixed) == {:ok, fixed}
+    assert Projection.intersect(fixed, {:tuple, nil}) == {:ok, fixed}
+  end
+
+  test "identical refs and remotes intersect to themselves" do
+    assert Projection.intersect({:ref, "tree"}, {:ref, "tree"}) == {:ok, {:ref, "tree"}}
+
+    assert Projection.intersect(
+             {:remote, Date, :t, []},
+             {:remote, Date, :t, []}
+           ) == {:ok, {:remote, Date, :t, []}}
+
+    assert Projection.intersect({:ref, "tree"}, {:ref, "other"}) == :error
+  end
+
+  test "string constraints narrow, conflicting ones do not" do
+    assert Projection.intersect({:string, %{format: "date"}}, {:string, %{}}) ==
+             {:ok, {:string, %{format: "date"}}}
+
+    assert Projection.intersect({:string, %{format: "date"}}, {:string, %{format: "time"}}) ==
+             :error
+  end
+
   test "unsupported differences report an error" do
     assert Projection.subtract({:primitive, :atom}, {:literal, :x}) == :error
     assert Projection.intersect({:primitive, :atom}, {:primitive, :string}) == :error

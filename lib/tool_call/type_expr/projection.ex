@@ -69,6 +69,27 @@ defmodule ToolCall.TypeExpr.Projection do
     intersect_maps(left_fields, left_additional, right_fields, right_additional)
   end
 
+  # An unconstrained tuple constrains nothing, so the other side survives.
+  def intersect({:tuple, nil}, right), do: union_fixed_tuple(right)
+  def intersect(left, {:tuple, nil}), do: union_fixed_tuple(left)
+
+  def intersect({:tuple, left_items}, {:tuple, right_items})
+      when is_list(left_items) and is_list(right_items) do
+    if length(left_items) == length(right_items) do
+      intersect_tuples(left_items, right_items)
+    else
+      {:ok, :none}
+    end
+  end
+
+  def intersect({:ref, name}, {:ref, name}), do: {:ok, {:ref, name}}
+
+  def intersect({:string, left}, {:string, right}), do: intersect_strings(left, right)
+
+  def intersect({:remote, module, function, left_args}, {:remote, module, function, right_args}) do
+    if left_args == right_args, do: {:ok, {:remote, module, function, left_args}}, else: :error
+  end
+
   def intersect(_left, _right), do: :error
 
   @doc """
@@ -202,6 +223,54 @@ defmodule ToolCall.TypeExpr.Projection do
       {:ok, {:map, fields, additional}}
     end
   end
+
+  defp union_fixed_tuple({:tuple, items} = node) when is_list(items), do: {:ok, node}
+  defp union_fixed_tuple({:tuple, nil} = node), do: {:ok, node}
+  defp union_fixed_tuple(_other), do: :error
+
+  defp intersect_tuples(left_items, right_items) do
+    left_items
+    |> Enum.zip(right_items)
+    |> Enum.reduce_while({:ok, []}, fn {left, right}, {:ok, acc} ->
+      case intersect(left, right) do
+        {:ok, :none} -> {:halt, {:ok, :none}}
+        {:ok, type} -> {:cont, {:ok, [type | acc]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, items} when is_list(items) -> {:ok, {:tuple, Enum.reverse(items)}}
+      other -> other
+    end
+  end
+
+  # A string constraint narrows the other side. Two different patterns or
+  # formats cannot be intersected exactly, so they fall back to `:error` rather
+  # than keeping one and dropping the other.
+  defp intersect_strings(left, right) do
+    with {:ok, pattern} <- narrower(left, right, :pattern),
+         {:ok, format} <- narrower(left, right, :format) do
+      metadata =
+        %{}
+        |> put_present(:pattern, pattern)
+        |> put_present(:format, format)
+        |> put_present(:source, Map.get(left, :source) || Map.get(right, :source))
+
+      {:ok, {:string, metadata}}
+    end
+  end
+
+  defp narrower(left, right, key) do
+    case {Map.get(left, key), Map.get(right, key)} do
+      {nil, value} -> {:ok, value}
+      {value, nil} -> {:ok, value}
+      {same, same} -> {:ok, same}
+      {_left, _right} -> :error
+    end
+  end
+
+  defp put_present(map, _key, nil), do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
 
   defp intersect_fields(keys, left, right) do
     keys
