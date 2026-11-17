@@ -127,6 +127,23 @@ defmodule ToolCall.TypeSourceTest do
     assert diagnostic?(declaration.warnings, "has 2 @spec clauses")
   end
 
+  test "an overload diagnostic points at the spec, not the definition" do
+    declaration =
+      declaration("""
+      defmodule FIXTURE do
+        @type_source_fetch {:go, 1}
+        @spec go(integer()) :: :ok
+        @spec go(String.t()) :: :error
+        def go(_value), do: :ok
+        @before_compile ToolCall.TypeSourceTest.Capture
+      end
+      """)
+
+    assert [diagnostic] = declaration.warnings
+    assert {line, column} = Diagnostic.position(diagnostic)
+    assert is_integer(line) and is_integer(column)
+  end
+
   test "a missing spec reports the function" do
     messages =
       fetch_error("""

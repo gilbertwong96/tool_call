@@ -36,7 +36,7 @@ defmodule ToolCall.TypeSource.Typespec do
       [] ->
         {:error, missing_messages(specs, name, arity)}
 
-      [{:spec, raw_spec, _location} | _rest] ->
+      [{:spec, raw_spec, location} | _rest] ->
         {spec, constraints} = unwrap_spec(raw_spec)
         {:"::", _, [head, return_ast]} = spec
         {^name, _, args} = head
@@ -52,7 +52,7 @@ defmodule ToolCall.TypeSource.Typespec do
            source: spec,
            source_label: "the @spec",
            indirect?: match?({:no_return, _, []}, return_ast),
-           warnings: overload_warnings(name, arity, length(matching))
+           warnings: overload_warnings(name, arity, length(matching), location)
          }}
     end
   end
@@ -125,16 +125,26 @@ defmodule ToolCall.TypeSource.Typespec do
     end
   end
 
-  defp overload_warnings(_name, _arity, count) when count < 2, do: []
+  defp overload_warnings(_name, _arity, count, _location) when count < 2, do: []
 
-  defp overload_warnings(name, arity, count) do
+  defp overload_warnings(name, arity, count, location) do
     [
       Diagnostic.warning(
         "#{name}/#{arity} has #{count} @spec clauses; using the first one. " <>
-          "Overloaded tools cannot be expressed as a single JSON Schema."
+          "Overloaded tools cannot be expressed as a single JSON Schema.",
+        spec_position(location)
       )
     ]
   end
+
+  # The spec attribute stores `{module, {line, column}}`; the column is the spec
+  # itself rather than the `def`, which is why a diagnostic carries both.
+  defp spec_position({_module, {line, column}}) when is_integer(line) do
+    [line: line, column: column]
+  end
+
+  defp spec_position({_module, line}) when is_integer(line), do: [line: line]
+  defp spec_position(_location), do: []
 
   defp unwrap_spec({:when, _, [spec, constraints]}) when is_list(constraints),
     do: {spec, constraints}

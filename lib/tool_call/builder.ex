@@ -1198,9 +1198,18 @@ defmodule ToolCall.Builder do
   defp doc_value({_line, value}), do: value
 
   defp emit_diagnostic(module, location, %ToolCall.Diagnostic{} = diagnostic) do
+    location = diagnostic_location(location, diagnostic)
+
     case diagnostic do
       %{severity: :warning} -> warn(module, location, diagnostic.message)
       %{severity: :error} -> raise ArgumentError, "#{inspect(module)}: #{diagnostic.message}"
+    end
+  end
+
+  defp diagnostic_location({file, line}, %ToolCall.Diagnostic{} = diagnostic) do
+    case ToolCall.Diagnostic.position(diagnostic) do
+      nil -> {file, line}
+      {diagnostic_line, column} -> {file, diagnostic_line, column}
     end
   end
 
@@ -1209,8 +1218,13 @@ defmodule ToolCall.Builder do
   end
 
   @doc false
-  @spec warn_location({String.t() | nil, pos_integer() | nil}) :: keyword()
+  @spec warn_location(
+          {String.t() | nil, pos_integer() | nil}
+          | {String.t() | nil, pos_integer() | nil, pos_integer() | nil}
+        ) :: keyword()
   def warn_location({nil, nil}), do: []
   def warn_location({file, nil}), do: [file: file]
   def warn_location({file, line}), do: [file: file, line: line]
+  def warn_location({file, line, nil}), do: warn_location({file, line})
+  def warn_location({file, line, column}), do: [file: file, line: line, column: column]
 end
