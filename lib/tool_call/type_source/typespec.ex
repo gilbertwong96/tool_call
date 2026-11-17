@@ -8,23 +8,29 @@ defmodule ToolCall.TypeSource.Typespec do
 
   @impl true
   def load(module, _env) when is_atom(module) do
-    %{specs: module |> Module.get_attribute(:spec) |> List.wrap()}
+    specs = module |> Module.get_attribute(:spec) |> List.wrap()
+
+    index =
+      Enum.reduce(specs, %{}, fn {:spec, ast, _location} = entry, index ->
+        case spec_signature(ast) do
+          {name, arity} -> Map.update(index, {name, arity}, [entry], &[entry | &1])
+          nil -> index
+        end
+      end)
+
+    %{specs: specs, index: index}
   end
 
   @impl true
-  def fetch(%{specs: specs}, name, arity) when is_atom(name) and is_integer(arity) do
-    matching =
-      for {:spec, ast, _location} <- specs,
-          spec_signature(ast) == {name, arity},
-          do: ast
-
-    matching = Enum.reverse(matching)
+  def fetch(%{specs: specs, index: index}, name, arity)
+      when is_atom(name) and is_integer(arity) do
+    matching = Map.get(index, {name, arity}, [])
 
     case matching do
       [] ->
         {:error, missing_messages(specs, name, arity)}
 
-      [raw_spec | _rest] ->
+      [{:spec, raw_spec, _location} | _rest] ->
         {spec, constraints} = unwrap_spec(raw_spec)
         {:"::", _, [head, return_ast]} = spec
         {^name, _, args} = head
