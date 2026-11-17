@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Changed
+
+- The API reference now documents the compile pipeline and groups it under
+  "Internals (not public API)". No runtime or schema behaviour changed: the
+  declaration source, the type compiler, and legacy typespec access are separate
+  internal stages, so a future compiler-signature source can replace the
+  declaration source without touching the wire emitters.
+
 ## 0.2.0 - 2026-11-12
 
 ### Breaking changes
