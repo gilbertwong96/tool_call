@@ -60,14 +60,19 @@ defmodule ToolCall.TypeSourceTest do
 
     assert declaration.name == :go
     assert declaration.arity == 2
-    assert declaration.return == :ok
-    assert declaration.bindings == %{}
+    assert declaration.return == {:literal, :ok}
     assert declaration.indirect? == false
     assert declaration.source_label == "the @spec"
     assert declaration.warnings == []
 
-    assert [%Param{name: :city, named?: true}, %Param{name: :days, named?: true}] =
-             declaration.params
+    assert [
+             %Param{name: :city, named?: true, type: {:remote, String, :t, []}},
+             %Param{
+               name: :days,
+               named?: true,
+               type: {:annotated, {:primitive, :integer}, %{minimum: 1}}
+             }
+           ] = declaration.params
 
     assert declaration.source |> elem(0) == :"::"
   end
@@ -87,7 +92,7 @@ defmodule ToolCall.TypeSourceTest do
              declaration.params
   end
 
-  test "when constraints become bindings" do
+  test "when constraints are applied to the declared types" do
     declaration =
       declaration("""
       defmodule FIXTURE do
@@ -98,8 +103,10 @@ defmodule ToolCall.TypeSourceTest do
       end
       """)
 
-    assert declaration.bindings |> Map.fetch!(:x) |> Macro.to_string() == "integer()"
-    assert [%Param{name: nil, named?: false, type: {:x, _, _}}] = declaration.params
+    assert declaration.return == {:primitive, :integer}
+
+    assert [%Param{name: nil, named?: false, type: {:primitive, :integer}}] =
+             declaration.params
   end
 
   test "overloads keep the first declared spec and warn" do
@@ -114,7 +121,7 @@ defmodule ToolCall.TypeSourceTest do
       end
       """)
 
-    assert declaration.return == :ok
+    assert declaration.return == {:literal, :ok}
 
     assert [%Diagnostic{} | _] = declaration.warnings
     assert diagnostic?(declaration.warnings, "has 2 @spec clauses")

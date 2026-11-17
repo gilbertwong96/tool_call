@@ -28,12 +28,12 @@ defmodule ToolCall.BuilderTest.FakeSource do
        params: [
          %ToolCall.TypeSource.Param{
            name: :x,
-           type: {:integer, [], []},
+           type: {:primitive, :integer},
+           source: nil,
            named?: true
          }
        ],
-       return: :ok,
-       bindings: %{},
+       return: {:literal, :ok},
        source: :not_a_spec_ast,
        indirect?: false,
        warnings: []
@@ -59,12 +59,12 @@ defmodule ToolCall.BuilderTest.FakeUnnamedSource do
        params: [
          %ToolCall.TypeSource.Param{
            name: nil,
-           type: {:integer, [], []},
+           type: {:primitive, :integer},
+           source: nil,
            named?: false
          }
        ],
-       return: :ok,
-       bindings: %{},
+       return: {:literal, :ok},
        source: :fake,
        source_label: "the fake declaration",
        indirect?: false,
@@ -1162,9 +1162,10 @@ defmodule ToolCall.BuilderTest do
     declaration = %ToolCall.TypeSource.Declaration{
       name: :go,
       arity: 2,
-      params: [%ToolCall.TypeSource.Param{name: :x, type: {:integer, [], []}, named?: true}],
-      return: :ok,
-      bindings: %{},
+      params: [
+        %ToolCall.TypeSource.Param{name: :x, type: {:primitive, :integer}, named?: true}
+      ],
+      return: {:literal, :ok},
       source: nil,
       indirect?: false,
       warnings: []

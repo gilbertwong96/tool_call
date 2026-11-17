@@ -2,23 +2,22 @@ defmodule ToolCall.TypeCompilerTest do
   use ExUnit.Case, async: true
 
   alias ToolCall.IR.Type
-  alias ToolCall.{LocalTypes, TypeCompiler}
+  alias ToolCall.TypeCompiler
 
   defp context do
     %{
       module: __MODULE__,
       env: __ENV__,
       providers: ToolCall.Typespec.builtin_providers(),
-      definitions: %{},
-      cyclic: MapSet.new()
+      definitions: %{}
     }
   end
 
-  test "compiles a scalar parameter and keeps its source AST" do
+  test "compiles a scalar parameter" do
     state = TypeCompiler.new(context())
 
-    assert {%Type{kind: :integer}, {:integer, _, []}, false, _state} =
-             TypeCompiler.compile_param(state, {:integer, [], []}, %{})
+    assert {%Type{kind: :integer}, false, _state} =
+             TypeCompiler.compile_param(state, {:primitive, :integer})
   end
 
   test "compiles a recursive local type into a defs reference" do
@@ -32,26 +31,19 @@ defmodule ToolCall.TypeCompilerTest do
           ]}}
     }
 
-    state =
-      TypeCompiler.new(%{
-        context()
-        | definitions: definitions,
-          cyclic: LocalTypes.cyclic_keys(definitions)
-      })
+    state = TypeCompiler.new(%{context() | definitions: definitions})
 
-    {type, _source, false, state} =
-      TypeCompiler.compile_param(state, {:tree, [], []}, %{})
+    {type, false, state} =
+      TypeCompiler.compile_param(state, {:ref, {:tree, 0}, []})
 
-    assert %Type{kind: :ref} = type
+    assert %Type{kind: :ref, ref: "tree"} = type
     assert map_size(TypeCompiler.defs(state)) == 1
   end
 
   test "returns nil for no_return and none results" do
     state = TypeCompiler.new(context())
 
-    assert {nil, false, _state} =
-             TypeCompiler.compile_result(state, {:no_return, [], []}, %{})
-
-    assert {nil, false, _state} = TypeCompiler.compile_result(state, {:none, [], []}, %{})
+    assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :no_return})
+    assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :none})
   end
 end

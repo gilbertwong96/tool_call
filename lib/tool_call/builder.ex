@@ -132,9 +132,6 @@ defmodule ToolCall.Builder do
 
   defp validate_declaration_metadata(%Declaration{} = declaration) do
     cond do
-      not is_map(declaration.bindings) ->
-        {:error, "declaration bindings must be a map"}
-
       not is_boolean(declaration.indirect?) ->
         {:error, "declaration indirect? must be a boolean"}
 
@@ -248,7 +245,6 @@ defmodule ToolCall.Builder do
   defp visible?({_line, _text}), do: true
 
   defp make_tool(name, head_args, doc, declaration, context, location) do
-    bindings = declaration.bindings
     defaults = Enum.map(head_args, &default_of/1)
     doc_info = Doc.parse(doc_value(doc))
     arity = declaration.arity
@@ -264,14 +260,12 @@ defmodule ToolCall.Builder do
           if param.named? do
             {Atom.to_string(param.name), true}
           else
-            {fallback, _type_ast, false} = unnamed_arg(param.type, index, head_args)
-            {fallback, false}
+            {unnamed_param(index, head_args), false}
           end
 
         {param_name, named?} = doc_param_name(doc_info, index, param_name, named?)
 
-        {type, source_ast, param_truncated?, compiler} =
-          TypeCompiler.compile_param(compiler, param.type, bindings)
+        {type, param_truncated?, compiler} = TypeCompiler.compile_param(compiler, param.type)
 
         if not named? do
           warn(
@@ -300,7 +294,7 @@ defmodule ToolCall.Builder do
            type: type,
            default: default_value(default, context.env, type),
            required: default == :none,
-           source: source_ast
+           source: param.source
          }, {compiler, truncated}}
       end)
 
@@ -319,7 +313,7 @@ defmodule ToolCall.Builder do
     warn_unknown_doc_bullets(context.module, location, name, arity, doc_info, params)
 
     {result, result_truncated?, compiler} =
-      TypeCompiler.compile_result(compiler, declaration.return, bindings)
+      TypeCompiler.compile_result(compiler, declaration.return)
 
     if result_truncated? do
       warn(
@@ -1029,9 +1023,8 @@ defmodule ToolCall.Builder do
 
   defp doc_param_name(_doc_info, _index, fallback, true), do: {fallback, true}
 
-  defp unnamed_arg(type_ast, index, head_args) do
-    fallback = head_args |> Enum.at(index - 1) |> head_var_name() || "arg#{index}"
-    {fallback, type_ast, false}
+  defp unnamed_param(index, head_args) do
+    head_args |> Enum.at(index - 1) |> head_var_name() || "arg#{index}"
   end
 
   defp head_var_name({:\\, _, [inner, _default]}), do: head_var_name(inner)

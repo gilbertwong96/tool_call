@@ -9,11 +9,11 @@ defmodule ToolCall.TypeSource.Typespec do
 
   @behaviour ToolCall.TypeSource
 
-  alias ToolCall.{Diagnostic, LegacyTypespec, TypeAst}
+  alias ToolCall.{Diagnostic, LegacyTypespec, TypeAst, TypeExpr}
   alias ToolCall.TypeSource.{Declaration, Param}
 
   @impl true
-  def load(module, _env) when is_atom(module) do
+  def load(module, env) when is_atom(module) do
     specs = module |> LegacyTypespec.get_attribute(:spec) |> List.wrap()
 
     index =
@@ -24,11 +24,11 @@ defmodule ToolCall.TypeSource.Typespec do
         end
       end)
 
-    %{specs: specs, index: index}
+    %{specs: specs, index: index, env: env}
   end
 
   @impl true
-  def fetch(%{specs: specs, index: index}, name, arity)
+  def fetch(%{specs: specs, index: index, env: env}, name, arity)
       when is_atom(name) and is_integer(arity) do
     matching = Map.get(index, {name, arity}, [])
 
@@ -41,13 +41,14 @@ defmodule ToolCall.TypeSource.Typespec do
         {:"::", _, [head, return_ast]} = spec
         {^name, _, args} = head
 
+        bindings = constraint_bindings(constraints)
+
         {:ok,
          %Declaration{
            name: name,
            arity: arity,
-           params: Enum.map(args, &param/1),
-           return: return_ast,
-           bindings: constraint_bindings(constraints),
+           params: Enum.map(args, &param(&1, bindings, env)),
+           return: type_expr(return_ast, bindings, env),
            source: spec,
            source_label: "the @spec",
            indirect?: match?({:no_return, _, []}, return_ast),
@@ -56,16 +57,43 @@ defmodule ToolCall.TypeSource.Typespec do
     end
   end
 
-  defp param({:"::", _, [{var, _, context}, type]})
+  defp param({:"::", _, [{var, _, context}, type]}, bindings, env)
        when is_atom(var) and is_atom(context) do
+    normalized = TypeAst.normalize(type, bindings, env)
+
     if underscore?(var) do
-      %Param{name: nil, type: type, named?: false}
+      %Param{
+        name: nil,
+        type: TypeExpr.Typespec.from_ast(normalized),
+        source: normalized,
+        named?: false
+      }
     else
-      %Param{name: var, type: type, named?: true}
+      %Param{
+        name: var,
+        type: TypeExpr.Typespec.from_ast(normalized),
+        source: normalized,
+        named?: true
+      }
     end
   end
 
-  defp param(type), do: %Param{name: nil, type: type, named?: false}
+  defp param(type, bindings, env) do
+    normalized = TypeAst.normalize(type, bindings, env)
+
+    %Param{
+      name: nil,
+      type: TypeExpr.Typespec.from_ast(normalized),
+      source: normalized,
+      named?: false
+    }
+  end
+
+  defp type_expr(ast, bindings, env) do
+    ast
+    |> TypeAst.normalize(bindings, env)
+    |> TypeExpr.Typespec.from_ast()
+  end
 
   defp underscore?(name), do: String.starts_with?(Atom.to_string(name), "_")
 

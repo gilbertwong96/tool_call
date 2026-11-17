@@ -1,40 +1,54 @@
 defmodule ToolCall.TypeCompiler do
   @moduledoc """
-  Compiles a source-neutral declaration's type ASTs into `ToolCall.IR.Type` values.
+  Compiles a declaration's `ToolCall.TypeExpr` values into `ToolCall.IR.Type`.
 
-  The compiler owns alias expansion, local-type expansion, recursive `$defs`
-  hoisting, provider mapping, and result-type handling. the builder
-  remains responsible for docs, defaults, parameter names, and overrides.
+  The compiler owns local-type expansion, recursive `$defs` hoisting, provider
+  mapping, and result-type handling; the declaration source has already resolved
+  aliases, current-module references, and `when` bindings. The builder remains
+  responsible for docs, defaults, parameter names, and overrides.
   """
 
   alias ToolCall.IR.Type
-  alias ToolCall.{LocalTypes, TypeAst, TypeExpr}
+  alias ToolCall.{LocalTypeAlgorithm, LocalTypes, TypeExpr}
+  alias ToolCall.LocalTypeAlgorithm.TypeExprAdapter
 
   @type context :: map()
 
-  @type t :: %{context: context(), defs: map(), registry: map()}
+  @type t :: %{
+          context: context(),
+          definitions: map(),
+          cyclic: MapSet.t(),
+          defs: map(),
+          registry: map()
+        }
 
   @spec new(context()) :: t()
   def new(context) when is_map(context) do
-    %{context: context, defs: %{}, registry: %{}}
+    definitions = type_expr_definitions(context.definitions)
+
+    %{
+      context: context,
+      definitions: definitions,
+      cyclic: LocalTypeAlgorithm.cyclic_keys(definitions, TypeExprAdapter),
+      defs: %{},
+      registry: %{}
+    }
   end
 
   @spec defs(t()) :: map()
   def defs(%{defs: defs}), do: defs
 
-  @spec compile_param(t(), term(), %{atom() => term()}) ::
-          {Type.t(), term(), boolean(), t()}
-  def compile_param(state, type_ast, bindings) do
-    compile(state, type_ast, bindings)
+  @spec compile_param(t(), TypeExpr.t()) :: {Type.t(), boolean(), t()}
+  def compile_param(state, type_expr) do
+    compile(state, type_expr)
   end
 
-  @spec compile_result(t(), term(), %{atom() => term()}) ::
-          {Type.t() | nil, boolean(), t()}
-  def compile_result(state, {:no_return, _meta, []}, _bindings), do: {nil, false, state}
-  def compile_result(state, {:none, _meta, []}, _bindings), do: {nil, false, state}
+  @spec compile_result(t(), TypeExpr.t()) :: {Type.t() | nil, boolean(), t()}
+  def compile_result(state, {:unsupported, reason}) when reason in [:no_return, :none],
+    do: {nil, false, state}
 
-  def compile_result(state, return_ast, bindings) do
-    {type, _source_ast, truncated?, state} = compile(state, return_ast, bindings)
+  def compile_result(state, return_expr) do
+    {type, truncated?, state} = compile(state, return_expr)
 
     case type do
       %Type{kind: :unsupported, source: source} when source in [:no_return, :none] ->
@@ -45,66 +59,34 @@ defmodule ToolCall.TypeCompiler do
     end
   end
 
-  defp compile(state, type_ast, bindings) do
-    context = state.context
-    source_ast = TypeAst.normalize(type_ast, bindings, context.env)
+  defp compile(state, type_expr) do
     max_defs = max(LocalTypes.max_defs() - map_size(state.defs), 0)
 
-    {expanded_ast, truncated?, insts} =
-      LocalTypes.expand(source_ast, context.definitions,
-        cyclic: context.cyclic,
+    {expanded, truncated?, insts} =
+      LocalTypeAlgorithm.expand(type_expr, state.definitions, TypeExprAdapter,
+        cyclic: state.cyclic,
         max_defs: max_defs
       )
 
-    {expanded_ast, state} = hoist_instantiations(expanded_ast, insts, state)
-    expanded_ast = TypeAst.normalize(expanded_ast, context.env)
-    type = TypeExpr.Compiler.to_type(TypeExpr.Typespec.from_ast(expanded_ast), context.providers)
-
-    {type, source_ast, truncated?, state}
-  end
-
-  defp hoist_instantiations(type_ast, insts, state) do
-    {refs, registry} =
-      Enum.map_reduce(insts, state.registry, fn inst, registry ->
-        {ref_name, registry} = assign_name(inst, registry)
-        {ref_name, registry}
-      end)
-
-    names = refs |> Enum.with_index() |> Map.new(fn {ref, index} -> {index, ref} end)
+    names = for {inst, index} <- Enum.with_index(insts), into: %{}, do: {index, inst.name}
+    expanded = TypeExprAdapter.rewrite_refs(expanded, names)
 
     defs =
-      insts
-      |> Enum.zip(refs)
-      |> Enum.reduce(state.defs, fn {inst, ref_name}, defs ->
-        body = LocalTypes.rewrite_refs(inst.body, names)
-
-        type =
-          TypeExpr.Compiler.to_type(TypeExpr.Typespec.from_ast(body), state.context.providers)
-
-        Map.put_new(defs, ref_name, type)
+      Enum.reduce(insts, state.defs, fn inst, defs ->
+        body = TypeExprAdapter.rewrite_refs(inst.body, names)
+        Map.put_new(defs, inst.name, TypeExpr.Compiler.to_type(body, state.context.providers))
       end)
 
-    {LocalTypes.rewrite_refs(type_ast, names), %{state | defs: defs, registry: registry}}
+    type = TypeExpr.Compiler.to_type(expanded, state.context.providers)
+    {type, truncated?, %{state | defs: defs}}
   end
 
-  defp assign_name(%{key: key, args: args}, registry) do
-    instantiation = {key, args}
-
-    case Map.fetch(registry, instantiation) do
-      {:ok, ref_name} ->
-        {ref_name, registry}
-
-      :error ->
-        ref_name = unique_ref_name(LocalTypes.name(key, args), registry, 1)
-        {ref_name, Map.put(registry, instantiation, ref_name)}
-    end
-  end
-
-  defp unique_ref_name(base, registry, counter) do
-    candidate = if counter == 1, do: base, else: "#{base}_#{counter}"
-
-    if Enum.any?(registry, fn {_instantiation, name} -> name == candidate end),
-      do: unique_ref_name(base, registry, counter + 1),
-      else: candidate
+  # Local type definitions arrive as AST because they can be recursive and are
+  # shared by every tool in the module. Converting once per tool keeps the
+  # expansion and `$defs` naming in `TypeExpr` space.
+  defp type_expr_definitions(definitions) when is_map(definitions) do
+    Map.new(definitions, fn {key, {params, body}} ->
+      {key, {params, TypeExpr.Typespec.from_ast(body)}}
+    end)
   end
 end

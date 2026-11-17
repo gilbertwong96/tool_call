@@ -8,13 +8,20 @@ defmodule ToolCall.TypeSource do
   """
 
   defmodule Param do
-    @moduledoc "One parameter in a `ToolCall.TypeSource.Declaration`."
+    @moduledoc """
+    One parameter in a `ToolCall.TypeSource.Declaration`.
 
-    defstruct [:name, :type, named?: false]
+    `type` is a `ToolCall.TypeExpr` with aliases, `__MODULE__` references, and
+    `when` bindings already resolved. `source` keeps that normalized typespec AST
+    as provenance for `@typedoc` fallback descriptions.
+    """
+
+    defstruct [:name, :type, :source, named?: false]
 
     @type t :: %__MODULE__{
             name: atom() | nil,
-            type: term(),
+            type: ToolCall.TypeExpr.t(),
+            source: term(),
             named?: boolean()
           }
   end
@@ -23,9 +30,12 @@ defmodule ToolCall.TypeSource do
     @moduledoc """
     A source-neutral function declaration consumed by the builder.
 
-    `source` is compile-time provenance and is dropped from embedded tools.
-    `source_label` is used in diagnostics so a future signature source does not
-    have to mention `@spec`. `warnings` carries non-fatal source diagnostics.
+    `params` and `return` carry `ToolCall.TypeExpr` values: the source resolves
+    aliases, current-module references, and `when` bindings, and the compiler
+    expands local types, hoists `$defs`, and produces the IR. `source` is
+    compile-time provenance and is dropped from embedded tools. `source_label` is
+    used in diagnostics so another source does not have to mention `@spec`.
+    `warnings` carries non-fatal source diagnostics.
     """
 
     defstruct [
@@ -33,7 +43,6 @@ defmodule ToolCall.TypeSource do
       :arity,
       :params,
       :return,
-      :bindings,
       :source,
       source_label: "the type declaration",
       indirect?: false,
@@ -44,8 +53,7 @@ defmodule ToolCall.TypeSource do
             name: atom(),
             arity: non_neg_integer(),
             params: [Param.t()],
-            return: term(),
-            bindings: %{atom() => term()},
+            return: ToolCall.TypeExpr.t(),
             source: term(),
             source_label: String.t(),
             indirect?: boolean(),
