@@ -12,6 +12,8 @@ defmodule ToolCall.LocalTypeAlgorithm.AstAdapter do
 
   @behaviour ToolCall.LocalTypeAlgorithm.Adapter
 
+  alias ToolCall.LocalTypeAlgorithm.RefName
+
   @impl true
   def local_call({name, _meta, args}) when is_atom(name) and is_list(args),
     do: {:ok, {name, length(args)}, args}
@@ -89,34 +91,7 @@ defmodule ToolCall.LocalTypeAlgorithm.AstAdapter do
   def name(key, args, _node), do: name(key, args)
 
   @doc false
-  def name({type_name, _arity} = key, args) do
-    name =
-      case Enum.map(args, &arg_name/1) do
-        [] ->
-          Atom.to_string(type_name)
-
-        parts ->
-          Atom.to_string(type_name) <>
-            "_" <> Enum.join(parts, "_") <> "_" <> signature(key, args)
-      end
-
-    sanitized =
-      name
-      |> String.replace(~r/[^A-Za-z0-9_]/, "_")
-      |> String.slice(0, 64)
-      |> String.trim_trailing("_")
-
-    if sanitized == "", do: "type", else: sanitized
-  end
-
-  defp signature(key, args) do
-    key
-    |> then(&{&1, args})
-    |> :erlang.phash2()
-    |> Integer.to_string(16)
-    |> String.downcase()
-    |> String.slice(0, 4)
-  end
+  def name(key, args), do: RefName.build(key, args, &arg_name/1)
 
   defp arg_name({name, _, _}) when name in [:non_neg_integer, :pos_integer, :neg_integer, :byte],
     do: "integer"
