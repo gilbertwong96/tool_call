@@ -34,6 +34,11 @@ by a future compiler-signature source. The wire schema and IR do not depend on
 the typespec AST shape; the current provider still requires `@spec` to declare a
 tool.
 
+Legacy the legacy typespec APIs and type-attribute access is isolated in
+`ToolCall.LegacyTypespec`. Struct fields and local type aliases can therefore be
+migrated to native typed structs/type aliases without changing the function
+source or wire emitters.
+
 ## Non-goals
 
 - Being an HTTP client. This library produces schemas and runs functions; the
