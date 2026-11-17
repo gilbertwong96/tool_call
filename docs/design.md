@@ -34,10 +34,18 @@ by a future compiler-signature source. The wire schema and IR do not depend on
 the typespec AST shape; the current provider still requires `@spec` to declare a
 tool.
 
-Legacy the legacy typespec APIs and type-attribute access is isolated in
-`ToolCall.LegacyTypespec`. Struct fields and local type aliases can therefore be
-migrated to native typed structs/type aliases without changing the function
-source or wire emitters.
+The pipeline has three internal stages, each replaceable on its own:
+
+| Stage | Module | Owns |
+|---|---|---|
+| Declaration source | `ToolCall.TypeSource.Typespec` | matching `{name, arity}`, parameter names, `when` bindings, source diagnostics |
+| Type compilation | `ToolCall.TypeCompiler`, `ToolCall.TypeExpr` | alias and local-type expansion, recursive `$defs`, provider lookup, IR construction |
+| Legacy access | `ToolCall.LegacyTypespec` | `Module.get_attribute/2` and the typespec chunk APIs |
+
+`ToolCall.LegacyTypespec` isolates the legacy typespec APIs and type-attribute
+access, so struct fields and local type aliases can migrate to native typed
+structs and type aliases without changing the declaration source or the wire
+emitters.
 
 ## Non-goals
 
