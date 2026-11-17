@@ -10,6 +10,13 @@
   internal stages, so a future compiler-signature source can replace the
   declaration source without touching the wire emitters.
 
+- `$defs` names for parameterized recursive local types now carry a hash derived
+  from the normalized `TypeExpr` instead of the typespec AST, for example
+  `rec_integer_381d` instead of `rec_integer_6fee`. The readable part is
+  unchanged, names without type arguments are unchanged, and `$ref` targets stay
+  consistent within a schema. Only the emitted bytes of a parameterized
+  recursive type differ.
+
 ## 0.2.0 - 2026-11-12
 
 ### Breaking changes

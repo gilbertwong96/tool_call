@@ -24,12 +24,6 @@ internal seams exist, but the syntax is not stable enough to parse.
 
 These are implemented partially, or deliberately left for later.
 
-- **Declaration payload as `ToolCall.TypeExpr`.** `Declaration.params[].type` and
-  `Declaration.return` still carry typespec AST. Moving them to `TypeExpr`
-  requires either `$defs` naming that no longer derives from the AST term hash,
-  or a dual representation for `Typedoc` provenance. `TypeExpr` already sits at
-  the mapping boundary, so this is an internal storage decision, not a
-  capability gap.
 - **Set-theoretic projection.** `TypeExpr` has `:intersection` and `:negation`
   nodes, and `TypeExpr.Compiler` lowers both to `:unsupported`. Implementing
   them means deciding what an "exact" intersection is and how a negation reaches
