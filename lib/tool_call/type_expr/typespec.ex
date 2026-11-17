@@ -24,8 +24,8 @@ defmodule ToolCall.TypeExpr.Typespec do
 
   def from_ast({:-, _, [number]}) when is_number(number), do: from_ast(-number)
 
-  def from_ast({:|, _, [left, right]}) do
-    {:union, [from_ast(left), from_ast(right)]}
+  def from_ast({:|, _, _} = union) do
+    {:union, flatten_union(union)}
   end
 
   def from_ast({:.., _, [low, high]}) do
@@ -67,6 +67,13 @@ defmodule ToolCall.TypeExpr.Typespec do
   end
 
   def from_ast(other), do: {:unsupported, other}
+
+  defp flatten_union(ast), do: ast |> flatten_union([]) |> Enum.reverse()
+
+  defp flatten_union({:|, _, [left, right]}, acc),
+    do: flatten_union(right, flatten_union(left, acc))
+
+  defp flatten_union(type, acc), do: [from_ast(type) | acc]
 
   defp map(pairs) do
     {fields, additional} =

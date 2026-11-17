@@ -23,6 +23,19 @@ defmodule ToolCall.Typespec do
   @spec builtin_providers() :: [module()]
   def builtin_providers, do: @builtin_providers
 
+  @doc false
+  @spec resolve_remote(module(), atom(), [Type.t()], [module()]) :: Type.t()
+  def resolve_remote(module, function, args, providers) do
+    case Enum.find_value(providers, &resolve_provider(&1, module, function, args)) do
+      nil -> unresolved_remote(module, function, args)
+      type -> type
+    end
+  end
+
+  @doc false
+  @spec union_type([Type.t()]) :: Type.t()
+  def union_type(types), do: build_union(types)
+
   @doc """
   Maps a quoted type to a `ToolCall.IR.Type`.
 

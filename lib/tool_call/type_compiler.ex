@@ -8,7 +8,7 @@ defmodule ToolCall.TypeCompiler do
   """
 
   alias ToolCall.IR.Type
-  alias ToolCall.{LocalTypes, TypeAst, Typespec}
+  alias ToolCall.{LocalTypes, TypeAst, TypeExpr}
 
   @type context :: map()
 
@@ -58,7 +58,7 @@ defmodule ToolCall.TypeCompiler do
 
     {expanded_ast, state} = hoist_instantiations(expanded_ast, insts, state)
     expanded_ast = TypeAst.normalize(expanded_ast, context.env)
-    type = Typespec.to_type(expanded_ast, context.providers)
+    type = TypeExpr.Compiler.to_type(TypeExpr.Typespec.from_ast(expanded_ast), context.providers)
 
     {type, source_ast, truncated?, state}
   end
@@ -77,7 +77,11 @@ defmodule ToolCall.TypeCompiler do
       |> Enum.zip(refs)
       |> Enum.reduce(state.defs, fn {inst, ref_name}, defs ->
         body = LocalTypes.rewrite_refs(inst.body, names)
-        Map.put_new(defs, ref_name, Typespec.to_type(body, state.context.providers))
+
+        type =
+          TypeExpr.Compiler.to_type(TypeExpr.Typespec.from_ast(body), state.context.providers)
+
+        Map.put_new(defs, ref_name, type)
       end)
 
     {LocalTypes.rewrite_refs(type_ast, names), %{state | defs: defs, registry: registry}}
