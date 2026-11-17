@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Generated do
-  @moduledoc false
+  @moduledoc "Helpers for generated typedoc companion modules and schema accessors."
   # Modules that may gain a typedoc companion call these helpers from their
   # generated `__tools__/0` and `__schemas__/0`; modules with an empty effective
   # typedoc key map embed the phase-one literals directly and never reach this
@@ -166,7 +166,7 @@ defmodule ToolCall.Generated do
   defp create_module(env, companion, tools, schemas, generation) do
     quoted =
       quote do
-        @moduledoc false
+        @moduledoc "Generated typedoc companion for a ToolCall module."
         @doc false
         def __tool_call_companion__, do: true
         def __tools__, do: unquote(Macro.escape(tools))

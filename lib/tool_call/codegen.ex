@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Codegen do
-  @moduledoc false
+  @moduledoc "Compile-time generation of per-tool runner clauses and dispatch helpers."
 
   import Bitwise
 

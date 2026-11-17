@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Structs do
-  @moduledoc false
+  @moduledoc "Compile-time introspection of struct fields, field types, and enforced keys."
   # Compile-time introspection of a compiled struct module.
   #
   # Field names come from `__struct__/0`. Field types come from the module's

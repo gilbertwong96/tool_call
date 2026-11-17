@@ -1,5 +1,5 @@
 defmodule ToolCall.Providers.Stdlib do
-  @moduledoc false
+  @moduledoc "Built-in type provider for standard-library scalars and calendar types."
   @behaviour ToolCall.TypeProvider
 
   alias ToolCall.IR.Type

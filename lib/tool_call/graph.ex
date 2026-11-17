@@ -1,5 +1,5 @@
 defmodule ToolCall.Graph do
-  @moduledoc false
+  @moduledoc "Graph helpers for detecting cyclic local type definitions."
   # Cyclicity over a `%{node => MapSet.t(node)}` edge map. A node is cyclic when
   # it can reach itself.
 

@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Typedoc do
-  @moduledoc false
+  @moduledoc "Recovers visible `@typedoc` text from compiled Docs chunks."
   # Recovers docs-visible `@typedoc` text from the EEP-48 `Docs` chunk after
   # the defining module has closed, then uses it as a fallback parameter
   # description. Elixir discards `@typep` typedocs at definition time, so they

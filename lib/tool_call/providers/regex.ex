@@ -1,5 +1,5 @@
 defmodule ToolCall.Providers.Regex do
-  @moduledoc false
+  @moduledoc "Type provider for Regex values."
   # `Regex.t/0` exposes `re_pattern`, which is a compiled opaque term a model
   # cannot produce. A regex travels as its source string, compiled at dispatch
   # with the `u` flag so a model-written pattern matches Unicode by default.

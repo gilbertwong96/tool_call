@@ -1,5 +1,5 @@
 defmodule ToolCall.ProviderName do
-  @moduledoc false
+  @moduledoc "Validation for provider-compatible tool names."
 
   @pattern ~r/^[a-zA-Z0-9_-]{1,64}$/
 

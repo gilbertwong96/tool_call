@@ -1,5 +1,5 @@
 defmodule ToolCall.Providers.MapSet do
-  @moduledoc false
+  @moduledoc "Type provider for MapSet values."
   # `MapSet.t/0` and `MapSet.t/1` are public types whose only field (`map`) is
   # internal representation. A set travels as an array of its elements, and
   # dispatch rebuilds it with `MapSet.new/1`.

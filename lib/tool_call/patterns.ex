@@ -1,5 +1,5 @@
 defmodule ToolCall.Patterns do
-  @moduledoc false
+  @moduledoc "Shared regex patterns used by type mapping and coercion."
 
   @char "^[\\s\\S]$"
   @nonempty "^[\\s\\S]+$"

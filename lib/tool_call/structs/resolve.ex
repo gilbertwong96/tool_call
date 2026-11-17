@@ -2,7 +2,7 @@
 # Compile-time diagnostic and $defs names are short lived; iolists would
 # obscure the messages without a runtime benefit.
 defmodule ToolCall.Structs.Resolve do
-  @moduledoc false
+  @moduledoc "Resolves struct markers into closed object IR and hoists recursive structs."
   # Turns the `:struct` markers left by `ToolCall.Typespec` into closed objects.
   #
   # Discovery walks the parameters and the existing `defs` bodies, resolves each

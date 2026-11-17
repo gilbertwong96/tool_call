@@ -1,5 +1,5 @@
 defmodule ToolCall.Options do
-  @moduledoc false
+  @moduledoc "Validation for runtime option maps and policy modules."
 
   @spec validate!(keyword(), [atom()]) :: :ok
   def validate!(opts, allowed) do

@@ -1,5 +1,5 @@
 defmodule ToolCall.Defs do
-  @moduledoc false
+  @moduledoc "Reachability checks for `$defs` entries referenced by IR types."
   # Which `$defs` entries a set of types actually reaches. The emitter renders
   # only these, and the builder warns only about these: a definition referenced
   # solely by a result type never reaches the model.

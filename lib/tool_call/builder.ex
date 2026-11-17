@@ -2,7 +2,7 @@
 # Compile-time diagnostic and $defs names are short lived; iolists would
 # obscure the messages without a runtime benefit.
 defmodule ToolCall.Builder do
-  @moduledoc false
+  @moduledoc "Compile-time assembly of ToolCall IR from declarations, docs, defaults, and metadata."
   # Compile-time assembly: pairs each `def` with its declaration and default
   # arguments, then builds the embedded `ToolCall.IR.Tool` list.
   #

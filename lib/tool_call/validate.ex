@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Validate do
-  @moduledoc false
+  @moduledoc "Runtime validation helpers for tool results and IR types."
   # Checks a value against the IR's value domain. This is the inverse direction
   # of `ToolCall.Coerce`: a value that the declared type accepts passes, and no
   # wire form is accepted in its place (`"1"` is not an integer, `"true"` is not
