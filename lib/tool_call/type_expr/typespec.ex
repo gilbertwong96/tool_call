@@ -69,7 +69,10 @@ defmodule ToolCall.TypeExpr.Typespec do
     local(name, args)
   end
 
-  def from_ast(other), do: {:unsupported, other}
+  # Any shape neither this adapter nor `ToolCall.Typespec` understands stays
+  # "unknown" rather than "known but unrepresentable": an unknown nested value
+  # renders as `{}` and keeps the tool, while `:unsupported` would hide it.
+  def from_ast(_other), do: :any
 
   defp flatten_union(ast), do: ast |> flatten_union([]) |> Enum.reverse()
 
@@ -136,6 +139,7 @@ defmodule ToolCall.TypeExpr.Typespec do
   defp local(:as_boolean, []), do: {:primitive, :boolean}
   defp local(name, []) when name in [:term, :any], do: :any
   defp local(name, []) when name in @unrepresentable, do: {:unsupported, name}
+  defp local(:fun, _args), do: {:unsupported, :fun}
   defp local(:struct, []), do: {:map, [], :any}
 
   defp local(name, args) do
