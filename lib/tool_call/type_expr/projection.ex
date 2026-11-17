@@ -49,6 +49,9 @@ defmodule ToolCall.TypeExpr.Projection do
 
   def intersect(left, {:annotated, type, _metadata}), do: intersect(left, type)
 
+  def intersect({:union, variants}, right), do: intersect_union(variants, right)
+  def intersect(left, {:union, variants}), do: intersect_union(variants, left)
+
   def intersect({:primitive, :number}, {:integer_range, _low, _high} = range),
     do: {:ok, range}
 
@@ -85,9 +88,6 @@ defmodule ToolCall.TypeExpr.Projection do
 
   def intersect({:primitive, kind}, {:enum, values}) when is_list(values),
     do: intersect_enum_primitive(values, kind)
-
-  def intersect({:union, variants}, right), do: intersect_union(variants, right)
-  def intersect(left, {:union, variants}), do: intersect_union(variants, left)
 
   def intersect({:map, left_fields, left_additional}, {:map, right_fields, right_additional}) do
     intersect_maps(left_fields, left_additional, right_fields, right_additional)

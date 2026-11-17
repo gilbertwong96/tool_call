@@ -103,6 +103,20 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect(left, right) == {:ok, :none}
   end
 
+  test "a union on either side is distributed before narrowing" do
+    union = {:union, [{:literal, 1}, {:literal, 2}]}
+
+    assert Projection.intersect({:literal, 1}, union) == {:ok, {:literal, 1}}
+    assert Projection.intersect(union, {:integer_range, 2, 5}) == {:ok, {:literal, 2}}
+
+    map = {:map, [{:a, {:primitive, :integer}, true}], nil}
+
+    assert Projection.intersect(
+             map,
+             {:union, [map, {:map, [{:a, {:primitive, :string}, true}], nil}]}
+           ) == {:ok, map}
+  end
+
   test "enums intersect to their common values" do
     assert Projection.intersect({:enum, [:a, :b]}, {:enum, [:b, :c]}) == {:ok, {:literal, :b}}
     assert Projection.intersect({:enum, [:a]}, {:enum, [:c]}) == {:ok, :none}
