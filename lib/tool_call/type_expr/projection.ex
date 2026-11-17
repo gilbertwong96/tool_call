@@ -157,12 +157,24 @@ defmodule ToolCall.TypeExpr.Projection do
   defp intersect_integer(_low, _high, _right), do: :error
 
   defp intersect_literal(value, {:literal, value}), do: {:ok, {:literal, value}}
+  defp intersect_literal(_value, {:literal, _other}), do: {:ok, :none}
 
   defp intersect_literal(value, {:enum, values}) do
     if value in values, do: {:ok, {:literal, value}}, else: {:ok, :none}
   end
 
+  defp intersect_literal(value, {:primitive, kind}), do: literal_kind(value, kind)
   defp intersect_literal(_value, _right), do: :error
+
+  # A literal and a primitive are either disjoint or the literal itself; the
+  # schema must not keep the wider primitive.
+  defp literal_kind(value, :string) when is_binary(value), do: {:ok, {:literal, value}}
+  defp literal_kind(value, :atom) when is_atom(value), do: {:ok, {:literal, value}}
+  defp literal_kind(value, :boolean) when is_boolean(value), do: {:ok, {:literal, value}}
+  defp literal_kind(value, :integer) when is_integer(value), do: {:ok, {:literal, value}}
+
+  defp literal_kind(value, :number) when is_number(value), do: {:ok, {:literal, value}}
+  defp literal_kind(_value, _kind), do: {:ok, :none}
 
   defp intersect_union(variants, right) do
     variants
@@ -228,9 +240,11 @@ defmodule ToolCall.TypeExpr.Projection do
   defp finish_fields({:ok, fields}), do: {:ok, Enum.reverse(fields)}
   defp finish_fields(:error), do: :error
 
-  defp intersect_additional(nil, nil), do: {:ok, nil}
-  defp intersect_additional(additional, nil), do: {:ok, additional}
-  defp intersect_additional(nil, additional), do: {:ok, additional}
+  # A closed object forbids extra keys, so intersecting it with an open object
+  # keeps it closed. Widening to the other side's `additionalProperties` would
+  # let the model send keys the closed side rejects.
+  defp intersect_additional(nil, _additional), do: {:ok, nil}
+  defp intersect_additional(_additional, nil), do: {:ok, nil}
 
   defp intersect_additional(left, right), do: intersect(left, right)
 

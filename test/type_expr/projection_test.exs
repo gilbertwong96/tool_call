@@ -29,6 +29,20 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect({:literal, :c}, {:enum, [:a, :b]}) == {:ok, :none}
   end
 
+  test "disjoint literals intersect to the empty type" do
+    assert Projection.intersect({:literal, 1}, {:literal, 2}) == {:ok, :none}
+    assert Projection.intersect({:literal, :a}, {:primitive, :string}) == {:ok, :none}
+    assert Projection.intersect({:literal, :a}, {:primitive, :atom}) == {:ok, {:literal, :a}}
+  end
+
+  test "a closed object stays closed when intersected with an open one" do
+    closed = {:map, [{:a, {:primitive, :integer}, true}], nil}
+    open = {:map, [], :any}
+
+    assert Projection.intersect(closed, open) ==
+             {:ok, {:map, [{:a, {:primitive, :integer}, true}], nil}}
+  end
+
   test "maps merge their fields" do
     left = {:map, [{:a, {:primitive, :integer}, true}], nil}
     right = {:map, [{:b, {:primitive, :string}, false}], nil}
