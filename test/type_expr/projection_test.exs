@@ -74,17 +74,14 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     right = {:map, [], {:integer_range, 5, 6}}
 
     assert Projection.intersect(left, right) ==
-             {:ok, {:map, [{:a, {:primitive, :integer}, true}], nil}}
+             {:ok, {:map, [{:a, {:integer_range, 5, 6}, true}], nil}}
   end
 
-  test "maps merge their fields" do
+  test "closed maps with different fields are disjoint" do
     left = {:map, [{:a, {:primitive, :integer}, true}], nil}
     right = {:map, [{:b, {:primitive, :string}, false}], nil}
 
-    assert Projection.intersect(left, right) ==
-             {:ok,
-              {:map, [{:a, {:primitive, :integer}, true}, {:b, {:primitive, :string}, false}],
-               nil}}
+    assert Projection.intersect(left, right) == {:ok, :none}
   end
 
   test "enums narrow against primitives, and string sources must agree" do

@@ -260,7 +260,7 @@ defmodule ToolCall.TypeExpr.Projection do
 
     keys = Enum.uniq(Enum.map(left_fields, &elem(&1, 0)) ++ Enum.map(right_fields, &elem(&1, 0)))
 
-    case intersect_fields(keys, left, right) do
+    case intersect_fields(keys, left, left_additional, right, right_additional) do
       {:ok, :none} ->
         {:ok, :none}
 
@@ -325,12 +325,17 @@ defmodule ToolCall.TypeExpr.Projection do
   defp put_present(map, _key, nil), do: map
   defp put_present(map, key, value), do: Map.put(map, key, value)
 
-  defp intersect_fields(keys, left, right) do
+  # Maps are records with optional/open keys. A key that one side forbids (a
+  # closed map without that field) cannot be introduced by the other side; a
+  # required key that becomes forbidden makes the whole intersection empty.
+  defp intersect_fields(keys, left, left_additional, right, right_additional) do
     keys
+    |> Enum.uniq()
     |> Enum.sort()
     |> Enum.reduce_while({:ok, []}, fn key, {:ok, acc} ->
-      case intersect_field(key, left, right) do
+      case intersect_field(key, left, left_additional, right, right_additional) do
         {:ok, :none} -> {:halt, {:ok, :none}}
+        {:ok, :absent} -> {:cont, {:ok, acc}}
         {:ok, field} -> {:cont, {:ok, [field | acc]}}
         :error -> {:halt, :error}
       end
@@ -338,24 +343,63 @@ defmodule ToolCall.TypeExpr.Projection do
     |> finish_fields()
   end
 
-  defp intersect_field(key, left, right) do
-    case {Map.fetch(left, key), Map.fetch(right, key)} do
-      {{:ok, {type, required?}}, :error} ->
-        {:ok, {key, type, required?}}
+  defp intersect_field(key, left, left_additional, right, right_additional) do
+    case {
+      side_constraint(left, left_additional, key),
+      side_constraint(right, right_additional, key)
+    } do
+      {:forbidden, {:field, _type, true}} ->
+        {:ok, :none}
 
-      {:error, {:ok, {type, required?}}} ->
-        {:ok, {key, type, required?}}
+      {{:field, _type, true}, :forbidden} ->
+        {:ok, :none}
 
-      {{:ok, {left_type, left_required?}}, {:ok, {right_type, right_required?}}} ->
+      {:forbidden, _other} ->
+        {:ok, :absent}
+
+      {_other, :forbidden} ->
+        {:ok, :absent}
+
+      {{:field, left_type, left_required?}, {:field, right_type, right_required?}} ->
         intersect_field_types(key, left_type, right_type, left_required?, right_required?)
+
+      {{:field, left_type, left_required?}, {:additional, right_type}} ->
+        intersect_field_types(key, left_type, right_type, left_required?, false)
+
+      {{:additional, left_type}, {:field, right_type, right_required?}} ->
+        intersect_field_types(key, left_type, right_type, false, right_required?)
+
+      {{:additional, left_type}, {:additional, right_type}} ->
+        intersect_field_types(key, left_type, right_type, false, false)
+    end
+  end
+
+  defp side_constraint(fields, additional, key) do
+    case Map.fetch(fields, key) do
+      {:ok, {type, required?}} ->
+        {:field, type, required?}
+
+      :error when additional in [nil, :none] ->
+        :forbidden
+
+      :error ->
+        {:additional, additional}
     end
   end
 
   defp intersect_field_types(key, left_type, right_type, left_required?, right_required?) do
     case intersect(left_type, right_type) do
-      {:ok, :none} -> {:ok, :none}
-      {:ok, type} -> {:ok, {key, type, left_required? or right_required?}}
-      :error -> :error
+      {:ok, :none} when left_required? or right_required? ->
+        {:ok, :none}
+
+      {:ok, :none} ->
+        {:ok, :absent}
+
+      {:ok, type} ->
+        {:ok, {key, type, left_required? or right_required?}}
+
+      :error ->
+        :error
     end
   end
 

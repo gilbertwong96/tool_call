@@ -86,7 +86,7 @@ set operation only when the result is representable exactly, through
 | `:any` / `:none` identity | yes | — |
 | integer ranges and `integer()` | overlap, emptiness | — |
 | literals and enums | overlap, difference, narrowing against primitives | — |
-| maps | field and `additionalProperties` merge; a closed side keeps the object closed | conflicting field types |
+| maps | same-shape fields and `additionalProperties` merge; a closed side keeps the object closed | different field sets, conflicting field types |
 | tuples | same-arity position-wise merge; `tuple()` is the identity | different arity |
 | identical `ref` / `remote` | the node itself | different targets |
 | strings | pattern/format/source narrowing when they agree | two different patterns, formats, or sources |
