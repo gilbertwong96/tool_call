@@ -325,8 +325,10 @@ defmodule ToolCall.Builder do
   # to be compiled when the budget ran out.
   defp warn_truncated(module, location, name, truncated, result_truncated?) do
     parts =
-      Enum.map(truncated, &"parameter \"#{&1}\"") ++
-        if(result_truncated?, do: ["the return type"], else: [])
+      truncated
+      |> Enum.sort()
+      |> Enum.map(&"parameter \"#{&1}\"")
+      |> then(&if(result_truncated?, do: &1 ++ ["the return type"], else: &1))
 
     if parts != [] do
       warn(

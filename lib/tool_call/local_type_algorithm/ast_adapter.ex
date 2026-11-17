@@ -88,54 +88,7 @@ defmodule ToolCall.LocalTypeAlgorithm.AstAdapter do
   def strip_meta(ast), do: ToolCall.TypeAst.strip_meta(ast)
 
   @impl true
-  def name(key, args), do: RefName.build(key, args, &arg_name/1)
-
-  defp arg_name({name, _, _}) when name in [:non_neg_integer, :pos_integer, :neg_integer, :byte],
-    do: "integer"
-
-  defp arg_name({:integer, _, _}), do: "integer"
-  defp arg_name({:.., _, _}), do: "integer"
-  defp arg_name(int) when is_integer(int), do: "integer"
-  defp arg_name({:number, _, _}), do: "number"
-  defp arg_name({:float, _, _}), do: "number"
-
-  defp arg_name({name, _, _})
-       when name in [
-              :string,
-              :binary,
-              :bitstring,
-              :charlist,
-              :char,
-              :nonempty_string,
-              :nonempty_binary
-            ],
-       do: "string"
-
-  defp arg_name({:boolean, _, _}), do: "boolean"
-  defp arg_name({:atom, _, _}), do: "atom"
-  defp arg_name({:term, _, _}), do: "any"
-  defp arg_name({:any, _, _}), do: "any"
-  defp arg_name({:list, _, [inner]}), do: "list_" <> arg_name(inner)
-  defp arg_name([inner]), do: "list_" <> arg_name(inner)
-  defp arg_name({:nonempty_list, _, [inner]}), do: "list_" <> arg_name(inner)
-  defp arg_name({:map, _, _}), do: "map"
-  defp arg_name({:%{}, _, _}), do: "map"
-  defp arg_name({:{}, _, _}), do: "tuple"
-  defp arg_name({_left, _right}), do: "tuple"
-  defp arg_name({:|, _, [left, right]}), do: arg_name(left) <> "_or_" <> arg_name(right)
-
-  defp arg_name({{:., _, [module, function]}, _, _args}) when is_atom(module) do
-    base = module |> Module.split() |> List.last() |> String.downcase()
-    if function == :t, do: base, else: base <> "_" <> Atom.to_string(function)
-  end
-
-  defp arg_name({:%, _, [module, {:%{}, _, _}]}) when is_atom(module),
-    do: module |> Module.split() |> List.last() |> String.downcase()
-
-  defp arg_name(atom) when is_atom(atom) and atom not in [true, false, nil],
-    do: Atom.to_string(atom)
-
-  defp arg_name(_other), do: "any"
+  def name(key, args), do: RefName.from_ast(key, args)
 
   @doc false
   def var_name({name, _, context}) when is_atom(name) and is_atom(context), do: name

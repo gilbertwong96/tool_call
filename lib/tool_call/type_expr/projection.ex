@@ -49,6 +49,24 @@ defmodule ToolCall.TypeExpr.Projection do
 
   def intersect(left, {:annotated, type, _metadata}), do: intersect(left, type)
 
+  def intersect({:primitive, :number}, {:integer_range, _low, _high} = range),
+    do: {:ok, range}
+
+  def intersect({:integer_range, _low, _high} = range, {:primitive, :number}),
+    do: {:ok, range}
+
+  def intersect({:primitive, :number}, {:primitive, :integer}), do: {:ok, {:primitive, :integer}}
+  def intersect({:primitive, :integer}, {:primitive, :number}), do: {:ok, {:primitive, :integer}}
+
+  def intersect({:primitive, :number}, {:primitive, :float}), do: {:ok, {:primitive, :float}}
+  def intersect({:primitive, :float}, {:primitive, :number}), do: {:ok, {:primitive, :float}}
+
+  def intersect({:primitive, kind}, {:literal, value}) when is_atom(kind),
+    do: intersect_literal(value, {:primitive, kind})
+
+  def intersect({:primitive, :string}, {:string, metadata}), do: {:ok, {:string, metadata}}
+  def intersect({:string, metadata}, {:primitive, :string}), do: {:ok, {:string, metadata}}
+
   def intersect({:primitive, :integer}, right), do: intersect_integer(nil, nil, right)
   def intersect(left, {:primitive, :integer}), do: intersect_integer(nil, nil, left)
 
@@ -139,6 +157,11 @@ defmodule ToolCall.TypeExpr.Projection do
   def subtract({:enum, values}, {:literal, value}) when is_list(values),
     do: reject_value(value, values)
 
+  def subtract({:enum, values}, {:primitive, kind}) when is_list(values) do
+    kept = Enum.reject(values, &literal_of_kind?(&1, kind))
+    {:ok, enum(kept)}
+  end
+
   def subtract({:enum, values}, {:enum, removed}) when is_list(values) and is_list(removed) do
     case Enum.reject(values, &(&1 in removed)) do
       [] -> {:ok, :none}
@@ -181,6 +204,7 @@ defmodule ToolCall.TypeExpr.Projection do
     end
   end
 
+  defp intersect_integer(low, high, {:primitive, :integer}), do: integer_range(low, high)
   defp intersect_integer(_low, _high, _right), do: :error
 
   defp intersect_enum_primitive(values, kind) do
@@ -236,9 +260,19 @@ defmodule ToolCall.TypeExpr.Projection do
 
     keys = Enum.uniq(Enum.map(left_fields, &elem(&1, 0)) ++ Enum.map(right_fields, &elem(&1, 0)))
 
-    with {:ok, fields} <- intersect_fields(keys, left, right),
-         {:ok, additional} <- intersect_additional(left_additional, right_additional) do
-      {:ok, {:map, fields, additional}}
+    case intersect_fields(keys, left, right) do
+      {:ok, :none} ->
+        {:ok, :none}
+
+      {:ok, fields} ->
+        case intersect_additional(left_additional, right_additional) do
+          {:ok, :none} -> {:ok, {:map, fields, nil}}
+          {:ok, additional} -> {:ok, {:map, fields, additional}}
+          :error -> :error
+        end
+
+      :error ->
+        :error
     end
   end
 
@@ -325,6 +359,7 @@ defmodule ToolCall.TypeExpr.Projection do
     end
   end
 
+  defp finish_fields({:ok, :none}), do: {:ok, :none}
   defp finish_fields({:ok, fields}), do: {:ok, Enum.reverse(fields)}
   defp finish_fields(:error), do: :error
 
@@ -337,6 +372,7 @@ defmodule ToolCall.TypeExpr.Projection do
   defp intersect_additional(left, right), do: intersect(left, right)
 
   defp subtract_integer(_low, _high, {:primitive, :integer}), do: {:ok, :none}
+  defp subtract_integer(_low, _high, {:primitive, :number}), do: {:ok, :none}
 
   defp subtract_integer(low, high, {:integer_range, right_low, right_high}) do
     left_low = low || :neg_infinity

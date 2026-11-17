@@ -63,7 +63,7 @@ defmodule ToolCall.TypeExpr.Compiler do
             required: required?
           }
         end),
-      additional: if(additional, do: to_type(additional, providers), else: nil)
+      additional: additional_type(additional, providers)
     }
   end
 
@@ -111,6 +111,10 @@ defmodule ToolCall.TypeExpr.Compiler do
 
   def to_type({:dynamic, _type}, _providers), do: %Type{kind: :any, source: :dynamic}
   def to_type({:unsupported, reason}, _providers), do: %Type{kind: :unsupported, source: reason}
+
+  defp additional_type(nil, _providers), do: nil
+  defp additional_type(:none, _providers), do: nil
+  defp additional_type(type, providers), do: to_type(type, providers)
 
   defp projection([], _providers), do: %Type{kind: :unsupported, source: :intersection}
 

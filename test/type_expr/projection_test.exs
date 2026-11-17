@@ -35,11 +35,45 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect({:literal, :a}, {:primitive, :atom}) == {:ok, {:literal, :a}}
   end
 
+  test "numeric primitives narrow to the more specific type" do
+    assert Projection.intersect({:primitive, :number}, {:primitive, :integer}) ==
+             {:ok, {:primitive, :integer}}
+
+    assert Projection.intersect({:primitive, :integer}, {:primitive, :number}) ==
+             {:ok, {:primitive, :integer}}
+
+    assert Projection.intersect({:primitive, :number}, {:primitive, :float}) ==
+             {:ok, {:primitive, :float}}
+
+    assert Projection.intersect({:primitive, :number}, {:integer_range, 1, 5}) ==
+             {:ok, {:integer_range, 1, 5}}
+  end
+
+  test "a primitive string narrows to its constraints" do
+    assert Projection.intersect({:primitive, :string}, {:string, %{format: "date"}}) ==
+             {:ok, {:string, %{format: "date"}}}
+  end
+
   test "a closed object stays closed when intersected with an open one" do
     closed = {:map, [{:a, {:primitive, :integer}, true}], nil}
     open = {:map, [], :any}
 
     assert Projection.intersect(closed, open) ==
+             {:ok, {:map, [{:a, {:primitive, :integer}, true}], nil}}
+  end
+
+  test "a map whose field intersection is empty is empty" do
+    left = {:map, [{:a, {:integer_range, 1, 2}, true}], nil}
+    right = {:map, [{:a, {:integer_range, 5, 6}, true}], nil}
+
+    assert Projection.intersect(left, right) == {:ok, :none}
+  end
+
+  test "an empty additionalProperties intersection closes the object" do
+    left = {:map, [{:a, {:primitive, :integer}, true}], {:integer_range, 1, 2}}
+    right = {:map, [], {:integer_range, 5, 6}}
+
+    assert Projection.intersect(left, right) ==
              {:ok, {:map, [{:a, {:primitive, :integer}, true}], nil}}
   end
 
