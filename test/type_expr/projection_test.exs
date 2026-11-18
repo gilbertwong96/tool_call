@@ -89,6 +89,7 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect({:primitive, :integer}, {:primitive, :string}) == {:ok, :none}
     assert Projection.intersect({:primitive, :float}, {:primitive, :integer}) == {:ok, :none}
     assert Projection.intersect({:primitive, :boolean}, {:primitive, :string}) == {:ok, :none}
+    assert Projection.intersect({:primitive, :boolean}, {:primitive, :integer}) == {:ok, :none}
 
     assert Projection.intersect({:primitive, :atom}, {:primitive, :boolean}) ==
              {:ok, {:primitive, :boolean}}

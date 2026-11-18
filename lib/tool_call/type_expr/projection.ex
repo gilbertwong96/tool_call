@@ -246,6 +246,8 @@ defmodule ToolCall.TypeExpr.Projection do
 
   defp primitive_relation(:atom, :boolean), do: {:subset, :boolean}
   defp primitive_relation(:boolean, :atom), do: {:subset, :boolean}
+  defp primitive_relation(:boolean, _right), do: :none
+  defp primitive_relation(_left, :boolean), do: :none
   defp primitive_relation(:atom, _right), do: :none
   defp primitive_relation(_left, :atom), do: :none
   defp primitive_relation(:string, _right), do: :none
