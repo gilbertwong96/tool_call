@@ -87,12 +87,12 @@ set operation only when the result is representable exactly, through
 | integer ranges and `integer()` | overlap, emptiness | — |
 | literals and enums | overlap, difference, narrowing against primitives | — |
 | maps | fields and `additionalProperties` merge, including open/closed sides and optional keys | inexact field types |
-| tuples | same-arity position-wise merge; `tuple()` is the identity | different arity |
+| tuples | same-arity position-wise merge; `tuple()` is the identity; different arity is `:none` | — |
 | identical `ref` / `remote` | the node itself | different targets |
-| strings | pattern/format/source narrowing when they agree | two different patterns, formats, or sources |
+| strings | pattern/format/source narrowing when they agree; literals and enums are filtered by the pattern | two different patterns, formats, or sources |
 | `and not <range>` | split into at most two ranges | — |
 | `and not <union>` | each variant subtracted in turn | — |
-| other intersections | — | disjoint kinds, provider types |
+| disjoint primitive kinds | `:none` | other disjoint kinds, provider types |
 | bare complement (`not t`) | — | no exact JSON Schema form |
 
 An inexact operation yields `{:unsupported, :intersection}` (or `:negation`) and
