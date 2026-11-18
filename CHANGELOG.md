@@ -42,6 +42,10 @@
 
 ### Fixed
 
+- `ToolCall.TypeExpr.Compiler.to_type/2` validates the whole expression before
+  compiling it. A malformed nested field or an uncompilable string pattern now
+  becomes `:unsupported` instead of raising out of the compiler.
+
 - A tool that hits the type-expansion budget now gets one warning naming the
   affected parameters and whether the result type was truncated, instead of one
   message per parameter. Which parameter runs out is an artifact of declaration
