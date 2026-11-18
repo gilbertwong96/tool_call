@@ -67,6 +67,23 @@ defmodule ToolCall.TypeExpr.Projection do
   def intersect({:primitive, kind}, {:literal, value}) when is_atom(kind),
     do: intersect_literal(value, {:primitive, kind})
 
+  def intersect({:primitive, left}, {:primitive, right}) when left != right do
+    case primitive_relation(left, right) do
+      :none -> {:ok, :none}
+      {:subset, kind} -> {:ok, {:primitive, kind}}
+      :error -> :error
+    end
+  end
+
+  def intersect({:string, metadata}, {:literal, value}), do: string_literal(metadata, value)
+  def intersect({:literal, value}, {:string, metadata}), do: string_literal(metadata, value)
+
+  def intersect({:string, metadata}, {:enum, values}) when is_list(values),
+    do: intersect_string_enum(metadata, values)
+
+  def intersect({:enum, values}, {:string, metadata}) when is_list(values),
+    do: intersect_string_enum(metadata, values)
+
   def intersect({:primitive, :string}, {:string, metadata}), do: {:ok, {:string, metadata}}
   def intersect({:string, metadata}, {:primitive, :string}), do: {:ok, {:string, metadata}}
 
@@ -152,6 +169,12 @@ defmodule ToolCall.TypeExpr.Projection do
 
   def subtract({:primitive, :integer}, right), do: subtract_integer(nil, nil, right)
 
+  def subtract({:literal, value}, {:string, metadata}),
+    do: subtract_string_literal(metadata, value)
+
+  def subtract({:enum, values}, {:string, metadata}) when is_list(values),
+    do: subtract_string_enum(metadata, values)
+
   def subtract({:literal, value}, right), do: subtract_literal(value, right)
 
   def subtract({:enum, values}, {:literal, value}) when is_list(values),
@@ -168,6 +191,14 @@ defmodule ToolCall.TypeExpr.Projection do
       [single] -> {:ok, {:literal, single}}
       rest -> {:ok, {:enum, rest}}
     end
+  end
+
+  def subtract({:tuple, _left}, {:tuple, nil}), do: {:ok, :none}
+  def subtract({:tuple, nil}, {:tuple, _right}), do: :error
+
+  def subtract({:tuple, left_items}, {:tuple, right_items})
+      when is_list(left_items) and is_list(right_items) do
+    subtract_tuples(left_items, right_items)
   end
 
   def subtract({:union, variants}, right) do
@@ -212,6 +243,89 @@ defmodule ToolCall.TypeExpr.Projection do
     do: {:ok, :none}
 
   defp intersect_integer(_low, _high, _right), do: :error
+
+  defp primitive_relation(:atom, :boolean), do: {:subset, :boolean}
+  defp primitive_relation(:boolean, :atom), do: {:subset, :boolean}
+  defp primitive_relation(:atom, _right), do: :none
+  defp primitive_relation(_left, :atom), do: :none
+  defp primitive_relation(:string, _right), do: :none
+  defp primitive_relation(_left, :string), do: :none
+  defp primitive_relation(:integer, :float), do: :none
+  defp primitive_relation(:float, :integer), do: :none
+  defp primitive_relation(_left, _right), do: :error
+
+  defp intersect_string_enum(metadata, values) do
+    values
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
+      case string_literal(metadata, value) do
+        {:ok, :none} -> {:cont, {:ok, acc}}
+        {:ok, {:literal, value}} -> {:cont, {:ok, [value | acc]}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, values} -> {:ok, enum(Enum.reverse(values))}
+      :error -> :error
+    end
+  end
+
+  defp string_literal(metadata, value) when is_binary(value) do
+    with :ok <- string_format(metadata),
+         {:ok, true} <- string_pattern(metadata, value) do
+      {:ok, {:literal, value}}
+    else
+      {:ok, false} -> {:ok, :none}
+      :error -> :error
+    end
+  end
+
+  defp string_literal(_metadata, _value), do: {:ok, :none}
+
+  defp string_format(metadata) do
+    case Map.get(metadata, :format) do
+      nil -> :ok
+      _format -> :error
+    end
+  end
+
+  defp string_pattern(metadata, value) do
+    case Map.get(metadata, :pattern) do
+      nil ->
+        {:ok, true}
+
+      pattern when is_binary(pattern) ->
+        case Regex.compile(pattern, "u") do
+          {:ok, regex} -> {:ok, Regex.match?(regex, value)}
+          {:error, _reason} -> :error
+        end
+
+      _other ->
+        :error
+    end
+  end
+
+  defp subtract_string_literal(metadata, value) do
+    case string_literal(metadata, value) do
+      {:ok, :none} -> {:ok, {:literal, value}}
+      {:ok, {:literal, ^value}} -> {:ok, :none}
+      :error -> :error
+    end
+  end
+
+  defp subtract_string_enum(metadata, values) do
+    values
+    |> Enum.reduce_while({:ok, []}, fn value, {:ok, acc} ->
+      case string_literal(metadata, value) do
+        {:ok, :none} -> {:cont, {:ok, [value | acc]}}
+        {:ok, {:literal, ^value}} -> {:cont, {:ok, acc}}
+        :error -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, values} -> {:ok, enum(Enum.reverse(values))}
+      :error -> :error
+    end
+  end
 
   defp intersect_enum_primitive(values, kind) do
     kept = Enum.filter(values, &literal_of_kind?(&1, kind))
@@ -421,6 +535,77 @@ defmodule ToolCall.TypeExpr.Projection do
 
   defp intersect_additional(left, right), do: intersect(left, right)
 
+  defp subtract_tuples(left_items, right_items) when length(left_items) != length(right_items) do
+    {:ok, {:tuple, left_items}}
+  end
+
+  defp subtract_tuples(left_items, right_items) do
+    count = length(left_items)
+
+    pieces =
+      Enum.reduce_while(0..(count - 1), [], fn index, acc ->
+        case tuple_difference_piece(left_items, right_items, index) do
+          {:ok, nil} -> {:cont, acc}
+          {:ok, piece} -> {:cont, [piece | acc]}
+          :error -> {:halt, :error}
+        end
+      end)
+
+    case pieces do
+      :error -> :error
+      [] -> {:ok, :none}
+      [piece] -> {:ok, piece}
+      pieces -> {:ok, union(Enum.reverse(pieces))}
+    end
+  end
+
+  defp tuple_difference_piece(left_items, right_items, index) do
+    prefix = Enum.take(left_items, index)
+    suffix = Enum.drop(left_items, index + 1)
+    {left, right} = {Enum.at(left_items, index), Enum.at(right_items, index)}
+
+    case intersect_prefix(prefix, Enum.take(right_items, index)) do
+      {:ok, :none} ->
+        {:ok, nil}
+
+      {:ok, prefix} ->
+        tuple_piece(prefix, suffix, left, right)
+
+      :error ->
+        :error
+    end
+  end
+
+  defp tuple_piece(prefix, suffix, left, right) do
+    case subtract(left, right) do
+      {:ok, :none} ->
+        {:ok, nil}
+
+      {:ok, diff} ->
+        variants = if match?({:union, _}, diff), do: elem(diff, 1), else: [diff]
+        pieces = Enum.map(variants, fn variant -> {:tuple, prefix ++ [variant] ++ suffix} end)
+        {:ok, union(pieces)}
+
+      :error ->
+        :error
+    end
+  end
+
+  defp intersect_prefix([], []), do: {:ok, []}
+
+  defp intersect_prefix([left | left_rest], [right | right_rest]) do
+    case intersect(left, right) do
+      {:ok, :none} ->
+        {:ok, :none}
+
+      {:ok, type} ->
+        with {:ok, rest} <- intersect_prefix(left_rest, right_rest), do: {:ok, [type | rest]}
+
+      :error ->
+        :error
+    end
+  end
+
   defp subtract_integer(_low, _high, {:primitive, :integer}), do: {:ok, :none}
   defp subtract_integer(_low, _high, {:primitive, :number}), do: {:ok, :none}
 
@@ -452,6 +637,7 @@ defmodule ToolCall.TypeExpr.Projection do
   defp remaining_ranges(ranges), do: {:ok, union(Enum.map(ranges, &range_node/1))}
 
   defp subtract_literal(value, {:literal, value}), do: {:ok, :none}
+  defp subtract_literal(value, {:literal, _other}), do: {:ok, {:literal, value}}
   defp subtract_literal(value, {:enum, values}), do: reject_value(value, values)
 
   defp subtract_literal(value, {:integer_range, low, high}) when is_integer(value) do

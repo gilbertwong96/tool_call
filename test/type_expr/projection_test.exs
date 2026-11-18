@@ -84,6 +84,29 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     assert Projection.intersect(left, right) == {:ok, :none}
   end
 
+  test "disjoint primitive kinds intersect to none" do
+    assert Projection.intersect({:primitive, :atom}, {:primitive, :string}) == {:ok, :none}
+    assert Projection.intersect({:primitive, :integer}, {:primitive, :string}) == {:ok, :none}
+    assert Projection.intersect({:primitive, :float}, {:primitive, :integer}) == {:ok, :none}
+    assert Projection.intersect({:primitive, :boolean}, {:primitive, :string}) == {:ok, :none}
+
+    assert Projection.intersect({:primitive, :atom}, {:primitive, :boolean}) ==
+             {:ok, {:primitive, :boolean}}
+  end
+
+  test "string metadata narrows literals and enums" do
+    assert Projection.intersect({:string, %{pattern: "^a"}}, {:literal, "abc"}) ==
+             {:ok, {:literal, "abc"}}
+
+    assert Projection.intersect({:string, %{pattern: "^a"}}, {:literal, "xyz"}) == {:ok, :none}
+
+    assert Projection.intersect({:string, %{}}, {:enum, ["a", 1]}) ==
+             {:ok, {:literal, "a"}}
+
+    assert Projection.subtract({:enum, ["a", "b"]}, {:string, %{pattern: "^a"}}) ==
+             {:ok, {:literal, "b"}}
+  end
+
   test "enums narrow against primitives, and string sources must agree" do
     assert Projection.intersect({:enum, [:a, 1]}, {:primitive, :atom}) == {:ok, {:literal, :a}}
 
@@ -101,6 +124,25 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
     right = {:map, [{:a, {:primitive, :string}, true}], nil}
 
     assert Projection.intersect(left, right) == {:ok, :none}
+  end
+
+  test "tuple subtraction partitions by the first differing position" do
+    left = {:tuple, [{:integer_range, 1, 10}, {:literal, :a}]}
+    right = {:tuple, [{:integer_range, 5, 6}, {:literal, :a}]}
+
+    assert Projection.subtract(left, right) ==
+             {:ok,
+              {:union,
+               [
+                 {:tuple, [{:integer_range, 1, 4}, {:literal, :a}]},
+                 {:tuple, [{:integer_range, 7, 10}, {:literal, :a}]}
+               ]}}
+
+    assert Projection.subtract({:tuple, [{:literal, 1}]}, {:tuple, [{:literal, 1}]}) ==
+             {:ok, :none}
+
+    assert Projection.subtract({:tuple, [{:literal, 1}]}, {:tuple, []}) ==
+             {:ok, {:tuple, [{:literal, 1}]}}
   end
 
   test "a union on either side is distributed before narrowing" do
@@ -194,7 +236,7 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
 
   test "unsupported differences report an error" do
     assert Projection.subtract({:primitive, :atom}, {:literal, :x}) == :error
-    assert Projection.intersect({:primitive, :atom}, {:primitive, :string}) == :error
+    assert Projection.intersect({:primitive, :atom}, {:primitive, :string}) == {:ok, :none}
   end
 
   test "the compiler lowers an exact intersection" do
@@ -205,6 +247,6 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
   test "the compiler does not silently widen an inexact intersection" do
     type = {:intersection, [{:primitive, :atom}, {:primitive, :string}]}
 
-    assert %Type{kind: :unsupported, source: :intersection} = Compiler.to_type(type, [])
+    assert %Type{kind: :unsupported, source: :none} = Compiler.to_type(type, [])
   end
 end
