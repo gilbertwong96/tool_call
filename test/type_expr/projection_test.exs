@@ -233,6 +233,8 @@ defmodule ToolCall.TypeExpr.ProjectionTest do
   test "subtracting integer() removes the whole integer domain" do
     assert Projection.subtract({:integer_range, 1, 10}, {:primitive, :integer}) == {:ok, :none}
     assert Projection.subtract({:primitive, :integer}, {:primitive, :integer}) == {:ok, :none}
+    assert Projection.subtract({:literal, :a}, {:primitive, :atom}) == {:ok, :none}
+    assert Projection.subtract({:literal, :a}, {:primitive, :string}) == {:ok, {:literal, :a}}
   end
 
   test "unsupported differences report an error" do

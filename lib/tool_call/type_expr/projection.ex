@@ -646,6 +646,13 @@ defmodule ToolCall.TypeExpr.Projection do
     if in_range?(value, low, high), do: {:ok, :none}, else: {:ok, {:literal, value}}
   end
 
+  defp subtract_literal(value, {:primitive, kind}) do
+    case literal_kind(value, kind) do
+      {:ok, {:literal, ^value}} -> {:ok, :none}
+      {:ok, :none} -> {:ok, {:literal, value}}
+    end
+  end
+
   defp subtract_literal(_value, _right), do: :error
 
   defp reject_value(value, values), do: {:ok, enum(Enum.reject(values, &(&1 == value)))}
