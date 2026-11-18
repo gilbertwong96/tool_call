@@ -100,5 +100,10 @@ the build warns with the existing "no JSON representation" message. It is never
 silently widened to `anyOf` or `any`, because that would tell the model the wrong
 contract.
 
+Subtraction is exact for integer ranges, literals and enums, tuples (partitioned
+by the first differing position), and unions. Map, ref, remote, and arbitrary
+string-constraint subtraction stay `:error`; JSON Schema cannot carry the
+resulting complement without a `not`.
+
 A future native type source that needs more than these cases must either add an
 IR representation with emitter tests or report a diagnostic.

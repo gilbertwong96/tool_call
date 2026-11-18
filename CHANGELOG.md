@@ -36,9 +36,9 @@
 
 - `ToolCall.TypeExpr.Projection` intersects maps, tuples, numeric primitives and
   ranges, literals and enums, identical refs and remotes, and narrows string
-  `pattern`/`format` constraints; subtraction accepts a union on the right and
-  flattens its result. Cases JSON Schema cannot express still degrade to
-  `:unsupported` with a warning.
+  `pattern`/`format` constraints; subtraction accepts unions and handles
+  integer ranges, literals, enums, and tuples. Cases JSON Schema cannot express
+  still degrade to `:unsupported` with a warning.
 
 ### Fixed
 
