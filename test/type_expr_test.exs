@@ -75,11 +75,27 @@ defmodule ToolCall.TypeExprTest do
           {:remote, String, :t, :not_a_list},
           {:string, :not_a_map},
           {:enum, :not_a_list},
-          {:annotated, {:primitive, :integer}, :not_a_map}
+          {:annotated, {:primitive, :integer}, :not_a_map},
+          {:map, [{:a, :bad, true}], nil},
+          {:map, [:bad], nil},
+          {:tuple, [:bad]},
+          {:list, :bad},
+          {:string, %{pattern: 1}},
+          {:string, %{pattern: "["}},
+          {:annotated, {:primitive, :string}, %{pattern: "["}}
         ] do
       assert %ToolCall.IR.Type{kind: :unsupported} =
                ToolCall.TypeExpr.Compiler.to_type(malformed, [])
     end
+  end
+
+  test "a malformed nested field degrades to unsupported" do
+    expression = {:map, [{:a, :bad, true}], nil}
+
+    assert %ToolCall.IR.Type{
+             kind: :unsupported,
+             source: {:invalid_type_expr, ^expression}
+           } = ToolCall.TypeExpr.Compiler.to_type(expression, [])
   end
 
   test "validates nested type expression shape" do
@@ -93,6 +109,14 @@ defmodule ToolCall.TypeExprTest do
 
     assert {:error, message} = TypeExpr.validate({:string, %{pattern: 1}})
     assert message =~ "pattern"
+
+    assert {:error, message} = TypeExpr.validate({:string, %{pattern: "["}})
+    assert message =~ "compile"
+
+    assert {:error, message} =
+             TypeExpr.validate({:annotated, {:primitive, :string}, %{pattern: "["}})
+
+    assert message =~ "compile"
 
     assert {:error, message} = TypeExpr.validate({:map, [], {:primitive, :bogus}})
     assert message =~ "additional"

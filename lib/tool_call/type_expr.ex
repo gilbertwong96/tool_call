@@ -121,8 +121,11 @@ defmodule ToolCall.TypeExpr do
   defp validate({:dynamic, item}, path), do: validate(item, path <> ".dynamic")
   defp validate({:unsupported, _reason}, _path), do: :ok
 
-  defp validate({:annotated, item, metadata}, path) when is_map(metadata),
-    do: validate(item, path <> ".type")
+  defp validate({:annotated, item, metadata}, path) when is_map(metadata) do
+    with :ok <- validate_string_metadata(metadata, path <> ".metadata") do
+      validate(item, path <> ".type")
+    end
+  end
 
   defp validate(_other, path), do: error(path, "unknown type expression")
 
@@ -161,24 +164,33 @@ defmodule ToolCall.TypeExpr do
 
   defp validate_string_metadata(metadata, path) do
     Enum.reduce_while([:pattern, :format, :source], :ok, fn key, :ok ->
-      case Map.get(metadata, key) do
-        nil ->
-          {:cont, :ok}
-
-        value when is_binary(value) ->
-          {:cont, :ok}
-
-        value when key in [:pattern, :format] ->
-          {:halt, error(path, "#{key} must be a string or nil, got: #{inspect(value)}")}
-
-        value when is_atom(value) ->
-          {:cont, :ok}
-
-        value ->
-          {:halt, error(path, "#{key} must be a string or atom, got: #{inspect(value)}")}
+      case validate_metadata_value(Map.get(metadata, key), key, path) do
+        :ok -> {:cont, :ok}
+        {:error, _} = error -> {:halt, error}
       end
     end)
   end
+
+  defp validate_metadata_value(nil, _key, _path), do: :ok
+
+  defp validate_metadata_value(value, :pattern, path) when is_binary(value) do
+    case Regex.compile(value, "u") do
+      {:ok, _regex} -> :ok
+      {:error, _reason} -> error(path, "pattern must compile, got: #{inspect(value)}")
+    end
+  end
+
+  defp validate_metadata_value(value, key, _path)
+       when key in [:pattern, :format] and is_binary(value),
+       do: :ok
+
+  defp validate_metadata_value(value, key, path) when key in [:pattern, :format],
+    do: error(path, "#{key} must be a string or nil, got: #{inspect(value)}")
+
+  defp validate_metadata_value(value, _key, _path) when is_atom(value), do: :ok
+
+  defp validate_metadata_value(value, key, path),
+    do: error(path, "#{key} must be a string or atom, got: #{inspect(value)}")
 
   defp error(path, message), do: {:error, "#{path}: #{message}"}
 

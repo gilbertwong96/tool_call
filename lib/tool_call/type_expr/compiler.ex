@@ -11,52 +11,59 @@ defmodule ToolCall.TypeExpr.Compiler do
   alias ToolCall.TypeExpr.Projection
 
   @spec to_type(ToolCall.TypeExpr.t(), [module()]) :: Type.t()
-  def to_type(:any, _providers), do: %Type{kind: :any}
-  def to_type(:none, _providers), do: %Type{kind: :unsupported, source: :none}
+  def to_type(expression, providers) do
+    case ToolCall.TypeExpr.validate(expression) do
+      :ok -> do_type(expression, providers)
+      {:error, _reason} -> %Type{kind: :unsupported, source: {:invalid_type_expr, expression}}
+    end
+  end
 
-  def to_type({:literal, nil}, _providers), do: %Type{kind: :null, source: nil}
+  defp do_type(:any, _providers), do: %Type{kind: :any}
+  defp do_type(:none, _providers), do: %Type{kind: :unsupported, source: :none}
 
-  def to_type({:literal, value}, _providers) when is_boolean(value),
+  defp do_type({:literal, nil}, _providers), do: %Type{kind: :null, source: nil}
+
+  defp do_type({:literal, value}, _providers) when is_boolean(value),
     do: %Type{kind: :enum, values: [value], source: value}
 
-  def to_type({:literal, value}, _providers) when is_atom(value),
+  defp do_type({:literal, value}, _providers) when is_atom(value),
     do: %Type{kind: :enum, values: [value], source: value}
 
-  def to_type({:literal, value}, _providers) when is_integer(value),
+  defp do_type({:literal, value}, _providers) when is_integer(value),
     do: %Type{kind: :integer, minimum: value, maximum: value, source: value}
 
-  def to_type({:literal, value}, _providers) when is_float(value),
+  defp do_type({:literal, value}, _providers) when is_float(value),
     do: %Type{kind: :float, source: value}
 
-  def to_type({:literal, value}, _providers) when is_binary(value),
+  defp do_type({:literal, value}, _providers) when is_binary(value),
     do: %Type{kind: :enum, values: [value], source: value}
 
   # A literal that is not a JSON scalar cannot be described, but it must not
   # crash the compiler.
-  def to_type({:literal, value}, _providers),
+  defp do_type({:literal, value}, _providers),
     do: %Type{kind: :unsupported, source: {:literal, value}}
 
-  def to_type({:primitive, kind}, _providers), do: primitive(kind)
+  defp do_type({:primitive, kind}, _providers), do: primitive(kind)
 
-  def to_type({:integer_range, low, high}, _providers),
+  defp do_type({:integer_range, low, high}, _providers),
     do: %Type{kind: :integer, minimum: low, maximum: high}
 
-  def to_type({:enum, values}, _providers) when is_list(values),
+  defp do_type({:enum, values}, _providers) when is_list(values),
     do: %Type{kind: :enum, values: values}
 
-  def to_type({:string, metadata}, _providers) when is_map(metadata), do: string(metadata)
-  def to_type({:list, item}, providers), do: %Type{kind: :array, items: to_type(item, providers)}
+  defp do_type({:string, metadata}, _providers) when is_map(metadata), do: string(metadata)
+  defp do_type({:list, item}, providers), do: %Type{kind: :array, items: do_type(item, providers)}
 
-  def to_type({:nonempty_list, item}, providers) do
-    %Type{kind: :array, items: to_type(item, providers), minimum: 1}
+  defp do_type({:nonempty_list, item}, providers) do
+    %Type{kind: :array, items: do_type(item, providers), minimum: 1}
   end
 
-  def to_type({:tuple, nil}, _providers), do: %Type{kind: :tuple, items: nil}
+  defp do_type({:tuple, nil}, _providers), do: %Type{kind: :tuple, items: nil}
 
-  def to_type({:tuple, items}, providers) when is_list(items),
-    do: %Type{kind: :tuple, items: Enum.map(items, &to_type(&1, providers))}
+  defp do_type({:tuple, items}, providers) when is_list(items),
+    do: %Type{kind: :tuple, items: Enum.map(items, &do_type(&1, providers))}
 
-  def to_type({:map, fields, additional}, providers) when is_list(fields) do
+  defp do_type({:map, fields, additional}, providers) when is_list(fields) do
     %Type{
       kind: :object,
       fields:
@@ -64,7 +71,7 @@ defmodule ToolCall.TypeExpr.Compiler do
           %Field{
             name: Atom.to_string(key),
             key: key,
-            type: to_type(type, providers),
+            type: do_type(type, providers),
             required: required?
           }
         end),
@@ -72,64 +79,64 @@ defmodule ToolCall.TypeExpr.Compiler do
     }
   end
 
-  def to_type({:union, variants}, providers) when is_list(variants) do
-    Typespec.union_type(Enum.map(variants, &to_type(&1, providers)))
+  defp do_type({:union, variants}, providers) when is_list(variants) do
+    Typespec.union_type(Enum.map(variants, &do_type(&1, providers)))
   end
 
-  def to_type({:annotated, type, metadata}, providers) when is_map(metadata) do
+  defp do_type({:annotated, type, metadata}, providers) when is_map(metadata) do
     type
-    |> to_type(providers)
+    |> do_type(providers)
     |> put_meta(metadata)
   end
 
-  def to_type({:intersection, variants}, providers) when is_list(variants),
+  defp do_type({:intersection, variants}, providers) when is_list(variants),
     do: projection(variants, providers)
 
-  def to_type({:negation, _type}, _providers), do: %Type{kind: :unsupported, source: :negation}
+  defp do_type({:negation, _type}, _providers), do: %Type{kind: :unsupported, source: :negation}
 
-  def to_type({:ref, ref}, _providers), do: %Type{kind: :ref, ref: ref}
+  defp do_type({:ref, ref}, _providers), do: %Type{kind: :ref, ref: ref}
 
-  def to_type({:ref, {name, arity}, _args}, _providers),
+  defp do_type({:ref, {name, arity}, _args}, _providers),
     do: %Type{kind: :any, source: {name, arity}}
 
-  def to_type({:local_ref, index}, _providers),
+  defp do_type({:local_ref, index}, _providers),
     do: %Type{kind: :any, source: {:local_ref, index}}
 
-  def to_type({:var, name}, _providers), do: %Type{kind: :any, source: {:var, name}}
+  defp do_type({:var, name}, _providers), do: %Type{kind: :any, source: {:var, name}}
 
-  def to_type({:remote, module, function, args}, providers) when is_list(args) do
-    Typespec.resolve_remote(module, function, Enum.map(args, &to_type(&1, providers)), providers)
+  defp do_type({:remote, module, function, args}, providers) when is_list(args) do
+    Typespec.resolve_remote(module, function, Enum.map(args, &do_type(&1, providers)), providers)
   end
 
-  def to_type({:builtin, :keyword, args}, providers) do
+  defp do_type({:builtin, :keyword, args}, providers) do
     argument =
       case args do
         [] -> %Type{kind: :any}
-        [type] -> to_type(type, providers)
+        [type] -> do_type(type, providers)
         types -> %Type{kind: :any, source: {:keyword, types}}
       end
 
     Stdlib.keyword_type(argument)
   end
 
-  def to_type({:builtin, name, _args}, _providers),
+  defp do_type({:builtin, name, _args}, _providers),
     do: %Type{kind: :unsupported, source: {:builtin, name}}
 
-  def to_type({:dynamic, _type}, _providers), do: %Type{kind: :any, source: :dynamic}
-  def to_type({:unsupported, reason}, _providers), do: %Type{kind: :unsupported, source: reason}
+  defp do_type({:dynamic, _type}, _providers), do: %Type{kind: :any, source: :dynamic}
+  defp do_type({:unsupported, reason}, _providers), do: %Type{kind: :unsupported, source: reason}
 
   # A malformed expression from an external source must not take down the
   # compiler; the IR becomes untyped with a diagnostic-friendly source.
-  def to_type(other, _providers),
+  defp do_type(other, _providers),
     do: %Type{kind: :unsupported, source: {:invalid_type_expr, other}}
 
   defp additional_type(nil, _providers), do: nil
   defp additional_type(:none, _providers), do: nil
-  defp additional_type(type, providers), do: to_type(type, providers)
+  defp additional_type(type, providers), do: do_type(type, providers)
 
   defp projection([], _providers), do: %Type{kind: :unsupported, source: :intersection}
 
-  defp projection([only], providers), do: to_type(only, providers)
+  defp projection([only], providers), do: do_type(only, providers)
 
   defp projection([first | rest], providers) do
     Enum.reduce_while(rest, {:ok, first}, fn variant, {:ok, acc} ->
@@ -139,7 +146,7 @@ defmodule ToolCall.TypeExpr.Compiler do
       end
     end)
     |> case do
-      {:ok, result} -> to_type(result, providers)
+      {:ok, result} -> do_type(result, providers)
       :error -> %Type{kind: :unsupported, source: :intersection}
     end
   end
