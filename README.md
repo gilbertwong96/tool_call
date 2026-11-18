@@ -41,7 +41,7 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"})
 
 ```elixir
 def deps do
-  [tool_call: "~> 0.2"]
+  [tool_call: "~> 0.3"]
 end
 ```
 

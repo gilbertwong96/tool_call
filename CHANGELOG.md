@@ -2,13 +2,9 @@
 
 ## Unreleased
 
-### Changed
+## 0.3.0 - 2026-11-18
 
-- The API reference now documents the compile pipeline and groups it under
-  "Internals (not public API)". No runtime or schema behaviour changed: the
-  declaration source, the type compiler, and legacy typespec access are separate
-  internal stages, so a future compiler-signature source can replace the
-  declaration source without touching the wire emitters.
+### Changed
 
 - `$defs` names for parameterized recursive local types now carry a hash derived
   from the normalized `TypeExpr` instead of the typespec AST, for example
