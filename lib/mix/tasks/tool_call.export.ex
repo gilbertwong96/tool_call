@@ -44,7 +44,8 @@ defmodule Mix.Tasks.ToolCall.Export do
     * `--strict` - emit the strict JSON Schema subset for OpenAI and MCP;
       ignored by `anthropic` and `gemini`
     * `--fine-tuned` - emit the fine-tuned strict subset (implies `--strict`);
-      drops `pattern`, `format` and numeric/array bounds
+      drops `pattern`, `format` and numeric/array bounds; only valid with
+      `--format openai`
 
   Formatting uses `json:format/1`, which is why the project floor is Erlang/OTP
   27.1+. The formatter belongs to OTP, so a file is reproducible per OTP version
@@ -69,6 +70,10 @@ defmodule Mix.Tasks.ToolCall.Export do
         Keyword.get(opts, :strict, false) -> true
         true -> false
       end
+
+    if strict == :fine_tuned and format != "openai" do
+      Mix.raise("--fine-tuned is only supported with --format openai")
+    end
 
     modules = modules(names, opts[:app])
 

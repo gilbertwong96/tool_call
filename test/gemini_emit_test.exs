@@ -171,6 +171,21 @@ defmodule ToolCall.GeminiEmitTest do
     end
   end
 
+  test "a null-only parameter raises instead of emitting NULL" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: nil) :: :ok
+        def go(_x), do: :ok
+      end
+      """)
+
+    assert_raise ArgumentError, ~r/null-only/, fn -> ToolCall.emit(module, :gemini) end
+  end
+
   test "renders a runtime tool on demand" do
     tool = %Tool{
       name: "go",

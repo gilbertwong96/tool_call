@@ -85,6 +85,24 @@ defmodule ToolCall.ValidateTest do
     assert :ok = Validate.valid?(%Type{kind: :number}, 1.0, %{})
   end
 
+  test "float and number bounds" do
+    assert :ok = Validate.valid?(%Type{kind: :float, minimum: 1.0, maximum: 2.0}, 1.5, %{})
+
+    assert {:error, {:below_minimum, 0.5, 1.0}} =
+             Validate.valid?(%Type{kind: :float, minimum: 1.0}, 0.5, %{})
+
+    assert {:error, {:above_maximum, 2.5, 2.0}} =
+             Validate.valid?(%Type{kind: :float, maximum: 2.0}, 2.5, %{})
+
+    assert :ok = Validate.valid?(%Type{kind: :number, minimum: 1, maximum: 2}, 1.5, %{})
+
+    assert {:error, {:below_minimum, 0.5, 1}} =
+             Validate.valid?(%Type{kind: :number, minimum: 1}, 0.5, %{})
+
+    assert {:error, {:above_maximum, 2, 1}} =
+             Validate.valid?(%Type{kind: :number, maximum: 1}, 2, %{})
+  end
+
   test "string patterns and utf8" do
     node = %Type{kind: :string, pattern: "^a+$", pattern_regex: ~r/^a+$/}
     assert :ok = Validate.valid?(node, "aaa", %{})

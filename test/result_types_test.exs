@@ -94,8 +94,8 @@ defmodule ToolCall.ResultTypesTest do
     assert Map.has_key?(tool.defs, "tree")
   end
 
-  test "no_return() leaves the result empty" do
-    assert %Tool{result: nil} =
+  test "no_return() keeps a never result" do
+    assert %Tool{result: %Type{kind: :unsupported, source: :no_return}} =
              tool("""
              defmodule FIXTURE do
                use ToolCall
@@ -154,8 +154,8 @@ defmodule ToolCall.ResultTypesTest do
     refute "go" in aliased
   end
 
-  test "an aliased no_return() also leaves the result empty" do
-    assert %Tool{result: nil} =
+  test "an aliased no_return() also keeps a never result" do
+    assert %Tool{result: %Type{kind: :unsupported, source: :no_return}} =
              tool("""
              defmodule FIXTURE do
                use ToolCall
@@ -382,7 +382,7 @@ defmodule ToolCall.ResultTypesTest do
     end
   end
 
-  test "a tool without a result type skips validation" do
+  test "a no_return result rejects a returned value when validation is enabled" do
     module =
       compile!("""
       defmodule FIXTURE do
@@ -394,7 +394,26 @@ defmodule ToolCall.ResultTypesTest do
       end
       """)
 
-    assert {:ok, :anything} = ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+    assert {:ok, :anything} = ToolCall.run(module, :go, %{"x" => 1})
+
+    assert {:error, {:invalid_result, :no_return}} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
+  end
+
+  test "Path.t() results accept raw bytes" do
+    module =
+      compile!("""
+      defmodule FIXTURE do
+        use ToolCall
+
+        @doc "Go."
+        @spec go(x :: integer()) :: Path.t()
+        def go(_x), do: <<255>>
+      end
+      """)
+
+    assert {:ok, <<255>>} =
+             ToolCall.run(module, :go, %{"x" => 1}, validate_result: true)
   end
 
   test "nonempty_binary rejects an empty result end to end" do

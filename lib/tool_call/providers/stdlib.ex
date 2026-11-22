@@ -7,7 +7,7 @@ defmodule ToolCall.Providers.Stdlib do
   @impl true
   def resolve(String, :t, []), do: {:ok, %Type{kind: :string, source: {String, :t}}}
 
-  def resolve(Path, :t, []), do: {:ok, %Type{kind: :string, source: {Path, :t}}}
+  def resolve(Path, :t, []), do: {:ok, %Type{kind: :string, source: :path}}
 
   def resolve(Keyword, :t, args) do
     case args do

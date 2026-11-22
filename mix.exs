@@ -34,6 +34,7 @@ defmodule ToolCall.MixProject do
             ToolCall.Emit.Anthropic,
             ToolCall.Emit.MCP,
             ToolCall.Emit.Gemini,
+            ToolCall.Schema.Gemini,
             ToolCall.IR,
             ToolCall.IR.Tool,
             ToolCall.IR.Param,

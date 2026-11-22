@@ -625,6 +625,16 @@ defmodule ToolCall.Builder do
 
   @max_result_paths 5
 
+  defp warn_result_type(
+         _module,
+         _location,
+         %Tool{result: %Type{kind: :unsupported, source: source}},
+         _arity,
+         _truncated
+       )
+       when source in [:no_return, :none],
+       do: :ok
+
   defp warn_result_type(_module, _location, %Tool{}, _arity, true), do: :ok
 
   defp warn_result_type(module, location, %Tool{} = tool, arity, false) do
@@ -738,7 +748,7 @@ defmodule ToolCall.Builder do
   defp result_paths_kind(type, defs, seen, path) when is_map(type) do
     case Map.get(type, :kind) do
       :any -> result_paths_any(type, path)
-      :unsupported -> [{root_result_path(path), :unsupported}]
+      :unsupported -> result_paths_unsupported(type, path)
       :ref -> result_paths_ref(type, defs, seen, path)
       :object -> result_paths_object(type, defs, seen, path)
       :array -> result_paths(Map.get(type, :items), defs, seen, path <> "[]")
@@ -751,6 +761,11 @@ defmodule ToolCall.Builder do
   defp result_paths_any(type, path) do
     [{root_result_path(path), result_reason(Map.get(type, :source))}]
   end
+
+  defp result_paths_unsupported(%Type{source: source}, _path) when source in [:no_return, :none],
+    do: []
+
+  defp result_paths_unsupported(_type, path), do: [{root_result_path(path), :unsupported}]
 
   defp result_paths_ref(type, defs, seen, path) do
     ref = Map.get(type, :ref)

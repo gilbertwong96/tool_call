@@ -489,6 +489,14 @@ defmodule ToolCall.EmitTest do
       assert mcp["inputSchema"]["properties"]["days"]["type"] == ["integer", "null"]
     end
 
+    test "rejects the OpenAI fine-tuned mode" do
+      module = weather()
+
+      assert_raise ArgumentError, ~r/fine-tuned.*OpenAI/, fn ->
+        ToolCall.emit(module, :mcp, strict: :fine_tuned)
+      end
+    end
+
     test "carries $defs for a recursive parameter" do
       module =
         compile!("""

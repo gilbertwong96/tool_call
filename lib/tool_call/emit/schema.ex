@@ -8,7 +8,8 @@ defmodule ToolCall.Emit.Schema do
   Emits a conservative subset both providers accept: no `$id`, no external
   `$ref`, no `oneOf`. A recursive type is rendered once per tool under `$defs`,
   beside `properties`, and referenced by `{"$ref": "#/$defs/<name>"}`. Strict
-  mode applies the same rules to a definition as to a nested object. See the
+  mode applies the same rules to a definition as to a nested object. A field's
+  `description`, when present, is rendered beside its type. See the
   Recursive types section of `docs/design.md` and the target matrix in
   [`docs/projection.md`](projection.html).
   """
@@ -370,10 +371,39 @@ defmodule ToolCall.Emit.Schema do
 
     %{
       "type" => "object",
-      "properties" => Map.new(fields, &{&1.name, do_type(&1.type, opts)}),
+      "properties" => Map.new(fields, &{&1.name, field(&1, opts)}),
       "required" => for(field <- fields, field.required, do: field.name)
     }
     |> put_additional(additional, opts)
+  end
+
+  defp field(%Field{} = field, opts) do
+    field.type
+    |> do_type(opts)
+    |> put_field_description(field)
+    |> put_field_default(field, opts)
+  end
+
+  defp put_field_description(schema, %Field{description: nil}), do: schema
+
+  defp put_field_description(schema, %Field{description: description}),
+    do: Map.put(schema, "description", description)
+
+  defp put_field_default(schema, %Field{has_default: false, default: nil}, _opts), do: schema
+
+  defp put_field_default(schema, %Field{has_default: true, default: nil}, opts) do
+    if strict?(opts), do: schema, else: Map.put(schema, "default", nil)
+  end
+
+  defp put_field_default(schema, %Field{} = field, opts) do
+    if strict?(opts) do
+      schema
+    else
+      case atom_default(field.type, field.default) do
+        @invalid_default -> schema
+        value -> Map.put(schema, "default", value)
+      end
+    end
   end
 
   defp force_field_required(%Field{required: true} = field), do: field

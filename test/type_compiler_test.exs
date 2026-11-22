@@ -59,10 +59,13 @@ defmodule ToolCall.TypeCompilerTest do
     assert defs == seeded
   end
 
-  test "returns nil for no_return and none results" do
+  test "keeps no_return and none as never results" do
     state = context() |> TypeCompiler.prepare() |> TypeCompiler.new()
 
-    assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :no_return})
-    assert {nil, false, _state} = TypeCompiler.compile_result(state, {:unsupported, :none})
+    assert {%Type{kind: :unsupported, source: :no_return}, false, _state} =
+             TypeCompiler.compile_result(state, {:unsupported, :no_return})
+
+    assert {%Type{kind: :unsupported, source: :none}, false, _state} =
+             TypeCompiler.compile_result(state, {:unsupported, :none})
   end
 end

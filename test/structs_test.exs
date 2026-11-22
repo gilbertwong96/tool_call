@@ -28,6 +28,11 @@ defmodule ToolCall.StructsTest do
     assert {:ok, []} = Structs.enforced_keys(Partial)
   end
 
+  test "defaults/1 returns defstruct defaults" do
+    assert {:ok, %{city: nil, street: nil, country: "NO"}} = Structs.defaults(Address)
+    assert :error = Structs.defaults(NotAStruct)
+  end
+
   test "fields/1 returns field types with the module's local types expanded" do
     assert {:ok, fields, [], :ok, false} = Structs.fields(Address)
     assert {String, :t, []} = unwrap_remote(fields.city)

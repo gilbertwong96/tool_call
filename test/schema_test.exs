@@ -139,6 +139,65 @@ defmodule ToolCall.SchemaTest do
              }
     end
 
+    test "object field descriptions are rendered" do
+      type = %Type{
+        kind: :object,
+        fields: [
+          %Field{
+            name: "city",
+            key: :city,
+            type: %Type{kind: :string},
+            description: "City name"
+          }
+        ]
+      }
+
+      assert Schema.type(type)["properties"]["city"] == %{
+               "type" => "string",
+               "description" => "City name"
+             }
+    end
+
+    test "object field defaults are rendered unless strict" do
+      type = %Type{
+        kind: :object,
+        fields: [
+          %Field{
+            name: "country",
+            key: :country,
+            type: %Type{kind: :string},
+            default: "NO"
+          },
+          %Field{
+            name: "street",
+            key: :street,
+            type: %Type{kind: :string, nullable: true},
+            default: nil,
+            has_default: true
+          },
+          %Field{
+            name: "mode",
+            key: :mode,
+            type: %Type{kind: :atom, nullable: true},
+            default: nil,
+            has_default: true
+          }
+        ]
+      }
+
+      properties = Schema.type(type)["properties"]
+      assert properties["country"]["default"] == "NO"
+      assert Map.has_key?(properties["street"], "default")
+      assert properties["street"]["default"] == nil
+      assert Map.has_key?(properties["mode"], "default")
+      assert properties["mode"]["default"] == nil
+
+      strict = Schema.type(type, strict: true)["properties"]
+      refute Map.has_key?(strict["country"], "default")
+      refute Map.has_key?(strict["street"], "default")
+      refute Map.has_key?(strict["mode"], "default")
+    end
+
     test "nonempty strings carry a nonempty pattern" do
       assert Schema.type(%Type{kind: :string, pattern: "^[\\s\\S]+$"}) == %{
                "type" => "string",

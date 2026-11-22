@@ -38,12 +38,12 @@ defmodule ToolCall.Validate do
     end
   end
 
-  defp do_valid?(%Type{kind: :float}, value, _defs, _hops) do
-    if is_float(value), do: :ok, else: {:error, {:expected_float, value}}
+  defp do_valid?(%Type{kind: :float} = type, value, _defs, _hops) do
+    if is_float(value), do: check_bounds(type, value), else: {:error, {:expected_float, value}}
   end
 
-  defp do_valid?(%Type{kind: :number}, value, _defs, _hops) do
-    if is_number(value), do: :ok, else: {:error, {:expected_number, value}}
+  defp do_valid?(%Type{kind: :number} = type, value, _defs, _hops) do
+    if is_number(value), do: check_bounds(type, value), else: {:error, {:expected_number, value}}
   end
 
   defp do_valid?(%Type{kind: :string} = type, value, _defs, _hops), do: check_string(type, value)
@@ -75,6 +75,10 @@ defmodule ToolCall.Validate do
   defp do_valid?(%Type{kind: :null}, value, _defs, _hops) do
     if is_nil(value), do: :ok, else: {:error, {:expected_null, value}}
   end
+
+  defp do_valid?(%Type{kind: :unsupported, source: source}, _value, _defs, _hops)
+       when source in [:no_return, :none],
+       do: {:error, :no_return}
 
   defp do_valid?(%Type{kind: kind}, _value, _defs, _hops)
        when kind in [:any, :unsupported],
@@ -178,6 +182,10 @@ defmodule ToolCall.Validate do
       above? -> {:error, {:above_maximum, integer, type.maximum}}
       true -> :ok
     end
+  end
+
+  defp check_string(%Type{source: :path}, value) do
+    if is_binary(value), do: :ok, else: {:error, {:expected_string, value}}
   end
 
   defp check_string(%Type{source: :binary}, value) do

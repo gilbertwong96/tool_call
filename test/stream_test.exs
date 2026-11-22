@@ -103,6 +103,86 @@ defmodule ToolCall.StreamTest do
                ])
     end
 
+    test "selects an OpenAI choice" do
+      chunk = %{
+        "choices" => [
+          %{
+            "delta" => %{
+              "tool_calls" => [
+                %{"index" => 0, "id" => "a", "function" => %{"name" => "a", "arguments" => "{}"}}
+              ]
+            }
+          },
+          %{
+            "delta" => %{
+              "tool_calls" => [
+                %{"index" => 0, "id" => "b", "function" => %{"name" => "b", "arguments" => "{}"}}
+              ]
+            }
+          }
+        ]
+      }
+
+      assert {:ok, [%{name: "a"}]} = Stream.aggregate([chunk], :openai)
+      assert {:ok, [%{name: "b"}]} = Stream.aggregate([chunk], :openai, choice: 1)
+    end
+
+    test "selects by index even when choices are out of order" do
+      chunk = %{
+        "choices" => [
+          %{
+            "index" => 1,
+            "delta" => %{
+              "tool_calls" => [
+                %{
+                  "index" => 0,
+                  "id" => "one",
+                  "function" => %{"name" => "one", "arguments" => "{}"}
+                }
+              ]
+            }
+          },
+          %{
+            "index" => 0,
+            "delta" => %{
+              "tool_calls" => [
+                %{
+                  "index" => 0,
+                  "id" => "zero",
+                  "function" => %{"name" => "zero", "arguments" => "{}"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      assert {:ok, [%{name: "zero"}]} = Stream.aggregate([chunk], :openai, choice: 0)
+      assert {:ok, [%{name: "one"}]} = Stream.aggregate([chunk], :openai, choice: 1)
+    end
+
+    test "reports a choice that never appears" do
+      chunk = %{
+        "choices" => [
+          %{
+            "index" => 1,
+            "delta" => %{
+              "tool_calls" => [
+                %{
+                  "index" => 0,
+                  "id" => "one",
+                  "function" => %{"name" => "one", "arguments" => "{}"}
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      assert {:error, {:choice_not_found, 0}} =
+               Stream.aggregate([chunk], :openai, choice: 0)
+    end
+
     test "feed/2 and finish/1 match aggregate/2" do
       chunks = [
         %{
@@ -223,6 +303,56 @@ defmodule ToolCall.StreamTest do
       assert {:ok, [%{name: "a"}]} = Stream.aggregate(chunks, :gemini)
     end
 
+    test "selects a candidate" do
+      chunks = [
+        %{
+          "candidates" => [
+            %{"content" => %{"parts" => [%{"functionCall" => %{"name" => "a"}}]}},
+            %{"content" => %{"parts" => [%{"functionCall" => %{"name" => "b"}}]}}
+          ]
+        }
+      ]
+
+      assert {:ok, [%{name: "a"}]} = Stream.aggregate(chunks, :gemini)
+      assert {:ok, [%{name: "b"}]} = Stream.aggregate(chunks, :gemini, choice: 1)
+    end
+
+    test "selects a candidate by index when candidates are out of order" do
+      chunks = [
+        %{
+          "candidates" => [
+            %{
+              "index" => 1,
+              "content" => %{"parts" => [%{"functionCall" => %{"name" => "one"}}]}
+            },
+            %{
+              "index" => 0,
+              "content" => %{"parts" => [%{"functionCall" => %{"name" => "zero"}}]}
+            }
+          ]
+        }
+      ]
+
+      assert {:ok, [%{name: "zero"}]} = Stream.aggregate(chunks, :gemini, choice: 0)
+      assert {:ok, [%{name: "one"}]} = Stream.aggregate(chunks, :gemini, choice: 1)
+    end
+
+    test "reports a candidate that never appears" do
+      chunks = [
+        %{
+          "candidates" => [
+            %{
+              "index" => 1,
+              "content" => %{"parts" => [%{"functionCall" => %{"name" => "one"}}]}
+            }
+          ]
+        }
+      ]
+
+      assert {:error, {:choice_not_found, 0}} =
+               Stream.aggregate(chunks, :gemini, choice: 0)
+    end
+
     test "collects complete functionCall parts" do
       chunks = [
         %{"candidates" => [%{"content" => %{"parts" => [%{"text" => "thinking"}]}}]},
@@ -261,6 +391,11 @@ defmodule ToolCall.StreamTest do
 
   test "an empty stream finishes with no calls" do
     assert {:ok, []} = Stream.aggregate([], :openai)
+  end
+
+  test "rejects an invalid choice" do
+    assert_raise ArgumentError, ~r/choice must be/, fn -> Stream.new(:openai, choice: -1) end
+    assert_raise ArgumentError, ~r/choice must be/, fn -> Stream.new(:gemini, choice: "1") end
   end
 
   test "rejects an unsupported provider" do

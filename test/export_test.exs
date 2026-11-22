@@ -103,6 +103,14 @@ defmodule ToolCall.ExportTest do
     assert tool["inputSchema"]["additionalProperties"] == false
   end
 
+  test "refuses --fine-tuned outside the OpenAI format" do
+    module = weather()
+
+    assert_raise Mix.Error, ~r/fine-tuned.*openai/, fn ->
+      export([inspect(module), "--format", "mcp", "--fine-tuned"])
+    end
+  end
+
   test "passes --strict through to the schema" do
     module = weather()
 

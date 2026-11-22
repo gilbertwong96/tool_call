@@ -2,7 +2,7 @@
 # Total boundary: any exception from the wrapped operation is converted to a
 # result; no exception is meant to escape this module.
 defmodule ToolCall.Structs do
-  @moduledoc "Compile-time introspection of struct fields, field types, and enforced keys."
+  @moduledoc "Compile-time introspection of struct fields, field types, defaults, and enforced keys."
   # Compile-time introspection of a compiled struct module.
   #
   # Field names come from `__struct__/0`. Field types come from the module's
@@ -58,6 +58,38 @@ defmodule ToolCall.Structs do
     else
       probe_enforced_keys(module)
     end
+  end
+
+  @doc "Returns the `defstruct` defaults for a struct module."
+  @spec defaults(module(), keyword()) :: {:ok, %{atom() => term()}} | :error
+  def defaults(module, opts \\ []) when is_atom(module) do
+    current = Keyword.get(opts, :current)
+
+    cond do
+      current != nil and module == current -> current_defaults(module)
+      struct?(module) -> compiled_defaults(module)
+      true -> :error
+    end
+  end
+
+  defp current_defaults(module) do
+    case Module.get_attribute(module, :tool_call_struct_fields) do
+      nil -> :error
+      pairs -> {:ok, Map.new(pairs)}
+    end
+  rescue
+    _exception -> :error
+  end
+
+  defp compiled_defaults(module) do
+    defaults =
+      module.__struct__()
+      |> Map.delete(:__struct__)
+      |> Map.delete(:__exception__)
+
+    {:ok, defaults}
+  rescue
+    _exception -> :error
   end
 
   defp probe_enforced_keys(module) do

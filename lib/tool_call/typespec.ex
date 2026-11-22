@@ -689,9 +689,20 @@ defmodule ToolCall.Typespec do
        when is_list(fields) do
     fields =
       Enum.map(fields, fn
-        %Field{type: %Type{} = field_type, name: name, key: key, required: required} = field
-        when is_binary(name) and is_atom(key) and is_boolean(required) ->
+        %Field{
+          type: %Type{} = field_type,
+          name: name,
+          key: key,
+          required: required,
+          description: description,
+          default: default,
+          has_default: has_default
+        } = field
+        when is_binary(name) and is_atom(key) and is_boolean(required) and
+               is_boolean(has_default) ->
           validate_name!(name, "field")
+          validate_description!(description, "field")
+          if has_default or not is_nil(default), do: validate_field_default!(default, field_type)
           %{field | type: validate_child!(field_type, provider, module, function, args)}
 
         other ->
@@ -1210,6 +1221,18 @@ defmodule ToolCall.Typespec do
     end
   end
 
+  defp validate_field_default!(nil, type) do
+    if default_compatible?(type, nil) do
+      :ok
+    else
+      raise ArgumentError,
+            "invalid ToolCall IR: default nil is not compatible with " <>
+              "type #{inspect(Map.get(type, :kind))}"
+    end
+  end
+
+  defp validate_field_default!(default, type), do: validate_default!(default, type)
+
   @doc false
   @spec default_compatible?(Type.t(), term()) :: boolean()
   def default_compatible?(%Type{kind: :object, source: :keyword} = type, value)
@@ -1225,8 +1248,8 @@ defmodule ToolCall.Typespec do
   def default_compatible?(%Type{transform: transform}, _value) when not is_nil(transform),
     do: true
 
-  def default_compatible?(%Type{kind: :atom}, nil), do: false
   def default_compatible?(%Type{nullable: true}, nil), do: true
+  def default_compatible?(%Type{kind: :atom}, nil), do: false
 
   def default_compatible?(%Type{kind: :integer} = type, value) when is_integer(value),
     do: within_bounds?(type, value)
@@ -1361,21 +1384,23 @@ defmodule ToolCall.Typespec do
     value >= 0 and value <= 0x10FFFF and not (value >= 0xD800 and value <= 0xDFFF)
   end
 
-  defp json_value?(value)
-       when is_nil(value) or is_boolean(value) or is_atom(value) or is_number(value),
-       do: true
+  @doc false
+  @spec json_value?(term()) :: boolean()
+  def json_value?(value)
+      when is_nil(value) or is_boolean(value) or is_atom(value) or is_number(value),
+      do: true
 
-  defp json_value?(value) when is_binary(value), do: String.valid?(value)
+  def json_value?(value) when is_binary(value), do: String.valid?(value)
 
-  defp json_value?(value) when is_list(value), do: Enum.all?(value, &json_value?/1)
+  def json_value?(value) when is_list(value), do: Enum.all?(value, &json_value?/1)
 
-  defp json_value?(value) when is_map(value) and not is_struct(value) do
+  def json_value?(value) when is_map(value) and not is_struct(value) do
     Enum.all?(value, fn {key, item} ->
       (is_atom(key) or (is_binary(key) and String.valid?(key))) and json_value?(item)
     end)
   end
 
-  defp json_value?(_value), do: false
+  def json_value?(_value), do: false
 
   @doc """
   True when the tree contains a domain JSON cannot represent at all.

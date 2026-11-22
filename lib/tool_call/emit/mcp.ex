@@ -14,10 +14,19 @@ defmodule ToolCall.Emit.MCP do
 
   @spec emit(Tool.t(), keyword()) :: map()
   def emit(%Tool{} = tool, opts \\ []) do
+    reject_fine_tuned!(opts)
+
     %{
       "name" => tool.name,
       "description" => tool.description || tool.name,
       "inputSchema" => Schema.params(tool, opts)
     }
+  end
+
+  defp reject_fine_tuned!(opts) do
+    if Keyword.get(opts, :strict) == :fine_tuned do
+      raise ArgumentError,
+            "the fine-tuned strict mode is OpenAI-only; MCP has no fine-tuned subset"
+    end
   end
 end

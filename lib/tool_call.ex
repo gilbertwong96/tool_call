@@ -435,7 +435,8 @@ defmodule ToolCall do
       values nullable and every object closed. `:fine_tuned` also drops
       `pattern`, `format`, numeric bounds and array bounds, which fine-tuned
       models reject. For `:mcp` it renders the same closed subset without a flag
-      (MCP has none). Ignored for `:anthropic` and `:gemini`.
+      (MCP has none); `:fine_tuned` is OpenAI-only and raises for MCP. Ignored for
+      `:anthropic` and `:gemini`.
   """
   @spec emit(module() | [Tool.t()] | Tool.t(), :openai | :anthropic | :mcp | :gemini, keyword()) ::
           map() | [map()]

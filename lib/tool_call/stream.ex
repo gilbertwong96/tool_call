@@ -21,19 +21,23 @@ defmodule ToolCall.Stream do
   Supported streams:
 
     * `:openai` - Chat Completions `delta.tool_calls` fragments, keyed by
-      `index`. Only the first choice is aggregated; stream with `n = 1` or
-      split choices yourself.
+      `index`. One choice is aggregated, the first by default; pass
+      `choice: n` to `new/2` or `aggregate/3` to select another. A choice is
+      matched by `index` when the chunk carries it, otherwise by list position.
     * `:anthropic` - Messages `content_block_start` for a `tool_use` block plus
       `input_json_delta` fragments (and the block's initial `input` when there
       are none).
-    * `:gemini` - the first candidate's `streamGenerateContent` parts with a
-      complete `functionCall`. Gemini has no call id, so `id` is `nil`.
+    * `:gemini` - `streamGenerateContent` parts with a complete `functionCall`.
+      One candidate is aggregated, the first by default; pass `choice: n` to
+      select another; a candidate is matched by `index` when present. Gemini has
+      no call id, so `id` is `nil`.
 
   The concatenated JSON is decoded with the standard `JSON` module, so
   `arguments` is a map. Invalid JSON, or an Anthropic `input` that is not a map
   when there are no fragments, is
   `{:error, {:invalid_stream_arguments, {id, name, payload}}}`; a call that
-  never receives a name is `{:error, {:missing_name, id}}`.
+  never receives a name is `{:error, {:missing_name, id}}`, and a selected choice
+  that never appears is `{:error, {:choice_not_found, choice}}`.
   """
 
   @type provider :: :openai | :anthropic | :gemini
@@ -47,25 +51,48 @@ defmodule ToolCall.Stream do
   @type error ::
           {:missing_name, String.t() | nil}
           | {:invalid_stream_arguments, {String.t() | nil, String.t() | nil, term()}}
+          | {:choice_not_found, non_neg_integer()}
 
   @type t :: %__MODULE__{
           provider: provider(),
+          choice: non_neg_integer(),
           calls: %{term() => map()},
           order: [term()],
-          next: non_neg_integer()
+          next: non_neg_integer(),
+          saw_choices?: boolean(),
+          choice_seen?: boolean()
         }
 
-  defstruct [:provider, calls: %{}, order: [], next: 0]
+  defstruct [
+    :provider,
+    choice: 0,
+    calls: %{},
+    order: [],
+    next: 0,
+    saw_choices?: false,
+    choice_seen?: false
+  ]
 
   @doc """
   Starts an accumulator for `provider` (`:openai`, `:anthropic` or `:gemini`).
+
+  `:choice` selects the OpenAI choice or Gemini candidate, starting at 0. The
+  default is the first choice. Anthropic has a single choice.
   """
-  @spec new(provider()) :: t()
-  def new(provider) when provider in [:openai, :anthropic, :gemini] do
-    %__MODULE__{provider: provider}
+  @spec new(provider(), keyword()) :: t()
+  def new(provider, opts \\ [])
+
+  def new(provider, opts) when provider in [:openai, :anthropic, :gemini] do
+    choice = Keyword.get(opts, :choice, 0)
+
+    if is_integer(choice) and choice >= 0 do
+      %__MODULE__{provider: provider, choice: choice}
+    else
+      raise ArgumentError, "choice must be a non-negative integer, got: #{inspect(choice)}"
+    end
   end
 
-  def new(other) do
+  def new(other, _opts) do
     raise ArgumentError,
           "unsupported stream provider #{inspect(other)}; expected :openai, :anthropic or :gemini"
   end
@@ -93,6 +120,10 @@ defmodule ToolCall.Stream do
   and drops the whole stream result.
   """
   @spec finish(t()) :: {:ok, [call()]} | {:error, error()}
+  def finish(%__MODULE__{saw_choices?: true, choice_seen?: false, choice: choice}) do
+    {:error, {:choice_not_found, choice}}
+  end
+
   def finish(%__MODULE__{} = acc) do
     acc
     |> calls_in_order()
@@ -112,15 +143,20 @@ defmodule ToolCall.Stream do
   Aggregates an enumerable of chunks in one pass.
   """
   @spec aggregate(Enumerable.t(), provider()) :: {:ok, [call()]} | {:error, error()}
-  def aggregate(chunks, provider) do
+  def aggregate(chunks, provider), do: aggregate(chunks, provider, [])
+
+  @spec aggregate(Enumerable.t(), provider(), keyword()) :: {:ok, [call()]} | {:error, error()}
+  def aggregate(chunks, provider, opts) do
     chunks
-    |> Enum.reduce(new(provider), &feed(&2, &1))
+    |> Enum.reduce(new(provider, opts), &feed(&2, &1))
     |> finish()
   end
 
   defp openai(acc, %{"choices" => choices}) when is_list(choices) do
-    case List.first(choices) do
-      %{"delta" => %{"tool_calls" => tool_calls}} when is_list(tool_calls) ->
+    case choice_at(choices, acc.choice) do
+      {:ok, %{"delta" => %{"tool_calls" => tool_calls}}} when is_list(tool_calls) ->
+        acc = %{acc | saw_choices?: true, choice_seen?: true}
+
         Enum.reduce(tool_calls, acc, fn tool_call, acc ->
           function = tool_call["function"] || %{}
 
@@ -131,8 +167,11 @@ defmodule ToolCall.Stream do
           )
         end)
 
-      _other ->
-        acc
+      {:ok, _choice} ->
+        %{acc | saw_choices?: true, choice_seen?: true}
+
+      :not_found ->
+        if choices == [], do: acc, else: %{acc | saw_choices?: true}
     end
   end
 
@@ -166,20 +205,53 @@ defmodule ToolCall.Stream do
 
   defp anthropic(acc, _chunk), do: acc
 
-  defp gemini(acc, %{"candidates" => [candidate | _rest]}) when is_map(candidate) do
-    candidate
-    |> get_in(["content", "parts"])
-    |> List.wrap()
-    |> Enum.reduce(acc, fn
-      %{"functionCall" => %{"name" => name} = call}, acc ->
-        complete(acc, name, call["args"] || %{})
+  defp gemini(acc, %{"candidates" => candidates}) when is_list(candidates) do
+    case choice_at(candidates, acc.choice) do
+      {:ok, %{} = candidate} ->
+        acc = %{acc | saw_choices?: true, choice_seen?: true}
 
-      _part, acc ->
-        acc
-    end)
+        candidate
+        |> get_in(["content", "parts"])
+        |> List.wrap()
+        |> Enum.reduce(acc, fn
+          %{"functionCall" => %{"name" => name} = call}, acc ->
+            complete(acc, name, call["args"] || %{})
+
+          _part, acc ->
+            acc
+        end)
+
+      :not_found ->
+        if candidates == [], do: acc, else: %{acc | saw_choices?: true}
+    end
   end
 
   defp gemini(acc, _chunk), do: acc
+
+  defp choice_at(items, choice) do
+    {_indexed?, _position, selected} =
+      Enum.reduce_while(items, {false, 0, nil}, fn
+        %{"index" => index} = item, {_indexed?, position, _selected} ->
+          if index == choice do
+            {:halt, {true, position + 1, item}}
+          else
+            {:cont, {true, position + 1, nil}}
+          end
+
+        item, {indexed?, position, selected} ->
+          selected =
+            if not indexed? and is_nil(selected) and position == choice,
+              do: item,
+              else: selected
+
+          {:cont, {indexed?, position + 1, selected}}
+      end)
+
+    case selected do
+      nil -> :not_found
+      item -> {:ok, item}
+    end
+  end
 
   defp complete(acc, name, args) do
     key = {:gemini, acc.next}

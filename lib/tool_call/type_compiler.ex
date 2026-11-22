@@ -57,19 +57,9 @@ defmodule ToolCall.TypeCompiler do
 
   @spec compile_result(t(), TypeExpr.t()) :: {Type.t() | nil, boolean(), t()}
   def compile_result(state, {:unsupported, reason}) when reason in [:no_return, :none],
-    do: {nil, false, state}
+    do: {%Type{kind: :unsupported, source: reason}, false, state}
 
-  def compile_result(state, return_expr) do
-    {type, truncated?, state} = compile(state, return_expr)
-
-    case type do
-      %Type{kind: :unsupported, source: source} when source in [:no_return, :none] ->
-        {nil, truncated?, state}
-
-      _other ->
-        {type, truncated?, state}
-    end
-  end
+  def compile_result(state, return_expr), do: compile(state, return_expr)
 
   defp compile(state, type_expr) do
     case TypeExpr.validate(type_expr) do

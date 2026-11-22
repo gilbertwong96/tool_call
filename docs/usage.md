@@ -245,8 +245,8 @@ end
   "type": "object",
   "properties": {
     "city": { "type": "string" },
-    "country": { "type": "string" },
-    "street": { "type": ["string", "null"] }
+    "country": { "type": "string", "default": "NO" },
+    "street": { "type": ["string", "null"], "default": null }
   },
   "required": ["city"],
   "additionalProperties": false
@@ -258,8 +258,10 @@ end
   not `t`, decides the field set.
 - `required` comes from `@enforce_keys`.
 - Omitted optional fields are not inserted before `struct/2`, so `defstruct`
-  defaults apply. The schema does not carry the default value itself. An unknown
-  key is rejected with `{:unknown_keys, keys}`.
+  defaults apply. A JSON-safe default compatible with the field type is also
+  emitted as the schema `default`; a `nil` default is emitted when the field
+  accepts nil, while non-JSON and incompatible defaults are skipped. Strict mode
+  drops all defaults. An unknown key is rejected with `{:unknown_keys, keys}`.
 - `@opaque t` is not extracted: it stays `{}` with the untyped warning.
 - A `TypeProvider` always wins over extraction. Use one when a struct should
   travel as a scalar (`Decimal.t()` as a string, say) rather than as fields.
@@ -313,6 +315,8 @@ passed through and can override a default.
 fine-tuned models reject: `pattern`, `format`, numeric `minimum`/`maximum` and
 array `minItems`/`maxItems`. It renders on demand instead of using the
 precompiled strict literal. Use it when the tool targets a fine-tuned model.
+It is OpenAI-only; MCP raises instead of applying those drops, and the export
+task rejects it outside `--format openai`.
 
 `ToolCall.emit(module, :gemini)` returns one `{name, description, parameters}`
 declaration per tool (the `functionDeclarations` entry), rendered on demand.
@@ -320,10 +324,17 @@ declaration per tool (the `functionDeclarations` entry), rendered on demand.
 uppercase (`STRING`, `OBJECT`, `INTEGER`, …), `nullable: true` replaces a
 `["T", "null"]` type, `additionalProperties` is dropped (Gemini objects are
 always open), `prefixItems` is dropped (a tuple keeps only `minItems`/`maxItems`),
-and a non-string enum is dropped. A recursive parameter raises
-`ArgumentError`, because `parameters` has no `$defs`/`$ref`; send
-`parametersJsonSchema` yourself if you need one. Valid `strict` values are
+and a non-string enum is dropped. A recursive parameter or a null-only schema
+raises `ArgumentError`, because `parameters` has no `$defs`/`$ref` or null type;
+send `parametersJsonSchema` yourself if you need one. Valid `strict` values are
 ignored; an invalid value still raises like the other targets.
+
+If you already hold a JSON Schema, `ToolCall.Schema.Gemini.to_gemini/2` applies the
+same projection without building an IR. `on_ref:` selects `:raise` (the
+default), `:drop`, or `:inline` for non-recursive local `$defs`. It also raises
+for `oneOf`, `const`, `allOf` and `not`, which Gemini cannot express, requires
+an object schema at the root, rejects a multi-type `type` array instead of
+widening it, and rejects a null-only schema.
 
 #### Other providers
 
@@ -480,7 +491,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"},
   `{:ok, _}` / `{:error, _}` unwrap.
 - It is off by default; with no module-level timeout/approval/audit policy,
   `run/3` uses the generated fast path and never validates.
-- A tool with a `no_return()` spec has no result type and skips validation.
+- A tool with a `no_return()`/`none()` result rejects any returned value with
+  `{:error, {:invalid_result, :no_return}}` when validation is enabled.
 - A function that raises keeps `{:error, {:raised, message}}`, not
   `{:invalid_result, _}`.
 
@@ -491,10 +503,12 @@ proper list of them, while
 `keyword(t)` and `MapSet.t(t)` also check their element types. A provider type
 (`Date.t()`, `MapSet.t()`, …) is checked through the provider's optional
 `validate(type, value, defs)`; a provider type with a transform and no
-`validate/3` is accepted unchecked. `Path.t()` is a UTF-8 string here: a
-non-UTF-8 path fails validation. `atom()` results follow the value domain
+`validate/3` is accepted unchecked. `Path.t()` accepts raw bytes, like
+`binary()`, because a Unix path is not necessarily UTF-8. Numeric `minimum` and
+`maximum` are enforced for `float()` and `number()` results. `atom()` results follow the value domain
 (booleans are atoms), unlike `atom()` arguments, which follow the wire domain.
-A `no_return()` result is never validated. A result type that renders `{}` —
+A `no_return()` or `none()` result is a never result: if the function returns,
+validation answers `{:invalid_result, :no_return}`. A result type that renders `{}` —
 `term()`, an unknown remote type, `fun()`/`pid()`, an `@opaque` struct, or a
 budget-truncated type — accepts any value; the compile warns, because
 `validate_result: true` cannot check it. A provider `validator` on the node
@@ -743,19 +757,24 @@ acc = Enum.reduce(chunks, acc, &ToolCall.Stream.feed(&2, &1))
 ```
 
 - `:openai` — Chat Completions `delta.tool_calls` fragments, keyed by `index`.
-  Only the **first choice** is aggregated; stream with `n = 1` or split choices
-  yourself. The Responses API uses a different event shape and is not handled.
+  One choice is aggregated, the first by default; pass `choice: n` to
+  `new/2` or `aggregate/3` to select another. A choice is matched by `index`
+  when present, otherwise by list position. The Responses API uses a different
+  event shape and is not handled.
 - `:anthropic` — Messages `content_block_start` for a `tool_use` block plus
   `input_json_delta` fragments; a block with no fragments uses its initial
   `input` (`{}` for no arguments).
-- `:gemini` — the first candidate's `streamGenerateContent` parts with a
-  complete `functionCall`. Gemini has no call id, so `id` is `nil`.
+- `:gemini` — `streamGenerateContent` parts with a complete `functionCall`.
+  One candidate is aggregated, the first by default; pass `choice: n` to select
+  another, matched by `index` when present. Gemini has no call id, so `id` is
+  `nil`.
 
 The concatenated JSON is decoded with the standard `JSON` module, so
 `arguments` is a map. Invalid JSON, or an Anthropic `input` that is not a map
 when there are no fragments, is
 `{:error, {:invalid_stream_arguments, {id, name, payload}}}`; a call that never
-receives a name is `{:error, {:missing_name, id}}`. Chunks that carry no
+receives a name is `{:error, {:missing_name, id}}`, and a choice that never
+appears is `{:error, {:choice_not_found, choice}}`. Chunks that carry no
 tool-call data (text deltas, metadata) are ignored, and an empty stream is
 `{:ok, []}`.
 

@@ -214,13 +214,16 @@ read too, so a field typed with one resolves (the beam path cannot). A
 stay `{}` and the compile warns "has no readable typespec". A struct defined
 in the same module as its tools is exempt.
 
-## Struct defaults are not sent to the model
+## Struct defaults are sent when JSON-safe
 
-A `defstruct` default is not emitted as `default` in the schema: the model sees
-an optional field and only learns the value if the description says so. Dispatch
-applies the default when the field is omitted, because `struct/2` starts from
-the struct's defaults. A default does not make an enforced key optional; those
-stay in `required`.
+A `defstruct` default is emitted as `default` in the schema when it is
+JSON-encodable and compatible with the field type: `country: "NO"` reaches the
+model, while a struct, tuple, or otherwise non-JSON default is skipped. A `nil`
+default is emitted as `null` when the field accepts nil; a non-nullable field
+skips it. `has_default` distinguishes an explicit null from no default. Strict
+mode drops `default`. Dispatch still applies the value when the field is omitted,
+because `struct/2` starts from the struct's defaults. A default does not make an
+enforced key optional; those stay in `required`.
 
 ## Struct fields have no descriptions
 
@@ -296,18 +299,21 @@ its `enum` is a string list. `ToolCall.emit(module, :gemini)` therefore drops
 `additionalProperties` (objects stay open, so dispatch can still reject an extra
 key the schema allowed), drops `prefixItems` (a tuple keeps only
 `minItems`/`maxItems`), drops a non-string enum, and raises for a recursive
-parameter. Send `parametersJsonSchema` yourself when those must be preserved. Valid `strict`
-values are ignored for this target; invalid values still raise.
+parameter or a null-only schema. Send `parametersJsonSchema` yourself when those
+must be preserved. Valid `strict` values are ignored for this target; invalid
+values still raise.
 
-## Streaming covers one choice and decodes arguments
+## Streaming covers one choice at a time and decodes arguments
 
-`ToolCall.Stream` reads OpenAI's **first choice** and Gemini's **first
-candidate** only (Chat Completions, not the Responses API), returns Gemini calls
-with `id: nil`, and decodes the
-concatenated JSON with the standard `JSON` module. With `n > 1`, keep one
-accumulator per choice; a malformed fragment is
-`{:error, {:invalid_stream_arguments, ...}}` and a call that never receives a name is
-`{:error, {:missing_name, id}}`.
+`ToolCall.Stream` reads one OpenAI choice and one Gemini candidate (Chat
+Completions, not the Responses API), returns Gemini calls with `id: nil`, and
+decodes the concatenated JSON with the standard `JSON` module. The first choice
+is the default; pass `choice: n` to `new/2` or `aggregate/3` for another, matched
+by `index` when present. With `n > 1`, use one accumulator per choice. A
+malformed fragment is
+`{:error, {:invalid_stream_arguments, ...}}`, a call that never receives a name is
+`{:error, {:missing_name, id}}`, and a choice that never appears is
+`{:error, {:choice_not_found, choice}}`.
 
 ## A hand-built struct type must match `__struct__/0`
 
@@ -376,9 +382,9 @@ returning `{:ok, "not a map"}` fails even though the tool would have answered
 `{:ok, "not a map"}` without validation; a spec `map()` whose function returns
 `{:ok, %{}}` fails the same way. A mismatch is
 `{:error, {:invalid_result, path}}`; a function that raises keeps
-`{:error, {:raised, message}}`. A `no_return()` spec has no result type and
-skips validation. Validation uses the generic runner path, so it is slower than
-the generated fast path.
+`{:error, {:raised, message}}`. A `no_return()`/`none()` spec is a never result:
+with validation enabled, a returned value is `{:invalid_result, :no_return}`.
+Validation uses the generic runner path, so it is slower than the generated fast path.
 
 ## A provider validator must be compiled first
 
@@ -404,7 +410,8 @@ kind.
 
 ## Result validation is strict to the value domain
 
-`float()` rejects an integer, `String.t()` requires valid UTF-8,
+`float()` rejects an integer, numeric `minimum`/`maximum` apply to `float()` and
+`number()` results, `String.t()` requires valid UTF-8,
 `char()` is a valid Unicode scalar codepoint and `charlist()` is a proper list
 of them — while `binary()`,
 `bitstring()` and `nonempty_binary()` accept raw bytes without the UTF-8 or
@@ -420,8 +427,8 @@ their elements. An improper list or an exotic map key is an
 `:unsupported` before any kind rule. A return type declared as `term()`, an
 unknown remote type, `fun()`/`pid()` or a type that hit the definition budget
 therefore answers `{:ok, value}` for any value — unless a provider gives the
-node a `validator`, which makes it checkable. `no_return()`/`none()` skip
-validation entirely. The compile walks the result and warns with every
+node a `validator`, which makes it checkable. A `no_return()`/`none()` node is
+the exception: it rejects every returned value. The compile walks the result and warns with every
 untyped path: object fields (`"a"`), open-object values (`"*"`), array items
 (`"[]"`), tuple positions (`"[1]"`), union variants, struct fields, and `$defs`
 reached through a `$ref`. A validator on a node suppresses the warning for its
@@ -462,20 +469,6 @@ An `atom()` **argument** is checked on the wire: a JSON `true` is a boolean, not
 an atom, so it is rejected. An `atom()` **result** is checked in the value
 domain, where `true`, `false` and `nil` are atoms and pass. Declare an enum
 (`:a | :b`) if both directions must agree.
-
-## `Path.t()` results must be UTF-8
-
-`Path.t()` has no provider transform or validator, so result validation treats
-it as a text string: a path with non-UTF-8 bytes (legal on Unix) fails with
-`{:invalid_result, {:invalid_utf8, ...}}`. Declare `binary()` if such a path can
-be returned.
-
-## `no_return()` results are not validated
-
-A `no_return()` (or `none()`) spec leaves `result: nil`, so `run/4` with
-`validate_result: true` accepts whatever the function returns. The same holds
-for an aliased `no_return()`. Hide the function with `@doc false` if it must not
-be a tool.
 
 ## Result-only `$defs` stay out of the input schema
 

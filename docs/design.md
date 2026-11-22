@@ -433,7 +433,10 @@ tool module.
 
 At dispatch, an object with `struct: Mod` is coerced field by field and then
 rebuilt with `struct/2`. Omitted optional fields are not inserted, so
-`defstruct` defaults apply; an unknown key is `{:unknown_keys, keys}`.
+`defstruct` defaults apply; an unknown key is `{:unknown_keys, keys}`. A
+default that is JSON-encodable and compatible with the field type is also
+emitted as the schema `default`; an explicit nil is emitted when the field
+accepts nil, non-JSON defaults are omitted, and strict mode drops all defaults.
 
 ## Result validation
 
@@ -441,7 +444,8 @@ The declared `@spec` return type is derived into `%Tool{result: Type.t() | nil}`
 through the same pipeline as an argument: `when` variable substitution, alias
 expansion, local type inlining with `$defs` hoisting, and struct resolution. It
 shares `Tool.defs` and the tool's 32-definition budget. `no_return()` and
-`none()` leave `result: nil`.
+`none()` become an `:unsupported` result node with source `:no_return` or `:none`;
+result validation rejects any returned value.
 
 The input schema is unaffected: `Emit.Schema.params/2` renders only the defs
 reachable from the parameters (`ToolCall.Defs.reachable`), so a recursive type
@@ -461,7 +465,8 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, args, validate_result: true)
   `{:ok, value}` / `{:error, reason}`. The spec describes what the function
   returns, so `@spec f() :: {:ok, map()} | {:error, String.t()}` returning
   `{:ok, "not a map"}` fails.
-- A mismatch returns `{:error, {:invalid_result, reason}}`; `result: nil` skips.
+- A mismatch returns `{:error, {:invalid_result, reason}}`; a hand-built tool
+  with `result: nil` skips. A `no_return()`/`none()` result rejects every value.
 - A function that raises/throws/exits keeps its current error, unvalidated.
 
 `ToolCall.Validate.valid?` checks the value domain:
@@ -512,12 +517,14 @@ Not included: converting a value into a JSON value (struct → map, `Date` → I
 
 `ToolCall.Stream` sits before dispatch: it reconstructs the complete call from
 provider deltas and returns `%{id, name, arguments}` with `arguments` decoded.
-It does not run the tool. OpenAI is read from `choices[0].delta.tool_calls`
-(Chat Completions, first choice only); Anthropic from a `tool_use`
-`content_block_start` plus `input_json_delta`; Gemini from the first candidate's
-complete `functionCall` parts (no id). The concatenated JSON is decoded with the
-standard `JSON` module; a malformed fragment is an error, and a call without a
-name is refused. Chunks for other event types are ignored.
+It does not run the tool. OpenAI is read from one choice's
+`delta.tool_calls` (Chat Completions; the first by default, `choice:` selects
+another, matched by `index` when present); Anthropic from a `tool_use`
+`content_block_start` plus `input_json_delta`; Gemini from one candidate's
+complete `functionCall` parts (the first by default, `choice:` selects another,
+matched by `index` when present; no id). The concatenated JSON
+is decoded with the standard `JSON` module; a malformed fragment is an error,
+and a call without a name is refused. Chunks for other event types are ignored.
 
 ## Approvals
 
@@ -605,6 +612,12 @@ MCP, Gemini, and `ToolCall.describe/2` validate the runtime IR before rendering;
 that validation may call `Code.ensure_compiled/1` for struct and validator
 modules, so those modules must remain loadable in the release. The precompiled
 OpenAI and Anthropic paths do not perform this validation.
+
+`ToolCall.Schema.Gemini.to_gemini/2` exposes the Gemini projection for a schema that
+was not derived from the IR. Its `:on_ref` policy controls local `$defs`:
+`:raise` (the emitter default), `:drop`, or `:inline` for non-recursive
+definitions. The root must be an object schema, and a multi-type `type` array
+raises instead of widening to `{}`.
 
 The wire envelopes, target-specific losses, and the current `allOf`/`not`
 limits are canonical in [`projection.md`](projection.md).
@@ -842,7 +855,8 @@ These are intentional limits rather than missing implementation:
   nested object reaches the model as property names only; `@doc` and `@typedoc`
   describe parameters, not fields. Flatten the shape into parameters with
   `@doc` bullets, or explain it in the tool description, when field meaning
-  matters.
+  matters. A provider or hand-built `ToolCall.IR.Field` can set `description`,
+  and the emitter renders it.
 - A struct defined in the same module as its tools takes its field names from
   the map in the generated `__struct__/0`, captured at definition time, and its
   field types from `t/0`; a field that `t/0` omits is typed `{}`. A module with

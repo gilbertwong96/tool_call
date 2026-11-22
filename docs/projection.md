@@ -57,7 +57,8 @@ are preserved.
 
 MCP receives the shared schema as `inputSchema`. It is plain JSON Schema and has
 no strict flag, but `strict: true` still renders the closed subset, which is
-valid JSON Schema. MCP itself does not add constraints.
+valid JSON Schema. `strict: :fine_tuned` is OpenAI-only and raises for MCP
+instead of applying the fine-tuned drops. MCP itself does not add constraints.
 
 ### Gemini
 
@@ -69,10 +70,17 @@ The emitter:
 - drops `prefixItems`, so a tuple keeps only `minItems`/`maxItems`;
 - drops non-string enums;
 - collapses a null `anyOf` branch into `nullable: true`;
-- raises for a recursive parameter instead of emitting an invalid schema.
+- raises for a recursive parameter or a null-only schema instead of emitting an
+  invalid schema.
 
 `parametersJsonSchema` accepts full JSON Schema but is not emitted by
 `ToolCall.emit/3`.
+
+`ToolCall.Schema.Gemini.to_gemini/2` exposes the same transformation for a schema that
+was not derived from `ToolCall.IR`. Its `:on_ref` option is `:raise` (default),
+`:drop`, or `:inline` for non-recursive local `$defs`; `oneOf`, `const`, `allOf`
+and `not` raise because Gemini cannot express them. The root must be an object
+schema, and a multi-type `type` array raises instead of widening to `{}`.
 
 ## Current IR limits
 

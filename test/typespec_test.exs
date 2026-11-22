@@ -217,10 +217,12 @@ defmodule ToolCall.TypespecTest do
   end
 
   test "calendar and path types travel as strings" do
-    for module <- [Date, Time, DateTime, NaiveDateTime, Path] do
+    for module <- [Date, Time, DateTime, NaiveDateTime] do
       assert %Type{kind: :string, source: {^module, :t}} =
                ir({{:., [], [module, :t]}, [], []})
     end
+
+    assert %Type{kind: :string, source: :path} = ir({{:., [], [Path, :t]}, [], []})
   end
 
   test "Keyword.t/1 keeps its value type" do
@@ -300,6 +302,33 @@ defmodule ToolCall.TypespecTest do
         fields: [%Field{name: <<255>>, key: :x, type: %Type{kind: :string}}]
       })
     end
+
+    assert_raise ArgumentError, ~r/field description/, fn ->
+      Typespec.validate_type!(%Type{
+        kind: :object,
+        fields: [
+          %Field{name: "x", key: :x, type: %Type{kind: :string}, description: 123}
+        ]
+      })
+    end
+
+    assert_raise ArgumentError, ~r/default.*not compatible/, fn ->
+      Typespec.validate_type!(%Type{
+        kind: :object,
+        fields: [
+          %Field{name: "x", key: :x, type: %Type{kind: :string}, default: 1, has_default: true}
+        ]
+      })
+    end
+
+    assert_raise ArgumentError, ~r/default.*not compatible/, fn ->
+      Typespec.validate_type!(%Type{
+        kind: :object,
+        fields: [
+          %Field{name: "x", key: :x, type: %Type{kind: :string}, default: nil, has_default: true}
+        ]
+      })
+    end
   end
 
   test "default_compatible?/2 covers value domains" do
@@ -310,7 +339,7 @@ defmodule ToolCall.TypespecTest do
     refute Typespec.default_compatible?(%Type{kind: :atom}, true)
     refute Typespec.default_compatible?(%Type{kind: :atom}, false)
     refute Typespec.default_compatible?(%Type{kind: :atom}, nil)
-    refute Typespec.default_compatible?(%Type{kind: :atom, nullable: true}, nil)
+    assert Typespec.default_compatible?(%Type{kind: :atom, nullable: true}, nil)
     refute Typespec.default_compatible?(%Type{kind: :atom, nullable: true}, true)
     assert Typespec.default_compatible?(%Type{kind: :null}, nil)
     assert Typespec.default_compatible?(%Type{kind: :enum, values: [:a]}, :a)

@@ -131,13 +131,20 @@ defmodule ToolCall.Structs.Resolve do
             :error -> :error
           end
 
+        defaults =
+          case Structs.defaults(module, current: current) do
+            {:ok, defaults} -> defaults
+            :error -> %{}
+          end
+
         {:ok,
          %{
            field_asts: field_asts,
            insts: insts,
            status: status,
            nullable: nullable?,
-           probe: probe
+           probe: probe,
+           defaults: defaults
          }}
     end
   end
@@ -174,7 +181,8 @@ defmodule ToolCall.Structs.Resolve do
     do: put_cache(state, module, :error)
 
   defp install_struct(module, {:ok, raw}, providers, state, normalize) do
-    %{field_asts: field_asts, insts: insts, nullable: nullable?, probe: probe} = raw
+    %{field_asts: field_asts, insts: insts, nullable: nullable?, probe: probe, defaults: defaults} =
+      raw
 
     required =
       case probe do
@@ -204,6 +212,7 @@ defmodule ToolCall.Structs.Resolve do
         cache:
           Map.put(state.cache, module, %{
             fields: fields,
+            defaults: defaults,
             required: required,
             nullable: nullable?
           })
@@ -359,8 +368,8 @@ defmodule ToolCall.Structs.Resolve do
 
   defp build_struct(%Type{struct: module, nullable: nullable}, ctx) do
     case Map.get(ctx.cache, module) do
-      %{fields: fields, required: required, nullable: type_nullable} ->
-        build_cached_struct(module, nullable or type_nullable, fields, required, ctx)
+      %{fields: fields, required: required, defaults: defaults, nullable: type_nullable} ->
+        build_cached_struct(module, nullable or type_nullable, fields, required, defaults, ctx)
 
       :opaque ->
         {%Type{kind: :any, source: {:opaque_struct, module}, nullable: nullable}, ctx}
@@ -370,11 +379,11 @@ defmodule ToolCall.Structs.Resolve do
     end
   end
 
-  defp build_cached_struct(module, nullable, fields, required, ctx) do
+  defp build_cached_struct(module, nullable, fields, required, defaults, ctx) do
     if MapSet.member?(ctx.cyclic, module) do
-      build_cyclic_struct(module, nullable, fields, required, ctx)
+      build_cyclic_struct(module, nullable, fields, required, defaults, ctx)
     else
-      {built, ctx} = build_fields(fields, required, ctx)
+      {built, ctx} = build_fields(fields, required, defaults, ctx)
 
       {%Type{
          kind: :object,
@@ -386,7 +395,7 @@ defmodule ToolCall.Structs.Resolve do
     end
   end
 
-  defp build_cyclic_struct(module, nullable, fields, required, ctx) do
+  defp build_cyclic_struct(module, nullable, fields, required, defaults, ctx) do
     {name, ctx} = struct_def_name(module, ctx)
 
     case Map.fetch(ctx.struct_defs, name) do
@@ -395,7 +404,7 @@ defmodule ToolCall.Structs.Resolve do
 
       :error ->
         ctx = %{ctx | struct_defs: Map.put(ctx.struct_defs, name, :building)}
-        {built, ctx} = build_fields(fields, required, ctx)
+        {built, ctx} = build_fields(fields, required, defaults, ctx)
         object = %Type{kind: :object, struct: module, fields: built, additional: nil}
 
         {%Type{kind: :ref, ref: name, nullable: nullable},
@@ -403,21 +412,39 @@ defmodule ToolCall.Structs.Resolve do
     end
   end
 
-  defp build_fields(fields, required, ctx) do
+  defp build_fields(fields, required, defaults, ctx) do
     fields
     |> Enum.sort_by(&elem(&1, 0))
     |> Enum.map_reduce(ctx, fn {name, type}, ctx ->
       {type, ctx} = build_type(type, ctx)
 
+      {default, has_default?} = field_default(type, name, defaults)
+
       field = %Field{
         name: Atom.to_string(name),
         key: name,
         type: type,
+        default: default,
+        has_default: has_default?,
         required: MapSet.member?(required, name)
       }
 
       {field, ctx}
     end)
+  end
+
+  defp field_default(type, name, defaults) do
+    case Map.fetch(defaults, name) do
+      {:ok, default} ->
+        if Typespec.json_value?(default) and Typespec.default_compatible?(type, default) do
+          {default, true}
+        else
+          {nil, false}
+        end
+
+      :error ->
+        {nil, false}
+    end
   end
 
   defp struct_def_name(module, ctx) do

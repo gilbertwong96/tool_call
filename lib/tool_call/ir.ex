@@ -13,9 +13,12 @@ defmodule ToolCall.IR do
 
     `name` is the wire name (always a string, as JSON objects use). `key` is the
     value-domain key: an atom when the spec declared one, which is what the
-    function receives.
+    function receives. `description` is optional and is rendered as the property
+    description. `default` is the struct default when `has_default` is true;
+    `has_default` distinguishes an explicit `nil` from no default. A non-nil
+    `default` is emitted even when `has_default` is false.
     """
-    defstruct [:name, :key, :type, :description, required: true]
+    defstruct [:name, :key, :type, :description, :default, has_default: false, required: true]
 
     @type t :: %__MODULE__{}
   end
@@ -37,7 +40,7 @@ defmodule ToolCall.IR do
     `ToolCall.Typespec.validate_type!/1` to build a validated copy of a
     hand-written type. `source` is an atom for the string sub-kinds
     (`:charlist`, `:char`, `:binary`, `:bitstring`, `:nonempty_binary`,
-    `:nonempty_string`), which dispatch and result validation read, and for a few
+    `:nonempty_string`, `:path`), which dispatch and result validation read, and for a few
     diagnostics. A non-atom source is compile-time provenance and is dropped from
     the embedded IR.
 
@@ -145,8 +148,10 @@ defmodule ToolCall.IR do
     by `kind: :ref`. Only the entries reachable from the parameters are rendered
     into the input schema.
 
-    `result` is the declared `@spec` return type, or nil for a `no_return()`
-    spec. Result validation uses it; it is never rendered.
+    `result` is the declared `@spec` return type, or nil when a hand-built tool
+    has none. A `no_return()`/`none()` spec is kept as an `:unsupported` node with
+    source `:no_return`/`:none`, so result validation rejects a returned value.
+    Result validation uses it; it is never rendered.
     """
     defstruct name: nil,
               description: nil,

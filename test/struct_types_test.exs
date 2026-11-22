@@ -1,7 +1,7 @@
 defmodule ToolCall.StructTypesTest do
   use ExUnit.Case, async: true
 
-  alias ToolCall.IR.{Param, Tool, Type}
+  alias ToolCall.IR.{Field, Param, Tool, Type}
   import ToolCall.TestModule
 
   alias ToolCall.TestFixtures.{
@@ -38,6 +38,23 @@ defmodule ToolCall.StructTypesTest do
     assert Enum.map(type.fields, & &1.name) == ["city", "country", "street"]
     assert Enum.map(Enum.filter(type.fields, & &1.required), & &1.name) == ["city"]
     assert %Type{kind: :string} = Enum.find(type.fields, &(&1.name == "country")).type
+
+    assert %Field{default: "NO", has_default: true} =
+             Enum.find(type.fields, &(&1.name == "country"))
+
+    assert %Field{default: nil, has_default: false} =
+             Enum.find(type.fields, &(&1.name == "city"))
+  end
+
+  test "struct defaults are emitted in the schema" do
+    module = compile!(@ship)
+    [tool] = ToolCall.emit(module, :openai)
+    to = tool["function"]["parameters"]["properties"]["to"]
+
+    assert to["properties"]["country"]["default"] == "NO"
+    assert Map.has_key?(to["properties"]["street"], "default")
+    assert to["properties"]["street"]["default"] == nil
+    refute Map.has_key?(to["properties"]["city"], "default")
   end
 
   test "a struct literal is treated like Mod.t()" do
