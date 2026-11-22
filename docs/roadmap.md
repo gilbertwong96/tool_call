@@ -1,6 +1,6 @@
 # Roadmap
 
-The current release line is `0.3.0` (prepared; not yet published). The
+The current release line is `0.4.0` (prepared; not yet published). The
 completed feature set is recorded in [`CHANGELOG.md`](../CHANGELOG.md) and the
 usage guide. This file tracks only work that is not implemented yet.
 

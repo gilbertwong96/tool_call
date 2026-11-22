@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-11-22
+
+### Added
+
+- `ToolCall.Stream.new/2` and `aggregate/3` accept `choice:` for an OpenAI
+  choice or Gemini candidate; the default remains the first. A choice is matched
+  by its `index` when present, otherwise by list position, and a choice that
+  never appears returns `{:error, {:choice_not_found, choice}}`.
+
+- Struct `defstruct` defaults that are JSON-safe and compatible with the field
+  type are emitted as schema `default` values. An explicit nil is emitted when
+  the field accepts nil; non-JSON and incompatible defaults are skipped, and
+  strict mode drops defaults. `Field.has_default` distinguishes an explicit
+  nullable nil from no default; a non-nil default does not require it, and a
+  nullable atom field no longer loses its explicit nil default.
+
+- `ToolCall.Schema.Gemini.to_gemini/2` exposes the Gemini schema projection for callers
+  that already hold a JSON Schema, without constructing `ToolCall.IR`. Its
+  `:on_ref` option controls local `$defs`: `:raise` (the emitter default),
+  `:drop`, or `:inline` for non-recursive definitions. `ToolCall.Emit.Gemini`
+  delegates to it, so emitted bytes are unchanged. It raises for `oneOf`,
+  `const`, `allOf` and `not`, which Gemini cannot express, requires an object
+  schema at the root, and rejects a multi-type `type` array instead of widening
+  it.
+
+### Fixed
+
+- Result validation now enforces `minimum`/`maximum` on `float()` and `number()`
+  results, matching dispatch and the emitted schema.
+
+- `ToolCall.IR.Field.description` is now rendered as the property description
+  and validated as `nil` or a UTF-8 string, instead of being silently ignored.
+
+- Gemini rejects null-only schemas instead of emitting an invalid
+  `"type": "NULL"` or an empty `anyOf`.
+
+- `no_return()` and `none()` results are kept as never nodes instead of `nil`;
+  `validate_result: true` now rejects a value returned by such a function as
+  `{:invalid_result, :no_return}`.
+
+- `Path.t()` results accept raw bytes, matching `binary()`, instead of rejecting
+  a Unix path that is not valid UTF-8.
+
+- MCP rejects `strict: :fine_tuned` instead of silently dropping `pattern`,
+  numeric bounds and array bounds; `mix tool_call.export --fine-tuned` is now
+  rejected outside `--format openai`.
+
 ## 0.3.0 - 2026-11-18
 
 ### Changed

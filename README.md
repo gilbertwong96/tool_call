@@ -41,7 +41,7 @@ ToolCall.run(MyApp.Tools.Weather, :get_weather, %{"city" => "Oslo"})
 
 ```elixir
 def deps do
-  [tool_call: "~> 0.3"]
+  [tool_call: "~> 0.4"]
 end
 ```
 
@@ -52,6 +52,8 @@ compile time; there are no runtime dependencies.
 
 - `ToolCall.emit/3` — OpenAI, Anthropic, MCP and Gemini schemas; the
   provider-call targets are precompiled per module, MCP and Gemini on demand.
+- `ToolCall.Schema.Gemini.to_gemini/2` — adapts a JSON Schema you already hold to
+  Gemini's `parameters` subset, with an `:on_ref` policy for local `$defs`.
 - `ToolCall.run/4` — required/unknown argument checks, coercion, exception
   wrapping, optional result validation, per-call timeouts, approval policies and
   dispatch audit hooks.
